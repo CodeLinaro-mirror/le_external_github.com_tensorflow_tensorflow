@@ -23,6 +23,7 @@ limitations under the License.
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -152,11 +153,20 @@ void RunInference(Settings* s) {
     interpreter->SetNumThreads(s->number_of_threads);
   }
 
-  int image_width = 224;
-  int image_height = 224;
-  int image_channels = 3;
-  std::vector<uint8_t> in = read_bmp(s->input_bmp_name, &image_width,
-                                     &image_height, &image_channels, s);
+  int width = s->width;
+  int height = s->height;
+  int channels = s->channels;
+
+  std::vector<uint8_t> in;
+  size_t position = s->input_name.size() - 4;
+
+  if (s->input_name.compare(position, 4, ".bmp") == 0) {
+    in = read_bmp(s->input_name, &width, &height, &channels);
+  } else if (s->input_name.compare(position, 4, ".rgb") == 0) {
+    in = read_rgb(s->input_name, width, height, channels);
+  } else {
+    in = read_blob(s->input_name, width, height, channels);
+  }
 
   int input = interpreter->inputs()[0];
   if (s->verbose) LOG(INFO) << "input: " << input << "\n";
@@ -186,12 +196,12 @@ void RunInference(Settings* s) {
     case kTfLiteFloat32:
       s->input_floating = true;
       resize<float>(interpreter->typed_tensor<float>(input), in.data(),
-                    image_height, image_width, image_channels, wanted_height,
+                    height, width, channels, wanted_height,
                     wanted_width, wanted_channels, s);
       break;
     case kTfLiteUInt8:
       resize<uint8_t>(interpreter->typed_tensor<uint8_t>(input), in.data(),
-                      image_height, image_width, image_channels, wanted_height,
+                      height, width, channels, wanted_height,
                       wanted_width, wanted_channels, s);
       break;
     default:
@@ -199,6 +209,11 @@ void RunInference(Settings* s) {
                  << interpreter->tensor(input)->type << " yet";
       exit(-1);
   }
+
+  // Dump input tensor for verification.
+  std::ofstream file("/data/tf/input.bin", std::ios::out | std::ios::binary);
+  file.write(reinterpret_cast<char*>(interpreter->tensor(input)->data.uint8), in.size());
+  file.close();
 
   profiling::Profiler* profiler = new profiling::Profiler();
   interpreter->SetProfiler(profiler);
@@ -227,6 +242,38 @@ void RunInference(Settings* s) {
           interpreter->node_and_registration(op_index);
       const TfLiteRegistration registration = node_and_registration->second;
       PrintProfilingInfo(profile_events[i], op_index, registration);
+    }
+  }
+
+  if (s->dump_tensors) {
+    for (int i = 0; i < interpreter->outputs().size(); i++) {
+      int outnode = interpreter->outputs()[i];
+      auto tensor = interpreter->tensor(outnode);
+
+      TfLiteIntArray* outdims = tensor->dims;
+      int outsize = 1;
+      for(int d = 0; d < outdims->size; d++) {
+        outsize *= outdims->data[outdims->size - d - 1];
+      }
+      LOG(INFO) << "OUTNODE: " << outnode << " SIZE: " << outsize << "\n";
+
+      std::stringstream filename("/data/tf/");
+      filename << "tflite_out_tensor_" << outnode
+               << ((s->delegate == kNnapiDelegate) ? "_nnapi_" : "")
+               << ".bin";
+      std::ofstream tfile(filename.str(), std::ios::out | std::ios::binary);
+
+      char* data = reinterpret_cast<char*>(tensor->data.uint8);
+      switch (interpreter->tensor(outnode)->type) {
+        case kTfLiteFloat32: {
+          tfile.write(data, outsize * 4);
+          break;
+        }
+        case kTfLiteUInt8: {
+          tfile.write(data, outsize * 1);
+          break;
+        }
+      }
     }
   }
 
@@ -272,16 +319,18 @@ void display_usage() {
       << "label_image\n"
       << "--accelerated, -a: [0|1], use Android NNAPI or not\n"
       << "--delegate, -d: use delegate [0-NONE, 1-NNAPI]\n"
-      << "--preferences, -d: preferences for the choosen delegate in hex\n"
+      << "--preferences, -e: preferences for the choosen delegate in hex\n"
       << "--allow_fp16, -f: [0|1], allow running fp32 models with fp16 not\n"
       << "--count, -c: loop interpreter->Invoke() for certain times\n"
       << "--input_mean, -b: input mean\n"
       << "--input_std, -s: input standard deviation\n"
       << "--image, -i: image_name.bmp\n"
+      << "--dimensions, -n: 320x320x3\n"
       << "--labels, -l: labels for the model\n"
       << "--tflite_model, -m: model_name.tflite\n"
       << "--profiling, -p: [0|1], profiling or not\n"
       << "--num_results, -r: number of results to show\n"
+      << "--dump_tensors, -u: [0|1] Dump output tensors\n"
       << "--threads, -t: number of threads\n"
       << "--verbose, -v: [0|1] print more information\n"
       << "\n";
@@ -300,6 +349,7 @@ int Main(int argc, char** argv) {
         {"count", required_argument, nullptr, 'c'},
         {"verbose", required_argument, nullptr, 'v'},
         {"image", required_argument, nullptr, 'i'},
+        {"dimensions", required_argument, nullptr, 'n'},
         {"labels", required_argument, nullptr, 'l'},
         {"tflite_model", required_argument, nullptr, 'm'},
         {"profiling", required_argument, nullptr, 'p'},
@@ -307,12 +357,13 @@ int Main(int argc, char** argv) {
         {"input_mean", required_argument, nullptr, 'b'},
         {"input_std", required_argument, nullptr, 's'},
         {"num_results", required_argument, nullptr, 'r'},
+        {"dump_tensors", required_argument, nullptr, 'u'},
         {nullptr, 0, nullptr, 0}};
 
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
-    c = getopt_long(argc, argv, "a:b:c:d:e:f:i:l:m:p:r:s:t:v:", long_options,
+    c = getopt_long(argc, argv, "a:b:c:d:e:f:i:n:l:m:p:r:u:s:t:v:", long_options,
                     &option_index);
 
     /* Detect the end of the options. */
@@ -342,7 +393,12 @@ int Main(int argc, char** argv) {
             strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
         break;
       case 'i':
-        s.input_bmp_name = optarg;
+        s.input_name = optarg;
+        break;
+      case 'n':
+        s.width = strtol(std::strtok(optarg, "x"), nullptr, 10);
+        s.height = strtol(std::strtok(nullptr, "x"), nullptr, 10);
+        s.channels = strtol(std::strtok(nullptr, "x"), nullptr, 10);
         break;
       case 'l':
         s.labels_file_name = optarg;
@@ -356,6 +412,10 @@ int Main(int argc, char** argv) {
         break;
       case 'r':
         s.number_of_results =
+            strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
+        break;
+      case 'u':
+        s.dump_tensors =
             strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
         break;
       case 's':

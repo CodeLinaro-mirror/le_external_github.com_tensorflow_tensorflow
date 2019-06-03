@@ -70,26 +70,27 @@ std::vector<uint8_t> decode_bmp(const uint8_t* input, int row_size, int width,
   return output;
 }
 
-std::vector<uint8_t> read_bmp(const std::string& input_bmp_name, int* width,
-                              int* height, int* channels, Settings* s) {
+std::vector<uint8_t> read_bmp(const std::string& input, int* width,
+                              int* height, int* channels) {
   int begin, end;
 
-  std::ifstream file(input_bmp_name, std::ios::in | std::ios::binary);
+  std::ifstream file(input, std::ios::in | std::ios::binary);
   if (!file) {
-    LOG(FATAL) << "input file " << input_bmp_name << " not found\n";
+    LOG(FATAL) << "input file " << input << " not found\n";
     exit(-1);
   }
+  LOG(INFO) << "Input file: " << input << "\n";
 
   begin = file.tellg();
   file.seekg(0, std::ios::end);
   end = file.tellg();
-  size_t len = end - begin;
+  size_t size = end - begin;
 
-  if (s->verbose) LOG(INFO) << "len: " << len << "\n";
+  LOG(INFO) << "Input file size: " << size << "\n";
 
-  std::vector<uint8_t> img_bytes(len);
+  std::vector<uint8_t> img_bytes(size);
   file.seekg(0, std::ios::beg);
-  file.read(reinterpret_cast<char*>(img_bytes.data()), len);
+  file.read(reinterpret_cast<char*>(img_bytes.data()), size);
   const int32_t header_size =
       *(reinterpret_cast<const int32_t*>(img_bytes.data() + 10));
   *width = *(reinterpret_cast<const int32_t*>(img_bytes.data() + 18));
@@ -98,9 +99,8 @@ std::vector<uint8_t> read_bmp(const std::string& input_bmp_name, int* width,
       *(reinterpret_cast<const int32_t*>(img_bytes.data() + 28));
   *channels = bpp / 8;
 
-  if (s->verbose)
-    LOG(INFO) << "width, height, channels: " << *width << ", " << *height
-              << ", " << *channels << "\n";
+  LOG(INFO) << "Input file width, height, channels: " << *width
+            << ", " << *height << ", " << *channels << "\n";
 
   // there may be padding bytes when the width is not a multiple of 4 bytes
   // 8 * channels == bits per pixel
@@ -114,6 +114,61 @@ std::vector<uint8_t> read_bmp(const std::string& input_bmp_name, int* width,
   const uint8_t* bmp_pixels = &img_bytes[header_size];
   return decode_bmp(bmp_pixels, row_size, *width, abs(*height), *channels,
                     top_down);
+}
+
+std::vector<uint8_t> read_rgb(const std::string& input, int width,
+                              int height, int channels) {
+
+  std::ifstream file(input, std::ios::ate | std::ios::binary);
+  if (!file) {
+    LOG(FATAL) << "input file " << input << " not found\n";
+    exit(-1);
+  }
+  LOG(INFO) << "Input file: " << input << "\n";
+
+  auto size = file.tellg();
+  file.seekg(0);
+
+  LOG(INFO) << "Input file size: " << size << "\n";
+
+  LOG(INFO) << "Input file width, height, channels: " << width
+            << ", " << height << ", " << channels << "\n";
+
+  std::vector<uint8_t> in(height * width * channels);
+  if (!file.read(reinterpret_cast<char*>(in.data()), in.size())) {
+    LOG(FATAL) << "input file read failed\n";
+    exit(-1);
+  }
+
+  const int row_size = width * channels;
+  return decode_bmp(in.data(), row_size, width, height, channels, false);
+}
+
+std::vector<uint8_t> read_blob(const std::string& input, int width,
+                               int height, int channels) {
+
+  std::ifstream file(input, std::ios::ate | std::ios::binary);
+  if (!file) {
+    LOG(FATAL) << "input file " << input << " not found\n";
+    exit(-1);
+  }
+  LOG(INFO) << "Input file: " << input << "\n";
+
+  auto size = file.tellg();
+  file.seekg(0);
+
+  LOG(INFO) << "Input file size: " << size << "\n";
+
+  LOG(INFO) << "Input file width, height, channels: " << width
+            << ", " << height << ", " << channels << "\n";
+
+  std::vector<uint8_t> output(height * width * channels);
+  if (!file.read(reinterpret_cast<char*>(output.data()), output.size())) {
+    LOG(FATAL) << "input file read failed\n";
+    exit(-1);
+  }
+
+  return output;
 }
 
 }  // namespace label_image
