@@ -34,6 +34,7 @@ limitations under the License.
 
 #include "tensorflow/lite/examples/label_image/bitmap_helpers.h"
 #include "tensorflow/lite/examples/label_image/get_top_n.h"
+#include "tensorflow/lite/delegates/nnapi/nnapi_delegate.h"
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
 #include "tensorflow/lite/optional_debug_tools.h"
@@ -110,6 +111,21 @@ void RunInference(Settings* s) {
   if (!interpreter) {
     LOG(FATAL) << "Failed to construct interpreter\n";
     exit(-1);
+  }
+
+  std::unique_ptr<StatefulNnApiDelegate> nnapi_delegate;
+  if (s->delegate == kNnapiDelegate) {
+    StatefulNnApiDelegate::Options options;
+    options.execution_preference =
+        static_cast<StatefulNnApiDelegate::Options::ExecutionPreference>(
+        s->preferences);
+
+    nnapi_delegate.reset(new StatefulNnApiDelegate(options));
+    if (!nnapi_delegate) {
+      LOG(FATAL) << "Failed to construct NNAPI delegate\n";
+      exit(-1);
+    }
+    interpreter->ModifyGraphWithDelegate(nnapi_delegate.get());
   }
 
   interpreter->UseNNAPI(s->accel);
@@ -255,6 +271,8 @@ void display_usage() {
   LOG(INFO)
       << "label_image\n"
       << "--accelerated, -a: [0|1], use Android NNAPI or not\n"
+      << "--delegate, -d: use delegate [0-NONE, 1-NNAPI]\n"
+      << "--preferences, -d: preferences for the choosen delegate in hex\n"
       << "--allow_fp16, -f: [0|1], allow running fp32 models with fp16 not\n"
       << "--count, -c: loop interpreter->Invoke() for certain times\n"
       << "--input_mean, -b: input mean\n"
@@ -276,6 +294,8 @@ int Main(int argc, char** argv) {
   while (1) {
     static struct option long_options[] = {
         {"accelerated", required_argument, nullptr, 'a'},
+        {"delegate", required_argument, nullptr, 'd'},
+        {"preferences", required_argument, nullptr, 'e'},
         {"allow_fp16", required_argument, nullptr, 'f'},
         {"count", required_argument, nullptr, 'c'},
         {"verbose", required_argument, nullptr, 'v'},
@@ -292,7 +312,7 @@ int Main(int argc, char** argv) {
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
-    c = getopt_long(argc, argv, "a:b:c:f:i:l:m:p:r:s:t:v:", long_options,
+    c = getopt_long(argc, argv, "a:b:c:d:e:f:i:l:m:p:r:s:t:v:", long_options,
                     &option_index);
 
     /* Detect the end of the options. */
@@ -301,6 +321,14 @@ int Main(int argc, char** argv) {
     switch (c) {
       case 'a':
         s.accel = strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
+        break;
+      case 'd':
+        s.delegate =
+            strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
+        break;
+      case 'e':
+        s.preferences =
+            strtol(optarg, nullptr, 16);  // NOLINT(runtime/deprecated_fn)
         break;
       case 'b':
         s.input_mean = strtod(optarg, nullptr);
