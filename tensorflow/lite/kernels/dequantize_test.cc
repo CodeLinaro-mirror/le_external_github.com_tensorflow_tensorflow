@@ -16,6 +16,7 @@ limitations under the License.
 
 #include <gtest/gtest.h>
 #include "tensorflow/lite/interpreter.h"
+#include "tensorflow/lite/kernels/internal/types.h"
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/kernels/test_util.h"
 #include "tensorflow/lite/model.h"
@@ -29,13 +30,7 @@ class DequantizeOpModel : public SingleOpModel {
  public:
   DequantizeOpModel(TensorType type, std::initializer_list<int> shape,
                     float scale, int32_t zero_point) {
-    TensorData input_tensor_data;
-    input_tensor_data.type = type;
-    input_tensor_data.shape = shape;
-    input_tensor_data.min = 0;
-    input_tensor_data.max = 0;
-    input_tensor_data.scale = scale;
-    input_tensor_data.zero_point = zero_point;
+    const TensorData input_tensor_data = {type, shape, 0, 0, scale, zero_point};
     input_ = AddInput(input_tensor_data);
     output_ = AddOutput({TensorType_FLOAT32, shape});
     SetBuiltinOp(BuiltinOperator_DEQUANTIZE, BuiltinOptions_DequantizeOptions,
@@ -80,9 +75,3 @@ TEST(DequantizeOpTest, INT8) {
 
 }  // namespace
 }  // namespace tflite
-
-int main(int argc, char** argv) {
-  ::tflite::LogToStderr();
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
