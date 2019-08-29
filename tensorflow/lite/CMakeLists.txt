@@ -7,6 +7,8 @@ add_definitions(-DEIGEN_MPL2_ONLY)
 add_definitions(-fPIC)
 add_definitions(-funsafe-math-optimizations)
 add_definitions(-ftree-vectorize)
+add_definitions(-flax-vector-conversions)
+add_definitions(-fomit-frame-pointer)
 
 set (TFLITE_TARGET_NAME tensorflow-lite)
 
@@ -71,7 +73,7 @@ target_link_libraries(${TFLITE_TARGET_NAME} z)
 
 install(
     TARGETS ${TFLITE_TARGET_NAME}
-    LIBRARY DESTINATION lib
+    LIBRARY DESTINATION ${TFLITE_INSTALL_LIBDIR}
     PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
                 GROUP_EXECUTE GROUP_READ
                 WORLD_EXECUTE WORLD_READ
@@ -98,7 +100,7 @@ target_link_libraries(${LABEL_IMAGE_TARGET_NAME} ${TFLITE_TARGET_NAME})
 
 install(
     TARGETS ${LABEL_IMAGE_TARGET_NAME}
-    RUNTIME DESTINATION bin
+    RUNTIME DESTINATION ${TFLITE_INSTALL_BINDIR}
     PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
                 GROUP_EXECUTE GROUP_READ
                 WORLD_EXECUTE WORLD_READ
@@ -117,7 +119,7 @@ target_link_libraries(${MINIMAL_TARGET_NAME} ${TFLITE_TARGET_NAME})
 
 install(
     TARGETS ${MINIMAL_TARGET_NAME}
-    RUNTIME DESTINATION bin
+    RUNTIME DESTINATION ${TFLITE_INSTALL_BINDIR}
     PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
                 GROUP_EXECUTE GROUP_READ
                 WORLD_EXECUTE WORLD_READ
