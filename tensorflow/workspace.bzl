@@ -142,6 +142,7 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
         urls = [
             "http://mirror.tensorflow.org/github.com/abseil/abseil-cpp/archive/daf381e8535a1f1f1b8a75966a74e7cca63dee89.tar.gz",
             "https://github.com/abseil/abseil-cpp/archive/daf381e8535a1f1f1b8a75966a74e7cca63dee89.tar.gz",
+            "https://source.codeaurora.org/mirrored_source/quic/lc/external/github.com/abseil/abseil-cpp/archive/daf381e8535a1f1f1b8a75966a74e7cca63dee89.tar.gz",
         ],
     )
 
@@ -154,6 +155,7 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
         urls = [
             "http://mirror.tensorflow.org/bitbucket.org/eigen/eigen/get/a0d250e79c79.tar.gz",
             "https://bitbucket.org/eigen/eigen/get/a0d250e79c79.tar.gz",
+	    "https://source.codeaurora.org/mirrored_source/quic/le/external/eigen/eigen/get/a0d250e79c79.tar.gz",
         ],
     )
 
@@ -223,6 +225,7 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
         urls = [
             "http://mirror.tensorflow.org/github.com/google/gemmlowp/archive/12fed0cd7cfcd9e169bf1925bc3a7a58725fdcc3.zip",
             "https://github.com/google/gemmlowp/archive/12fed0cd7cfcd9e169bf1925bc3a7a58725fdcc3.zip",
+	    "https://source.codeaurora.org/mirrored_source/quic/le/external/gemmlowp/archive/12fed0cd7cfcd9e169bf1925bc3a7a58725fdcc3.zip",
         ],
     )
 
