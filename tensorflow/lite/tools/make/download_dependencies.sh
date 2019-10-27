@@ -29,14 +29,14 @@ if [ ! -f $BZL_FILE_PATH ]; then
   exit 1;
 fi
 
-EIGEN_URL="$(grep -o 'https://source.codeaurora.org/mirrored_source/quic/le/external/eigen/eigen/get/.*tar\.gz' "${BZL_FILE_PATH}" | head -n1)"
-GEMMLOWP_URL="$(grep -o 'http://mirror.tensorflow.org/github.com/google/gemmlowp/.*zip' "${BZL_FILE_PATH}" | head -n1)"
-GOOGLETEST_URL="https://source.codeaurora.org/mirrored_source/quic/chrome4sdp/external/github.com/google/googletest/archive/release-1.8.0.tar.gz"
+EIGEN_URL="$(grep -o 'http.*bitbucket.org/eigen/eigen/get/.*tar\.gz' "${BZL_FILE_PATH}" | grep -v mirror.tensorflow | head -n1)"
+GEMMLOWP_URL="$(grep -o 'https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/gemmlowp/.*zip' "${BZL_FILE_PATH}" | head -n1)"
+GOOGLETEST_URL="https://github.com/google/googletest/archive/release-1.8.0.tar.gz"
 ABSL_URL="$(grep -o 'https://github.com/abseil/abseil-cpp/.*tar.gz' "${BZL_FILE_PATH}" | head -n1)"
 NEON_2_SSE_URL="https://github.com/intel/ARM_NEON_2_x86_SSE/archive/master.zip"
-FARMHASH_URL="http://mirror.tensorflow.org/github.com/google/farmhash/archive/816a4ae622e964763ca0862d9dbd19324a1eaf45.tar.gz"
-FLATBUFFERS_URL="https://source.codeaurora.org/mirrored_source/quic/lc/external/github.com/google/flatbuffers/archive/v1.11.0.tar.gz"
-FFT2D_URL="http://mirror.tensorflow.org/www.kurims.kyoto-u.ac.jp/~ooura/fft.tgz"
+FARMHASH_URL="https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/farmhash/archive/816a4ae622e964763ca0862d9dbd19324a1eaf45.tar.gz"
+FLATBUFFERS_URL="https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/flatbuffers/archive/v1.11.0.tar.gz"
+FFT2D_URL="https://storage.googleapis.com/mirror.tensorflow.org/www.kurims.kyoto-u.ac.jp/~ooura/fft2d.tgz"
 
 # TODO(petewarden): Some new code in Eigen triggers a clang bug with iOS arm64,
 #                   so work around it by patching the source.
@@ -61,12 +61,12 @@ download_and_extract() {
   echo "downloading ${url}" >&2
   mkdir -p "${dir}"
   if [[ "${url}" == *gz ]]; then
-    curl --insecure -Ls "${url}" | tar -C "${dir}" --strip-components=1 -xz
+    curl -Ls "${url}" | tar -C "${dir}" --strip-components=1 -xz
   elif [[ "${url}" == *zip ]]; then
     tempdir=$(mktemp -d)
     tempdir2=$(mktemp -d)
 
-    curl --insecure -L ${url} > ${tempdir}/zipped.zip
+    curl -L ${url} > ${tempdir}/zipped.zip
     unzip ${tempdir}/zipped.zip -d ${tempdir2}
 
     # If the zip file contains nested directories, extract the files from the

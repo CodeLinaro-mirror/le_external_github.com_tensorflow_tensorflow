@@ -159,8 +159,7 @@ public final class OperatorProcessor extends AbstractProcessor {
   private static final TypeName T_SCOPE = ClassName.get("org.tensorflow.op", "Scope");
   private static final TypeName T_EXEC_ENV =
       ClassName.get("org.tensorflow", "ExecutionEnvironment");
-  private static final TypeName T_EAGER_SESSION =
-      ClassName.get("org.tensorflow", "EagerSession");
+  private static final TypeName T_EAGER_SESSION = ClassName.get("org.tensorflow", "EagerSession");
   private static final TypeName T_STRING = ClassName.get(String.class);
   // Operand<?>
   private static final TypeName T_OPERAND =
@@ -448,7 +447,8 @@ public final class OperatorProcessor extends AbstractProcessor {
             .addParameter(T_EXEC_ENV, "env")
             .returns(T_OPS)
             .addStatement("return new Ops(new $T(env))", T_SCOPE)
-            .addJavadoc("Creates an API for building operations in the provided execution environment\n")
+            .addJavadoc(
+                "Creates an API for building operations in the provided execution environment\n")
             .build());
 
     opsBuilder.addMethod(

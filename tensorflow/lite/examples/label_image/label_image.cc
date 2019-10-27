@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "tensorflow/lite/examples/label_image/label_image.h"
+
 #include <fcntl.h>      // NOLINT(build/include_order)
 #include <getopt.h>     // NOLINT(build/include_order)
 #include <sys/time.h>   // NOLINT(build/include_order)
@@ -23,24 +25,25 @@ limitations under the License.
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+#include "absl/memory/memory.h"
+#include "tensorflow/lite/delegates/nnapi/nnapi_delegate.h"
 #include "tensorflow/lite/examples/label_image/bitmap_helpers.h"
 #include "tensorflow/lite/examples/label_image/get_top_n.h"
-#include "tensorflow/lite/delegates/nnapi/nnapi_delegate.h"
 #include "tensorflow/lite/kernels/register.h"
-#include "tensorflow/lite/model.h"
 #include "tensorflow/lite/optional_debug_tools.h"
 #include "tensorflow/lite/profiling/profiler.h"
 #include "tensorflow/lite/string_util.h"
+#include "tensorflow/lite/tools/evaluation/utils.h"
 
 #define LOG(x) std::cerr
 
@@ -48,6 +51,50 @@ namespace tflite {
 namespace label_image {
 
 double get_us(struct timeval t) { return (t.tv_sec * 1000000 + t.tv_usec); }
+
+using TfLiteDelegatePtr = tflite::Interpreter::TfLiteDelegatePtr;
+using TfLiteDelegatePtrMap = std::map<std::string, TfLiteDelegatePtr>;
+
+TfLiteDelegatePtr CreateGPUDelegate(Settings* s) {
+#if defined(__ANDROID__)
+  TfLiteGpuDelegateOptions options;
+  options.metadata = TfLiteGpuDelegateGetModelMetadata(s->model->GetModel());
+  if (s->allow_fp16) {
+    options.compile_options.precision_loss_allowed = 1;
+  } else {
+    options.compile_options.precision_loss_allowed = 0;
+  }
+  options.compile_options.preferred_gl_object_type =
+      TFLITE_GL_OBJECT_TYPE_FASTEST;
+  options.compile_options.dynamic_batch_enabled = 0;
+
+  return evaluation::CreateGPUDelegate(s->model, &options);
+#else
+  return evaluation::CreateGPUDelegate(s->model);
+#endif
+}
+
+TfLiteDelegatePtrMap GetDelegates(Settings* s) {
+  TfLiteDelegatePtrMap delegates;
+  if (s->gl_backend) {
+    auto delegate = CreateGPUDelegate(s);
+    if (!delegate) {
+      LOG(INFO) << "GPU acceleration is unsupported on this platform.";
+    } else {
+      delegates.emplace("GPU", std::move(delegate));
+    }
+  }
+
+  if (s->accel) {
+    auto delegate = evaluation::CreateNNAPIDelegate();
+    if (!delegate) {
+      LOG(INFO) << "NNAPI acceleration is unsupported on this platform.";
+    } else {
+      delegates.emplace("NNAPI", evaluation::CreateNNAPIDelegate());
+    }
+  }
+  return delegates;
+}
 
 // Takes a file name, and loads a list of labels from it, one per line, and
 // returns a vector of the strings. It pads with empty strings so the length
@@ -102,6 +149,7 @@ void RunInference(Settings* s) {
     LOG(FATAL) << "\nFailed to mmap model " << s->model_name << "\n";
     exit(-1);
   }
+  s->model = model.get();
   LOG(INFO) << "Loaded model " << s->model_name << "\n";
   model->error_reporter();
   LOG(INFO) << "resolved reporter\n";
@@ -114,22 +162,7 @@ void RunInference(Settings* s) {
     exit(-1);
   }
 
-  std::unique_ptr<StatefulNnApiDelegate> nnapi_delegate;
-  if (s->delegate == kNnapiDelegate) {
-    StatefulNnApiDelegate::Options options;
-    options.execution_preference =
-        static_cast<StatefulNnApiDelegate::Options::ExecutionPreference>(
-        s->preferences);
-
-    nnapi_delegate.reset(new StatefulNnApiDelegate(options));
-    if (!nnapi_delegate) {
-      LOG(FATAL) << "Failed to construct NNAPI delegate\n";
-      exit(-1);
-    }
-    interpreter->ModifyGraphWithDelegate(nnapi_delegate.get());
-  }
-
-  interpreter->UseNNAPI(s->accel);
+  interpreter->UseNNAPI(s->old_accel);
   interpreter->SetAllowFp16PrecisionForFp32(s->allow_fp16);
 
   if (s->verbose) {
@@ -153,20 +186,11 @@ void RunInference(Settings* s) {
     interpreter->SetNumThreads(s->number_of_threads);
   }
 
-  int width = s->width;
-  int height = s->height;
-  int channels = s->channels;
-
-  std::vector<uint8_t> in;
-  size_t position = s->input_name.size() - 4;
-
-  if (s->input_name.compare(position, 4, ".bmp") == 0) {
-    in = read_bmp(s->input_name, &width, &height, &channels);
-  } else if (s->input_name.compare(position, 4, ".rgb") == 0) {
-    in = read_rgb(s->input_name, width, height, channels);
-  } else {
-    in = read_blob(s->input_name, width, height, channels);
-  }
+  int image_width = 224;
+  int image_height = 224;
+  int image_channels = 3;
+  std::vector<uint8_t> in = read_bmp(s->input_bmp_name, &image_width,
+                                     &image_height, &image_channels, s);
 
   int input = interpreter->inputs()[0];
   if (s->verbose) LOG(INFO) << "input: " << input << "\n";
@@ -177,6 +201,16 @@ void RunInference(Settings* s) {
   if (s->verbose) {
     LOG(INFO) << "number of inputs: " << inputs.size() << "\n";
     LOG(INFO) << "number of outputs: " << outputs.size() << "\n";
+  }
+
+  auto delegates_ = GetDelegates(s);
+  for (const auto& delegate : delegates_) {
+    if (interpreter->ModifyGraphWithDelegate(delegate.second.get()) !=
+        kTfLiteOk) {
+      LOG(FATAL) << "Failed to apply " << delegate.first << " delegate.";
+    } else {
+      LOG(INFO) << "Applied " << delegate.first << " delegate.";
+    }
   }
 
   if (interpreter->AllocateTensors() != kTfLiteOk) {
@@ -196,12 +230,12 @@ void RunInference(Settings* s) {
     case kTfLiteFloat32:
       s->input_floating = true;
       resize<float>(interpreter->typed_tensor<float>(input), in.data(),
-                    height, width, channels, wanted_height,
+                    image_height, image_width, image_channels, wanted_height,
                     wanted_width, wanted_channels, s);
       break;
     case kTfLiteUInt8:
       resize<uint8_t>(interpreter->typed_tensor<uint8_t>(input), in.data(),
-                      height, width, channels, wanted_height,
+                      image_height, image_width, image_channels, wanted_height,
                       wanted_width, wanted_channels, s);
       break;
     default:
@@ -210,15 +244,17 @@ void RunInference(Settings* s) {
       exit(-1);
   }
 
-  // Dump input tensor for verification.
-  std::ofstream file("/data/tf/input.bin", std::ios::out | std::ios::binary);
-  file.write(reinterpret_cast<char*>(interpreter->tensor(input)->data.uint8), in.size());
-  file.close();
-
-  profiling::Profiler* profiler = new profiling::Profiler();
-  interpreter->SetProfiler(profiler);
+  auto profiler =
+      absl::make_unique<profiling::Profiler>(s->max_profiling_buffer_entries);
+  interpreter->SetProfiler(profiler.get());
 
   if (s->profiling) profiler->StartProfiling();
+  if (s->loop_count > 1)
+    for (int i = 0; i < s->number_of_warmup_runs; i++) {
+      if (interpreter->Invoke() != kTfLiteOk) {
+        LOG(FATAL) << "Failed to invoke tflite!\n";
+      }
+    }
 
   struct timeval start_time, stop_time;
   gettimeofday(&start_time, nullptr);
@@ -242,38 +278,6 @@ void RunInference(Settings* s) {
           interpreter->node_and_registration(op_index);
       const TfLiteRegistration registration = node_and_registration->second;
       PrintProfilingInfo(profile_events[i], op_index, registration);
-    }
-  }
-
-  if (s->dump_tensors) {
-    for (int i = 0; i < interpreter->outputs().size(); i++) {
-      int outnode = interpreter->outputs()[i];
-      auto tensor = interpreter->tensor(outnode);
-
-      TfLiteIntArray* outdims = tensor->dims;
-      int outsize = 1;
-      for(int d = 0; d < outdims->size; d++) {
-        outsize *= outdims->data[outdims->size - d - 1];
-      }
-      LOG(INFO) << "OUTNODE: " << outnode << " SIZE: " << outsize << "\n";
-
-      std::stringstream filename("/data/tf/");
-      filename << "tflite_out_tensor_" << outnode
-               << ((s->delegate == kNnapiDelegate) ? "_nnapi_" : "")
-               << ".bin";
-      std::ofstream tfile(filename.str(), std::ios::out | std::ios::binary);
-
-      char* data = reinterpret_cast<char*>(tensor->data.uint8);
-      switch (interpreter->tensor(outnode)->type) {
-        case kTfLiteFloat32: {
-          tfile.write(data, outsize * 4);
-          break;
-        }
-        case kTfLiteUInt8: {
-          tfile.write(data, outsize * 1);
-          break;
-        }
-      }
     }
   }
 
@@ -318,21 +322,20 @@ void display_usage() {
   LOG(INFO)
       << "label_image\n"
       << "--accelerated, -a: [0|1], use Android NNAPI or not\n"
-      << "--delegate, -d: use delegate [0-NONE, 1-NNAPI]\n"
-      << "--preferences, -e: preferences for the choosen delegate in hex\n"
-      << "--allow_fp16, -f: [0|1], allow running fp32 models with fp16 not\n"
+      << "--old_accelerated, -d: [0|1], use old Android NNAPI delegate or not\n"
+      << "--allow_fp16, -f: [0|1], allow running fp32 models with fp16 or not\n"
       << "--count, -c: loop interpreter->Invoke() for certain times\n"
+      << "--gl_backend, -g: use GL GPU Delegate on Android\n"
       << "--input_mean, -b: input mean\n"
       << "--input_std, -s: input standard deviation\n"
       << "--image, -i: image_name.bmp\n"
-      << "--dimensions, -n: 320x320x3\n"
       << "--labels, -l: labels for the model\n"
       << "--tflite_model, -m: model_name.tflite\n"
       << "--profiling, -p: [0|1], profiling or not\n"
       << "--num_results, -r: number of results to show\n"
-      << "--dump_tensors, -u: [0|1] Dump output tensors\n"
       << "--threads, -t: number of threads\n"
       << "--verbose, -v: [0|1] print more information\n"
+      << "--warmup_runs, -w: number of warmup runs\n"
       << "\n";
 }
 
@@ -343,13 +346,11 @@ int Main(int argc, char** argv) {
   while (1) {
     static struct option long_options[] = {
         {"accelerated", required_argument, nullptr, 'a'},
-        {"delegate", required_argument, nullptr, 'd'},
-        {"preferences", required_argument, nullptr, 'e'},
+        {"old_accelerated", required_argument, nullptr, 'd'},
         {"allow_fp16", required_argument, nullptr, 'f'},
         {"count", required_argument, nullptr, 'c'},
         {"verbose", required_argument, nullptr, 'v'},
         {"image", required_argument, nullptr, 'i'},
-        {"dimensions", required_argument, nullptr, 'n'},
         {"labels", required_argument, nullptr, 'l'},
         {"tflite_model", required_argument, nullptr, 'm'},
         {"profiling", required_argument, nullptr, 'p'},
@@ -357,13 +358,16 @@ int Main(int argc, char** argv) {
         {"input_mean", required_argument, nullptr, 'b'},
         {"input_std", required_argument, nullptr, 's'},
         {"num_results", required_argument, nullptr, 'r'},
-        {"dump_tensors", required_argument, nullptr, 'u'},
+        {"max_profiling_buffer_entries", required_argument, nullptr, 'e'},
+        {"warmup_runs", required_argument, nullptr, 'w'},
+        {"gl_backend", required_argument, nullptr, 'g'},
         {nullptr, 0, nullptr, 0}};
 
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
-    c = getopt_long(argc, argv, "a:b:c:d:e:f:i:n:l:m:p:r:u:s:t:v:", long_options,
+    c = getopt_long(argc, argv,
+                    "a:b:c:d:e:f:g:i:l:m:p:r:s:t:v:w:", long_options,
                     &option_index);
 
     /* Detect the end of the options. */
@@ -373,14 +377,6 @@ int Main(int argc, char** argv) {
       case 'a':
         s.accel = strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
         break;
-      case 'd':
-        s.delegate =
-            strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
-        break;
-      case 'e':
-        s.preferences =
-            strtol(optarg, nullptr, 16);  // NOLINT(runtime/deprecated_fn)
-        break;
       case 'b':
         s.input_mean = strtod(optarg, nullptr);
         break;
@@ -388,17 +384,24 @@ int Main(int argc, char** argv) {
         s.loop_count =
             strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
         break;
+      case 'd':
+        s.old_accel =
+            strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
+        break;
+      case 'e':
+        s.max_profiling_buffer_entries =
+            strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
+        break;
       case 'f':
         s.allow_fp16 =
             strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
         break;
-      case 'i':
-        s.input_name = optarg;
+      case 'g':
+        s.gl_backend =
+            strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
         break;
-      case 'n':
-        s.width = strtol(std::strtok(optarg, "x"), nullptr, 10);
-        s.height = strtol(std::strtok(nullptr, "x"), nullptr, 10);
-        s.channels = strtol(std::strtok(nullptr, "x"), nullptr, 10);
+      case 'i':
+        s.input_bmp_name = optarg;
         break;
       case 'l':
         s.labels_file_name = optarg;
@@ -414,10 +417,6 @@ int Main(int argc, char** argv) {
         s.number_of_results =
             strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
         break;
-      case 'u':
-        s.dump_tensors =
-            strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
-        break;
       case 's':
         s.input_std = strtod(optarg, nullptr);
         break;
@@ -427,6 +426,10 @@ int Main(int argc, char** argv) {
         break;
       case 'v':
         s.verbose =
+            strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
+        break;
+      case 'w':
+        s.number_of_warmup_runs =
             strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
         break;
       case 'h':

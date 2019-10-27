@@ -4,19 +4,17 @@ load(
     "//tensorflow:tensorflow.bzl",
     "py_test",
 )
+load("//tensorflow:tensorflow.bzl", "tf_cc_binary")
 
 package(
     default_visibility = ["//tensorflow/tools/api:__subpackages__"],
+    licenses = ["notice"],  # Apache 2.0
 )
-
-licenses(["notice"])  # Apache 2.0
 
 exports_files([
     "README.txt",
     "API_UPDATE_WARNING.txt",
 ])
-
-load("//tensorflow:tensorflow.bzl", "tf_cc_binary")
 
 py_test(
     name = "api_compatibility_test",
@@ -50,6 +48,7 @@ py_test(
     srcs = ["deprecation_test.py"],
     python_version = "PY2",
     srcs_version = "PY2AND3",
+    tags = ["v1only"],
     deps = [
         "//tensorflow:tensorflow_py",
         "//tensorflow/python:client_testlib",
