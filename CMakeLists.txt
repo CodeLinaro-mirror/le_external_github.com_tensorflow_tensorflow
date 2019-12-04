@@ -8,4 +8,11 @@ set(CMAKE_CXX_STANDARD 14)
 
 include_directories(.)
 
+install(
+    DIRECTORY tensorflow/core
+    DESTINATION include/tflite/tensorflow
+    FILES_MATCHING
+    PATTERN "*.h"
+)
+
 add_subdirectory(tensorflow/lite)

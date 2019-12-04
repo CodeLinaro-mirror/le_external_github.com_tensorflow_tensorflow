@@ -190,7 +190,7 @@ void RunInference(Settings* s) {
   int image_height = 224;
   int image_channels = 3;
   std::vector<uint8_t> in = read_bmp(s->input_bmp_name, &image_width,
-                                     &image_height, &image_channels, s);
+                                     &image_height, &image_channels);
 
   int input = interpreter->inputs()[0];
   if (s->verbose) LOG(INFO) << "input: " << input << "\n";

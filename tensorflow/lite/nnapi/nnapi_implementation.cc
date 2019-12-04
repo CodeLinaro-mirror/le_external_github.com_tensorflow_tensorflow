@@ -105,7 +105,7 @@ int ASharedMemory_create(const char* name, size_t size) {
 
 const NnApi LoadNnApi() {
   NnApi nnapi = {};
-  nnapi.android_sdk_version = 28;
+  nnapi.android_sdk_version = 0;
 
 #ifdef __ANDROID__
   nnapi.android_sdk_version = GetAndroidSdkVersion();
@@ -115,6 +115,8 @@ const NnApi LoadNnApi() {
     nnapi.nnapi_exists = false;
     return nnapi;
   }
+#elif __LE_NN__
+  nnapi.android_sdk_version = __ANDROID_API__;
 #endif  // __ANDROID__
 
   void* libneuralnetworks = nullptr;

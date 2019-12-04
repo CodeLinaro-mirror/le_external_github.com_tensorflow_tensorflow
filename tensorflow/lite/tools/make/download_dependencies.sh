@@ -29,7 +29,7 @@ if [ ! -f $BZL_FILE_PATH ]; then
   exit 1;
 fi
 
-EIGEN_URL="$(grep -o 'http.*bitbucket.org/eigen/eigen/get/.*tar\.gz' "${BZL_FILE_PATH}" | grep -v mirror.tensorflow | head -n1)"
+EIGEN_URL="https://storage.googleapis.com/mirror.tensorflow.org/bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz"
 GEMMLOWP_URL="$(grep -o 'https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/gemmlowp/.*zip' "${BZL_FILE_PATH}" | head -n1)"
 GOOGLETEST_URL="https://github.com/google/googletest/archive/release-1.8.0.tar.gz"
 ABSL_URL="$(grep -o 'https://github.com/abseil/abseil-cpp/.*tar.gz' "${BZL_FILE_PATH}" | head -n1)"
@@ -61,12 +61,12 @@ download_and_extract() {
   echo "downloading ${url}" >&2
   mkdir -p "${dir}"
   if [[ "${url}" == *gz ]]; then
-    curl -Ls "${url}" | tar -C "${dir}" --strip-components=1 -xz
+    curl --insecure -Ls "${url}" | tar -C "${dir}" --strip-components=1 -xz
   elif [[ "${url}" == *zip ]]; then
     tempdir=$(mktemp -d)
     tempdir2=$(mktemp -d)
 
-    curl -L ${url} > ${tempdir}/zipped.zip
+    curl --insecure -L ${url} > ${tempdir}/zipped.zip
     unzip ${tempdir}/zipped.zip -d ${tempdir2}
 
     # If the zip file contains nested directories, extract the files from the

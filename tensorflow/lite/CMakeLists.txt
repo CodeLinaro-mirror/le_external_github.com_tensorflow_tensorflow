@@ -2,6 +2,7 @@ include_directories(tools/make/downloads/eigen)
 include_directories(tools/make/downloads/gemmlowp)
 include_directories(tools/make/downloads/farmhash/src)
 include_directories(tools/make/downloads/flatbuffers/include)
+include_directories(tools/make/downloads/absl)
 
 add_definitions(-DEIGEN_MPL2_ONLY)
 add_definitions(-fPIC)
@@ -9,6 +10,8 @@ add_definitions(-funsafe-math-optimizations)
 add_definitions(-ftree-vectorize)
 add_definitions(-flax-vector-conversions)
 add_definitions(-fomit-frame-pointer)
+add_definitions(-D__LE_NN__)
+add_definitions(-D__ANDROID_API__=29)
 
 set (TFLITE_TARGET_NAME tensorflow-lite)
 
@@ -26,26 +29,33 @@ FILE(GLOB TFLITE_SOURCE_FILES
     kernels/internal/*.c
     kernels/internal/optimized/*.c
     kernels/internal/reference/*.c
+    nnapi/*.cc
     tools/make/downloads/farmhash/src/farmhash.cc
     tools/make/downloads/fft2d/fftsg.c
+    tools/make/downloads/fft2d/fftsg2d.c
     tools/make/downloads/flatbuffers/src/util.cpp
+    tools/evaluation/utils.cc
     nnapi/nnapi_implementation.cc
     delegates/nnapi/nnapi_delegate.cc
+    delegates/nnapi/quant_lstm_sup.cc
     profiling/time.cc
     experimental/c/*.c
     experimental/c/*.cc
+    experimental/resource_variable/*.cc
     experimental/ruy/allocator.cc
     experimental/ruy/block_map.cc
     experimental/ruy/blocking_counter.cc
     experimental/ruy/context.cc
     experimental/ruy/detect_dotprod.cc
-    experimental/ruy/kernel.cc
-    experimental/ruy/pack.cc
+    experimental/ruy/kernel_arm32.cc
+    experimental/ruy/kernel_arm64.cc
+    experimental/ruy/pack_arm.cc
     experimental/ruy/pmu.cc
     experimental/ruy/thread_pool.cc
     experimental/ruy/trace.cc
     experimental/ruy/trmul.cc
     experimental/ruy/tune.cc
+    experimental/ruy/wait.cc
 )
 
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*test.cc$")
@@ -54,13 +64,14 @@ list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*/*/*test.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*/*/*/*test.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*experimental/c/*test.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*test_util.cc$")
-list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*test_main.cc$")
-list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*test_util*.cc$")
+list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*test_.*.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*kernels/test_util.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*mmap_allocation_disabled.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*nnapi_delegate_disabled.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*minimal_logging_android.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*minimal_logging_ios.cc$")
+list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*kernels/subgraph_test_util.cc$")
+list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*nnapi/nnapi_implementation_disabled.cc$")
 
 add_library(${TFLITE_TARGET_NAME} SHARED ${TFLITE_SOURCE_FILES})
 
@@ -81,7 +92,7 @@ install(
 
 install(
     DIRECTORY .
-    DESTINATION include/tensorflow/lite
+    DESTINATION include/tflite/tensorflow/lite
     FILES_MATCHING
     PATTERN "*.h"
 )
