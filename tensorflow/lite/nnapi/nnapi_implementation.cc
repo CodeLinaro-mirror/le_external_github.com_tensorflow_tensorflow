@@ -19,6 +19,7 @@ limitations under the License.
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sstream>
 
 #include <cstdlib>
 
@@ -78,7 +79,13 @@ void* LoadFunction(void* handle, const char* name, bool optional) {
 #ifndef __ANDROID__
 // Add /dev/shm implementation of shared memory for non-Android platforms
 int ASharedMemory_create(const char* name, size_t size) {
-  int fd = shm_open(name, O_RDWR | O_CREAT, 0644);
+  size_t pid = getpid();
+  size_t tid = pthread_self();
+  static size_t cnt = 0;
+  std::stringstream file_name;
+  file_name << name << '_' << pid << '_' << tid <<  '_' << cnt++;
+
+  int fd = shm_open(file_name.str().c_str(), O_RDWR | O_CREAT, 0644);
   if (fd < 0) {
     return fd;
   }
