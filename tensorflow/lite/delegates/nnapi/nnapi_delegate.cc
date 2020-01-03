@@ -3240,10 +3240,6 @@ TfLiteStatus NNAPIDelegateKernel::BuildGraph(
   RETURN_TFLITE_ERROR_IF_NN_ERROR(
       context, nnapi_->ANeuralNetworksModel_finish(nn_model_.get()));
 
-  // TODO Fix allocation issue properly
-  total_input_byte_size = 2000000;
-  total_output_byte_size = 2000000;
-
   // Create shared memory pool for inputs and outputs.
   nn_input_memory_.reset(
       new NNMemory(nnapi_, "input_pool", total_input_byte_size));
