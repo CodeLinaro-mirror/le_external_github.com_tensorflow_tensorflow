@@ -12,6 +12,7 @@ add_definitions(-flax-vector-conversions)
 add_definitions(-fomit-frame-pointer)
 add_definitions(-D__LE_NN__)
 add_definitions(-D__ANDROID_API__=29)
+add_definitions(-DTFLITE_PROFILING_ENABLED)
 
 set (TFLITE_TARGET_NAME tensorflow-lite)
 
