@@ -1026,10 +1026,10 @@ NNAPIDelegateKernel::MappingFn NNAPIDelegateKernel::Map(
         auto builtin = reinterpret_cast<TfLitePoolParams*>(node->builtin_data);
         // TODO(b/138756912): Large filter window would overflow on the
         // reference CPU path.
-        if (!is_accelerator_specified &&
-            (builtin->filter_width * builtin->filter_height > 256)) {
-          return nullptr;
-        }
+        //if (!is_accelerator_specified &&
+        //    (builtin->filter_width * builtin->filter_height > 256)) {
+        //  return nullptr;
+        //}
         return [](const NNAPIOpMappingArgs& mapping_args)
                    -> ANeuralNetworksOperationType {
           mapping_args.builder->AddPoolingParams(
