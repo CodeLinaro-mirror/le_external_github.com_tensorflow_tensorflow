@@ -42,6 +42,7 @@ struct Settings {
   int number_of_results = 5;
   int max_profiling_buffer_entries = 1024;
   int number_of_warmup_runs = 2;
+  int preferences = 0;
 };
 
 }  // namespace label_image
