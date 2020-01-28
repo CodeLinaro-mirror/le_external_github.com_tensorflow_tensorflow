@@ -1271,12 +1271,6 @@ NNAPIDelegateKernel::MappingFn NNAPIDelegateKernel::Map(
           // Require width == height due to driver differences in NNAPI < 1.2
           return nullptr;
         }
-        auto builtin =
-            reinterpret_cast<TfLiteResizeBilinearParams*>(node->builtin_data);
-        if (builtin->align_corners) {
-          // NNAPI does not support align_corners == true.
-          return nullptr;
-        }
         if (android_sdk_version < kMinSdkVersionForNNAPI12 &&
             input.type != kTfLiteFloat32) {
           // NNAPI 1.0 & 1.1 only supports float input.
@@ -1288,8 +1282,14 @@ NNAPIDelegateKernel::MappingFn NNAPIDelegateKernel::Map(
           auto& output = mapping_args.context->tensors[output_id];
           const int output_height = output.dims->data[1];
           const int output_width = output.dims->data[2];
+
+          auto builtin =
+              reinterpret_cast<TfLiteResizeBilinearParams*>(mapping_args.node->builtin_data);
+
+          const bool align_corners = builtin->align_corners;
           mapping_args.builder->AddScalarInt32Operand(output_width);
           mapping_args.builder->AddScalarInt32Operand(output_height);
+          mapping_args.builder->AddScalarBoolOperand(align_corners);
           return ANEURALNETWORKS_RESIZE_BILINEAR;
         };
       }
