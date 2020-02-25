@@ -116,7 +116,8 @@ TfLiteStatus GetQuantizedConvolutionMultipler(TfLiteContext* context,
     const double bias_scale = bias->params.scale;
     TF_LITE_ENSURE(context,
                    std::abs(input_product_scale - bias_scale) <=
-                       1e-6 * std::min(input_product_scale, bias_scale));
+                       1e-6 * std::max(1.0,
+                           std::min(input_product_scale, bias_scale)));
   }
   return GetQuantizedConvolutionMultipler(context, input, filter, output,
                                           multiplier);
