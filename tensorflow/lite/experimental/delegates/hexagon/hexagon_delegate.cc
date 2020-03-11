@@ -144,7 +144,6 @@ class HexagonDelegate : public TfLiteDelegate {
                         "libhexagon_interface and libhexagon_nn_skel. "
                         "You must use compatible versions. "
                         "Refer to Tensorflow Lite Hexagon Delegate Guide.");
-        return false;
       }
       if (hexagon_nn_version != hexagon_interface_version) {
         TFLITE_LOG_PROD(
@@ -153,7 +152,6 @@ class HexagonDelegate : public TfLiteDelegate {
             "libhexagon_skel %d vs %d. You must use compatible versions. "
             "Refer to Tensorflow Lite Hexagon Delegate Guide.",
             hexagon_interface_version, hexagon_nn_version);
-        return false;
       }
     }
     return hexagon_nn->hexagon_nn_is_device_supported &&
@@ -201,7 +199,7 @@ void TfLiteHexagonInit() { tflite::HexagonDelegateKernel::InitState(); }
 void TfLiteHexagonInitWithPath(const char* lib_directory_path) {
   if (lib_directory_path != nullptr) {
     std::string env_var_value = lib_directory_path;
-    env_var_value += ";/system/lib/rfsa/adsp;/system/vendor/lib/rfsa/adsp;/dsp";
+    env_var_value += ";/system/lib/rfsa/adsp;/system/vendor/lib/rfsa/adsp;/dsp;/usr/lib/rfsa/adsp;";
     setenv("ADSP_LIBRARY_PATH", env_var_value.c_str(), 1 /* overwrite */);
   }
   tflite::HexagonDelegateKernel::InitState();

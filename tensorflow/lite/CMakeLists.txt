@@ -4,6 +4,7 @@ include_directories(tools/make/downloads/farmhash/src)
 include_directories(tools/make/downloads/flatbuffers/include)
 include_directories(tools/make/downloads/googletest/googletest/include)
 include_directories(tools/make/downloads/googletest/googlemock/include)
+include_directories(experimental/delegates/hexnn)
 
 add_definitions(-DEIGEN_MPL2_ONLY)
 add_definitions(-fPIC)
@@ -65,6 +66,12 @@ FILE(GLOB TFLITE_SOURCE_FILES
     experimental/ruy/trmul.cc
     experimental/ruy/tune.cc
     experimental/ruy/wait.cc
+    experimental/delegates/hexagon/hexagon_implementation.cc
+    experimental/delegates/hexagon/utils.cc
+    experimental/delegates/hexagon/hexagon_delegate.cc
+    experimental/delegates/hexagon/hexagon_delegate.h
+    experimental/delegates/hexagon/hexagon_delegate_kernel.cc
+    experimental/delegates/hexagon/builders/*.cc
 )
 
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*test.cc$")
@@ -171,3 +178,7 @@ add_subdirectory(tools)
 add_subdirectory(tools/make/downloads/absl)
 add_subdirectory(tools/make/downloads/googletest)
 add_subdirectory(experimental/ruy/profiler)
+
+####################################################################################
+
+add_subdirectory(experimental/delegates/hexnn/hexagon_nn_interface)

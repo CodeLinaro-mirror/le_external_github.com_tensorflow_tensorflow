@@ -1,0 +1,20 @@
+set (TFLITE_TARGET_NAME hexagon_interface)
+
+FILE(GLOB TFLITE_SOURCE_FILES
+  hexagon_nn_interface.c
+  hexagon_nn_stub.c
+)
+
+add_library(${TFLITE_TARGET_NAME} SHARED ${TFLITE_SOURCE_FILES})
+
+target_include_directories(${TFLITE_TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/../hexagon)
+
+target_link_libraries(${TFLITE_TARGET_NAME} cdsprpc)
+
+install(
+    TARGETS ${TFLITE_TARGET_NAME}
+    LIBRARY DESTINATION ${TFLITE_INSTALL_LIBDIR}
+    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
+                GROUP_EXECUTE GROUP_READ
+                WORLD_EXECUTE WORLD_READ
+)

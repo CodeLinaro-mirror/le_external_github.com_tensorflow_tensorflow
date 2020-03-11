@@ -140,7 +140,7 @@ Interpreter::TfLiteDelegatePtr CreateGPUDelegate() {
 
 Interpreter::TfLiteDelegatePtr CreateHexagonDelegate(
     const std::string& library_directory_path, bool profiling) {
-#if (defined(__ANDROID__)) && (defined(__arm__) || defined(__aarch64__))
+#if (defined(__ANDROID__) || defined(__LE_NN__)) && (defined(__arm__) || defined(__aarch64__))
   if (library_directory_path.empty()) {
     TfLiteHexagonInit();
   } else {
