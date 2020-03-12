@@ -63,7 +63,7 @@ std::vector<uint8_t> decode_bmp(const uint8_t* input, int row_size, int width,
           break;
         default:
           LOG(FATAL) << "Unexpected number of channels: " << channels;
-          break;
+          exit(-1);
       }
     }
   }
