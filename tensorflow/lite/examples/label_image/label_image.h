@@ -16,6 +16,8 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_EXAMPLES_LABEL_IMAGE_LABEL_IMAGE_H_
 #define TENSORFLOW_LITE_EXAMPLES_LABEL_IMAGE_LABEL_IMAGE_H_
 
+#include <vector>
+
 #include "tensorflow/lite/model.h"
 #include "tensorflow/lite/string_type.h"
 
@@ -36,14 +38,18 @@ struct Settings {
   float input_std = 127.5f;
   string model_name = "./mobilenet_quant_v1_224.tflite";
   tflite::FlatBufferModel* model;
-  string input_bmp_name = "./grace_hopper.bmp";
+  std::vector<string> input_names = {"./grace_hopper.bmp"};
   string labels_file_name = "./labels.txt";
   string input_layer_type = "uint8_t";
-  int number_of_threads = 4;
+  int number_of_threads = -1;
   int number_of_results = 5;
   int max_profiling_buffer_entries = 1024;
   int number_of_warmup_runs = 2;
+  int num_models = 1;
   int preferences = 0;
+  std::vector<int> preferences_list;
+  float frequency = 1000;
+  std::vector<float> frequency_list;
 };
 
 }  // namespace label_image
