@@ -18,6 +18,12 @@ limitations under the License.
 
 #include <vector>
 
+// clang-format off
+// Required for IS_MOBILE_PLATFORM
+#include "tensorflow/core/platform/platform.h"
+// clang-format on
+
+#include "absl/types/optional.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/attr_value_util.h"
 #include "tensorflow/core/framework/function.pb.h"
@@ -34,6 +40,9 @@ limitations under the License.
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/protobuf/config.pb.h"
+#if !defined(IS_MOBILE_PLATFORM)
+#include "tensorflow/core/protobuf/remote_tensor_handle.pb.h"
+#endif  // IS_MOBILE_PLATFORM
 
 namespace tensorflow {
 
@@ -619,6 +628,15 @@ class FunctionLibraryRuntime {
     // If set, partitioned functions will be added to `graph_collector`.
     // `graph_collector` must be alive during the call to Instantiate.
     GraphCollector* graph_collector = nullptr;
+
+    // Indicates whether the multi-device function backend should default the
+    // placement of ops without request device to `target`.
+    bool default_device_to_target = true;
+
+    // If true, the optimized Graph will be stored so that
+    // `FunctionLibraryRuntime::DebugString(handle)` contains the optimized
+    // Graph. Otherwise, the unoptimized function Graph will be returned.
+    bool include_optimized_graph_in_debug_string = false;
   };
   typedef uint64 Handle;
   virtual Status Instantiate(const string& function_name, AttrSlice attrs,
@@ -647,13 +665,15 @@ class FunctionLibraryRuntime {
   // "handle".
   //
   // If function execution succeeds, "done" is called with OK and
-  // "*rets" is filled with the function's return values. Otheriwse,
+  // "*rets" is filled with the function's return values. Otherwise,
   // "done" is called with an error status.
   //
   // Does not take ownership of "rets".
   // In the cross-process scenario, runner isn't used for making the Async
   // RPC calls.
   struct Options {
+    Options() {}
+    explicit Options(const int64 step_id) : step_id(step_id) {}
     // Choose a step ID that is guaranteed not to clash with any
     // Session-generated step ID. DirectSession only generates
     // non-negative step IDs (contiguous, starting from 0), and
@@ -661,7 +681,13 @@ class FunctionLibraryRuntime {
     // always 0, so a negative random step ID should suffice.
     const int64 step_id = -std::abs(static_cast<int64>(random::New64()));
 
-    Rendezvous* rendezvous = nullptr;
+    // op_id of the function running in eager mode. Set when we want to copy
+    // remote outputs lazily. All components of a remote multi-device function
+    // should use the same op_id, in order to correctly map remote output
+    // tensors to the remote TensorHandles in the default device.
+    absl::optional<int64> op_id = absl::nullopt;
+
+    RendezvousInterface* rendezvous = nullptr;
     CancellationManager* cancellation_manager = nullptr;
     CollectiveExecutor* collective_executor = nullptr;
     ScopedStepContainer* step_container = nullptr;
@@ -696,11 +722,13 @@ class FunctionLibraryRuntime {
   virtual void Run(const Options& opts, Handle handle,
                    CallFrameInterface* call_frame, DoneCallback done) = 0;
 
-  // Creates a "kernel" for the given node def "ndef".
+  // Creates a "kernel" for the given NodeProperties "props".
   //
   // If succeeds, returns OK and the caller takes the ownership of the
   // returned "*kernel". Otherwise, returns an error.
-  virtual Status CreateKernel(const NodeDef& ndef, OpKernel** kernel) = 0;
+  virtual Status CreateKernel(
+      const std::shared_ptr<const NodeProperties>& props,
+      OpKernel** kernel) = 0;
 
   // Returns true iff the function named `function_name` is stateful.
   //
@@ -732,6 +760,9 @@ class FunctionLibraryRuntime {
 
   // Returns the environment on which the function executes.
   virtual Env* env() = 0;
+
+  // Returns the ConfigProto passed to the session used to create the function.
+  virtual const ConfigProto* const config_proto() = 0;
 
   // Returns a debug string showing the definition of the function of
   // 'handle'.
@@ -778,9 +809,7 @@ class FunctionLibraryRuntime {
 // address spaces.
 string Canonicalize(const string& funcname, AttrSlice attrs,
                     const FunctionLibraryRuntime::InstantiateOptions& options);
-inline string Canonicalize(const string& funcname, AttrSlice attrs) {
-  return Canonicalize(funcname, attrs, {});
-}
+string Canonicalize(const string& funcname, AttrSlice attrs);
 
 const FunctionLibraryRuntime::Handle kInvalidHandle = -1;
 const FunctionLibraryRuntime::LocalHandle kInvalidLocalHandle = -1;
@@ -791,12 +820,15 @@ class CustomKernelCreator {
 
   // Given a NodeDef 'node_def' and the function library runtime 'flr',
   // validate if the class supports creating such a kernel.
-  virtual bool CanCreateKernel(const FunctionLibraryRuntime& flr,
-                               const NodeDef& node_def) const = 0;
+  virtual bool CanCreateKernel(
+      const FunctionLibraryRuntime& flr,
+      const std::shared_ptr<const NodeProperties>& props) const = 0;
 
   // Given a supported NodeDef, returns a kernel that computes the node.
-  virtual Status CreateKernel(FunctionLibraryRuntime* flr, const NodeDef& ndef,
-                              std::unique_ptr<OpKernel>* kernel) const = 0;
+  virtual Status CreateKernel(
+      FunctionLibraryRuntime* flr,
+      const std::shared_ptr<const NodeProperties>& props,
+      std::unique_ptr<OpKernel>* kernel) const = 0;
 };
 
 // Used to instantiate and run functions in a distributed system.
@@ -805,17 +837,29 @@ class DistributedFunctionLibraryRuntime {
   virtual ~DistributedFunctionLibraryRuntime() {}
 
   // The _target attr in attrs determines where the function is instantiated.
-  virtual Status Instantiate(
+  virtual void Instantiate(
       const string& function_name, const FunctionLibraryDefinition& lib_def,
       AttrSlice attrs,
       const FunctionLibraryRuntime::InstantiateOptions& options,
-      FunctionLibraryRuntime::LocalHandle* handle) = 0;
+      FunctionLibraryRuntime::LocalHandle* handle,
+      FunctionLibraryRuntime::DoneCallback done) = 0;
 
   // opts.runner isn't used for execution.
   virtual void Run(const FunctionLibraryRuntime::Options& opts,
                    FunctionLibraryRuntime::LocalHandle handle,
                    gtl::ArraySlice<Tensor> args, std::vector<Tensor>* rets,
                    FunctionLibraryRuntime::DoneCallback done) = 0;
+
+#if !defined(IS_MOBILE_PLATFORM)
+  // TODO(yujingzhang): Support outputting tensors on remote devices.
+  virtual void Run(const FunctionLibraryRuntime::Options& opts,
+                   FunctionLibraryRuntime::LocalHandle handle,
+                   std::vector<eager::RemoteTensorHandle>* args,
+                   FunctionLibraryRuntime::DoneCallback done) {
+    done(errors::Unimplemented("Unimplemented."));
+  }
+#endif  // IS_MOBILE_PLATFORM
+
   virtual void CleanUp(uint64 step_id,
                        FunctionLibraryRuntime::LocalHandle handle,
                        FunctionLibraryRuntime::DoneCallback done) = 0;

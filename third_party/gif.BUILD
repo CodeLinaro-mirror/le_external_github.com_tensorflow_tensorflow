@@ -26,11 +26,6 @@ cc_library(
             "S_IWRITE=S_IWUSR",
             "S_IEXEC=S_IXUSR",
         ],
-        "@org_tensorflow//tensorflow:linux_aarch64": [
-            "S_IREAD=S_IRUSR",
-            "S_IWRITE=S_IWUSR",
-            "S_IEXEC=S_IXUSR",
-        ],
         "//conditions:default": [],
     }),
     includes = ["."],

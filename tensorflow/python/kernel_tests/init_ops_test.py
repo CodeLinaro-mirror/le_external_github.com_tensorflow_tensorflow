@@ -538,11 +538,10 @@ class RangeTest(test.TestCase):
             0, 0, 1, dtype=dtypes.float64).dtype, dtypes.float64)
 
   def testMixedDType(self):
-    # Test case for GitHub issue 29867
-    with self.cached_session(use_gpu=True):
-      tf_ans = math_ops.range(constant_op.constant(5), dtype=dtypes.float32)
-      self.assertAllEqual(
-          self.evaluate(tf_ans), np.arange(np.int32(5), dtype=np.float32))
+    # Test case for GitHub issue 35710
+    tf_ans = math_ops.range(
+        constant_op.constant(4, dtype=dtypes.int32), dtype=dtypes.int64)
+    self.assertAllEqual(self.evaluate(tf_ans), np.array([0, 1, 2, 3]))
 
 
 # TODO(vrv): move to sequence_ops_test?

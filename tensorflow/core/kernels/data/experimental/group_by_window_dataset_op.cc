@@ -108,10 +108,11 @@ class GroupByWindowDatasetOp : public UnaryDatasetOpKernel {
       return "GroupByWindowDatasetOp::Dataset";
     }
 
-    bool IsStateful() const override {
-      return captured_key_func_->IsStateful() ||
-             captured_reduce_func_->IsStateful() ||
-             captured_window_size_func_->IsStateful() || input_->IsStateful();
+    Status CheckExternalState() const override {
+      TF_RETURN_IF_ERROR(captured_key_func_->CheckExternalState());
+      TF_RETURN_IF_ERROR(captured_reduce_func_->CheckExternalState());
+      TF_RETURN_IF_ERROR(captured_window_size_func_->CheckExternalState());
+      return input_->CheckExternalState();
     }
 
    protected:
@@ -181,7 +182,7 @@ class GroupByWindowDatasetOp : public UnaryDatasetOpKernel {
 
       Status Initialize(IteratorContext* ctx) override {
         TF_RETURN_IF_ERROR(
-            dataset()->input_->MakeIterator(ctx, prefix(), &input_impl_));
+            dataset()->input_->MakeIterator(ctx, this, prefix(), &input_impl_));
         TF_RETURN_IF_ERROR(dataset()->captured_key_func_->Instantiate(
             ctx, &instantiated_key_func_));
         TF_RETURN_IF_ERROR(dataset()->captured_reduce_func_->Instantiate(
@@ -479,7 +480,7 @@ class GroupByWindowDatasetOp : public UnaryDatasetOpKernel {
 
         // Create an iterator for the dataset that was returned by `f`.
         return returned_dataset->MakeIterator(
-            ctx, strings::StrCat(prefix(), "::Reduce"),
+            ctx, this, strings::StrCat(prefix(), "::Reduce"),
             &current_group_iterator_);
       }
 

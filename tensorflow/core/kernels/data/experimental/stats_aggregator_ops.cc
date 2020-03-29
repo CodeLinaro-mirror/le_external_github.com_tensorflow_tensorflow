@@ -185,7 +185,7 @@ class StatsAggregatorImplV2 : public StatsAggregator {
       // If we create stats_aggregator twice in a program, we would end up with
       // already existing resource. In this case emitting an error if a
       // `summary_writer_resource` is present is not the intended behavior, we
-      // could either Unref the existing sumary_writer_resource or not set the
+      // could either Unref the existing summary_writer_resource or not set the
       // new resource at all.
     }
     summary_writer_interface_ = summary_writer_interface;
@@ -201,8 +201,7 @@ class StatsAggregatorImplV2 : public StatsAggregator {
     }
     std::unique_ptr<Event> e{new Event};
     e->set_step(steps);
-    tensorflow::Env* env = tensorflow::Env::Default();
-    e->set_wall_time(env->NowMicros() / 1.0e6);
+    e->set_wall_time(EnvTime::NowMicros() / 1.0e6);
     // maybe expose GetWallTime in SummaryWriterInterface
     Summary::Value* v = e->mutable_summary()->add_value();
     v->set_tag(name);
@@ -218,8 +217,7 @@ class StatsAggregatorImplV2 : public StatsAggregator {
     }
     std::unique_ptr<Event> e{new Event};
     e->set_step(steps);
-    tensorflow::Env* env = tensorflow::Env::Default();
-    e->set_wall_time(env->NowMicros() / 1.0e6);
+    e->set_wall_time(EnvTime::NowMicros() / 1.0e6);
     Summary::Value* v = e->mutable_summary()->add_value();
     v->set_tag(name);
     histogram.EncodeToProto(v->mutable_histo(), false /* Drop zero buckets */);
@@ -267,7 +265,7 @@ class StatsAggregatorSummaryOp : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({}), &summary_t));
     Summary summary;
     resource->stats_aggregator()->EncodeToProto(&summary);
-    summary_t->scalar<string>()() = summary.SerializeAsString();
+    summary_t->scalar<tstring>()() = summary.SerializeAsString();
   }
 };
 
@@ -289,11 +287,11 @@ class StatsAggregatorSetSummaryWriterOp : public OpKernel {
     OP_REQUIRES(ctx,
                 TensorShapeUtils::IsScalar(summary_resource_handle_t.shape()),
                 errors::InvalidArgument("resource_handle must be a scalar"));
-    core::RefCountPtr<SummaryWriterInterface> sumamry_resource;
+    core::RefCountPtr<SummaryWriterInterface> summary_resource;
     OP_REQUIRES_OK(
-        ctx, LookupResource(ctx, HandleFromInput(ctx, 1), &sumamry_resource));
+        ctx, LookupResource(ctx, HandleFromInput(ctx, 1), &summary_resource));
     TF_CHECK_OK(
-        resource->stats_aggregator()->SetSummaryWriter(sumamry_resource.get()));
+        resource->stats_aggregator()->SetSummaryWriter(summary_resource.get()));
   }
 };
 

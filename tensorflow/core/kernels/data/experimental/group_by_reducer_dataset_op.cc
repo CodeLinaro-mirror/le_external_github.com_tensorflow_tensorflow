@@ -112,11 +112,12 @@ class GroupByReducerDatasetOp : public UnaryDatasetOpKernel {
       return "GroupByReducerDatasetOp::Dataset";
     }
 
-    bool IsStateful() const override {
-      return captured_key_func_->IsStateful() ||
-             captured_init_func_->IsStateful() ||
-             captured_reduce_func_->IsStateful() ||
-             captured_finalize_func_->IsStateful() || input_->IsStateful();
+    Status CheckExternalState() const override {
+      TF_RETURN_IF_ERROR(captured_key_func_->CheckExternalState());
+      TF_RETURN_IF_ERROR(captured_init_func_->CheckExternalState());
+      TF_RETURN_IF_ERROR(captured_reduce_func_->CheckExternalState());
+      TF_RETURN_IF_ERROR(captured_finalize_func_->CheckExternalState());
+      return input_->CheckExternalState();
     }
 
    protected:
@@ -200,7 +201,7 @@ class GroupByReducerDatasetOp : public UnaryDatasetOpKernel {
 
       Status Initialize(IteratorContext* ctx) override {
         TF_RETURN_IF_ERROR(
-            dataset()->input_->MakeIterator(ctx, prefix(), &input_impl_));
+            dataset()->input_->MakeIterator(ctx, this, prefix(), &input_impl_));
         TF_RETURN_IF_ERROR(dataset()->captured_key_func_->Instantiate(
             ctx, &instantiated_key_func_));
         TF_RETURN_IF_ERROR(dataset()->captured_init_func_->Instantiate(

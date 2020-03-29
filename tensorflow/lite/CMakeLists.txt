@@ -3,6 +3,7 @@ include_directories(tools/make/downloads/gemmlowp)
 include_directories(tools/make/downloads/farmhash/src)
 include_directories(tools/make/downloads/flatbuffers/include)
 include_directories(tools/make/downloads/absl)
+include_directories(tools/make/downloads/googletest/googletest/include)
 
 add_definitions(-DEIGEN_MPL2_ONLY)
 add_definitions(-fPIC)
@@ -30,26 +31,32 @@ FILE(GLOB TFLITE_SOURCE_FILES
     kernels/internal/*.c
     kernels/internal/optimized/*.c
     kernels/internal/reference/*.c
-    nnapi/*.cc
     tools/make/downloads/farmhash/src/farmhash.cc
     tools/make/downloads/fft2d/fftsg.c
     tools/make/downloads/fft2d/fftsg2d.c
     tools/make/downloads/flatbuffers/src/util.cpp
     tools/evaluation/utils.cc
+    tools/optimize/sparsity/*.cc
     nnapi/nnapi_implementation.cc
+    nnapi/nnapi_util.cc
     delegates/nnapi/nnapi_delegate.cc
     delegates/nnapi/quant_lstm_sup.cc
     profiling/time.cc
+    profiling/memory_info.cc
+    profiling/profile_summarizer.cc
+    profiling/profile_summary_formatter.cc
+    ../core/util/stats_calculator.cc
     experimental/c/*.c
     experimental/c/*.cc
-    experimental/resource_variable/*.cc
+    experimental/resource/resource_variable.cc
     experimental/ruy/allocator.cc
     experimental/ruy/block_map.cc
     experimental/ruy/blocking_counter.cc
     experimental/ruy/context.cc
-    experimental/ruy/detect_dotprod.cc
+    experimental/ruy/prepacked_cache.cc
     experimental/ruy/kernel_arm32.cc
     experimental/ruy/kernel_arm64.cc
+    experimental/ruy/detect_arm.cc
     experimental/ruy/pack_arm.cc
     experimental/ruy/pmu.cc
     experimental/ruy/thread_pool.cc
@@ -61,9 +68,11 @@ FILE(GLOB TFLITE_SOURCE_FILES
 
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*test.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*/*test.cc$")
+list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*/*tool.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*/*/*test.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*/*/*/*test.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*experimental/c/*test.cc$")
+list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*experimental/ruy/tune_tool.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*test_util.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*/*test_.*.cc$")
 list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*kernels/test_util.cc$")
@@ -137,5 +146,5 @@ install(
                 WORLD_EXECUTE WORLD_READ
 )
 
-add_subdirectory(profiling)
-add_subdirectory(tools)
+#add_subdirectory(profiling)
+#add_subdirectory(tools)

@@ -3,8 +3,7 @@
 set(ENV_TIME_TARGET_NAME env_time)
 
 set(ENV_TIME_SOURCE_FILES
-  env_time.cc
-  posix/env_time.cc
+  default/env_time.cc
 )
 
 add_library(${ENV_TIME_TARGET_NAME} SHARED ${ENV_TIME_SOURCE_FILES})

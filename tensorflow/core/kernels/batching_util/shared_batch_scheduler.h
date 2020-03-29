@@ -17,6 +17,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_KERNELS_BATCHING_UTIL_SHARED_BATCH_SCHEDULER_H_
 
 #include <stddef.h>
+
 #include <deque>
 #include <functional>
 #include <list>
@@ -35,6 +36,7 @@ limitations under the License.
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/thread_annotations.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/profiler/lib/traceme.h"
 
 namespace tensorflow {
 namespace serving {
@@ -232,7 +234,7 @@ class Queue {
   using SchedulableBatchCallback = std::function<void()>;
   Queue(const typename SharedBatchScheduler<TaskType>::QueueOptions& options,
         Env* env, ProcessBatchCallback process_batch_callback,
-        SchedulableBatchCallback schdulable_batch_callback);
+        SchedulableBatchCallback schedulable_batch_callback);
 
   // Illegal to destruct unless the queue is empty.
   ~Queue();
@@ -526,6 +528,8 @@ Queue<TaskType>::~Queue() {
 
 template <typename TaskType>
 Status Queue<TaskType>::Schedule(std::unique_ptr<TaskType>* task) {
+  profiler::TraceMe trace_me(
+      [task] { return strings::StrCat("Schedule:", (*task)->size()); });
   if ((*task)->size() > options_.max_batch_size) {
     return errors::InvalidArgument("Task size ", (*task)->size(),
                                    " is larger than maximum batch size ",
@@ -616,6 +620,8 @@ std::unique_ptr<Batch<TaskType>> Queue<TaskType>::ScheduleBatch() {
 
 template <typename TaskType>
 void Queue<TaskType>::ProcessBatch(std::unique_ptr<Batch<TaskType>> batch) {
+  profiler::TraceMe trace_me(
+      [&batch] { return strings::StrCat("ProcessBatch:", batch->size()); });
   process_batch_callback_(std::move(batch));
 
   {

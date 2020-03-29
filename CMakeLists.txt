@@ -19,4 +19,4 @@ install(
 )
 
 add_subdirectory(tensorflow/lite)
-add_subdirectory(tensorflow/core)
+#add_subdirectory(tensorflow/core)

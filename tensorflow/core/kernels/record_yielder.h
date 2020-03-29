@@ -38,7 +38,7 @@ namespace tensorflow {
 //   2) each record is yielded only once within every epoch;
 //   3) the order in which records are yielded is highly randomized.
 //   4) the peak memory usage is roughly avg record size *
-//      (opts.bufsize + opts.parellelism * 16).
+//      (opts.bufsize + opts.parallelism * 16).
 //
 // Usage example:
 //   RecordYielder::Options opts;
@@ -90,7 +90,7 @@ class RecordYielder {
   RecordYielder& operator=(const RecordYielder&) = delete;
 
   // Yields one 'value'.
-  Status YieldOne(string* value);
+  Status YieldOne(tstring* value);
 
   // Returns the current epoch number.
   int64 current_epoch() const { return epoch_; }
