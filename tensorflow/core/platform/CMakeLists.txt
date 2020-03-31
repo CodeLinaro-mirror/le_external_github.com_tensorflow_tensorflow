@@ -27,7 +27,7 @@ set(TF_LOGGING_SOURCE_FILES
 add_library(${TF_LOGGING_TARGET_NAME} SHARED ${TF_LOGGING_SOURCE_FILES})
 
 target_link_libraries(${TF_LOGGING_TARGET_NAME}
-  absl
+  absl::base
   ${ENV_TIME_TARGET_NAME}
 )
 

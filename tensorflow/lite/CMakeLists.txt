@@ -2,8 +2,8 @@ include_directories(tools/make/downloads/eigen)
 include_directories(tools/make/downloads/gemmlowp)
 include_directories(tools/make/downloads/farmhash/src)
 include_directories(tools/make/downloads/flatbuffers/include)
-include_directories(tools/make/downloads/absl)
 include_directories(tools/make/downloads/googletest/googletest/include)
+include_directories(tools/make/downloads/googletest/googlemock/include)
 
 add_definitions(-DEIGEN_MPL2_ONLY)
 add_definitions(-fPIC)
@@ -14,6 +14,7 @@ add_definitions(-fomit-frame-pointer)
 add_definitions(-D__LE_NN__)
 add_definitions(-D__ANDROID_API__=29)
 add_definitions(-DTFLITE_PROFILING_ENABLED)
+add_definitions(-DBUILD_TESTING=OFF)
 
 set (TFLITE_TARGET_NAME tensorflow-lite)
 
@@ -146,5 +147,27 @@ install(
                 WORLD_EXECUTE WORLD_READ
 )
 
-#add_subdirectory(profiling)
-#add_subdirectory(tools)
+########################### minimal_logging ################################
+set(MINIMAL_LOGGING_TARGET_NAME minimal_logging)
+
+set(MINIMAL_LOGGING_SOURCE_FILES
+  minimal_logging_default.cc
+  minimal_logging.cc
+)
+
+add_library(${MINIMAL_LOGGING_TARGET_NAME} SHARED ${MINIMAL_LOGGING_SOURCE_FILES})
+
+install(
+    TARGETS ${MINIMAL_LOGGING_TARGET_NAME}
+    LIBRARY DESTINATION ${TFLITE_INSTALL_LIBDIR}
+    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
+                GROUP_EXECUTE GROUP_READ
+                WORLD_EXECUTE WORLD_READ
+)
+
+####################################################################################
+add_subdirectory(profiling)
+add_subdirectory(tools)
+add_subdirectory(tools/make/downloads/absl)
+add_subdirectory(tools/make/downloads/googletest)
+add_subdirectory(experimental/ruy/profiler)

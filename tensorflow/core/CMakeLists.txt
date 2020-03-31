@@ -12,7 +12,6 @@ add_library(${JPEG_INTERNAL_TARGET_NAME} SHARED
 )
 
 target_link_libraries(${JPEG_INTERNAL_TARGET_NAME}
-    absl
     jpeg
     tf_logging
 )

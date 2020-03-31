@@ -64,11 +64,18 @@ set(BENCHMARK_TFLITE_MODEL_TARGET_NAME benchmark_tflite_model_lib)
 
 set(BENCHMARK_TFLITE_MODEL_SOURCE_FILES
     benchmark_tflite_model.cc
+    profiling_listener.cc
+    nnapi_delegate_provider.cc
+    gpu_delegate_provider.cc
+    hexagon_delegate_provider.cc
 )
 
 add_library(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} SHARED ${BENCHMARK_TFLITE_MODEL_SOURCE_FILES})
 
 target_link_libraries(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} ${TFLITE_TARGET_NAME}
+    absl::base
+    absl::strings
+    ruy_profiler
     profile_summarizer
     benchmark_model_lib
 )
@@ -151,14 +158,16 @@ set(BENCHMARK_TARGET_NAME benchmark_test)
 
 set(BENCHMARK_SOURCE_FILES
     benchmark_test.cc
+    benchmark_performance_options.cc
 )
 
 add_executable(${BENCHMARK_TARGET_NAME} ${BENCHMARK_SOURCE_FILES})
 
 target_link_libraries(${BENCHMARK_TARGET_NAME}
+    benchmark_tflite_model_lib
     evaluation_utils
     gtest
-    benchmark_tflite_model_lib
+    absl::algorithm
 )
 
 install(
@@ -168,7 +177,6 @@ install(
                 GROUP_EXECUTE GROUP_READ
                 WORLD_EXECUTE WORLD_READ
 )
-
 
 ########################### benchmark_utils_test ################################
 set(BENCHMARK_UTILS_TARGET_NAME benchmark_utils_test)

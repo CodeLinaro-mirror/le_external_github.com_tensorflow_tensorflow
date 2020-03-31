@@ -10,6 +10,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fno-short-enums -Ofast -Wl
 set(CMAKE_CXX_STANDARD 14)
 
 include_directories(.)
+include_directories(tensorflow/lite/tools/make/downloads/absl)
 
 install(
     DIRECTORY tensorflow/core
@@ -19,4 +20,4 @@ install(
 )
 
 add_subdirectory(tensorflow/lite)
-#add_subdirectory(tensorflow/core)
+add_subdirectory(tensorflow/core)

@@ -1,5 +1,5 @@
-add_subdirectory(proto)
-add_subdirectory(stages)
+#add_subdirectory(proto)
+#add_subdirectory(stages)
 
 ########################### utils #############################
 set(UTILS_TARGET_NAME evaluation_utils)
