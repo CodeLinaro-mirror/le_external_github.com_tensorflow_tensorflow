@@ -112,7 +112,8 @@ void ResultsWriter::OnSingleImageEvaluationComplete(
   writer_->Flush();
 
   auto now_us = tflite::profiling::time::NowMicros();
-  if ((now_us - last_logged_time_us_) >= kLogDelayUs) {
+  if (((now_us - last_logged_time_us_) >= kLogDelayUs) ||
+      (num_evaluated == total_num_images_)) {
     last_logged_time_us_ = now_us;
     double current_percent = num_evaluated * 100.0 / total_num_images_;
     LOG(ERROR) << "Evaluated " << num_evaluated << "/" << total_num_images_
