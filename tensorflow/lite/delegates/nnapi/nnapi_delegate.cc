@@ -1625,10 +1625,6 @@ bool NNAPIDelegateKernel::Validate(
       }
       auto builtin =
           reinterpret_cast<TfLiteResizeBilinearParams*>(node->builtin_data);
-      Expect(!builtin->align_corners,
-             NNAPIValidationFailureType::kUnsupportedOperandValue,
-             "NNAPI does not support align_corners == true.", &val_ctx);
-      // TODO(b/147696142): Update when NNAPI delegate can support TF2 behavior.
       Expect(!builtin->half_pixel_centers,
              NNAPIValidationFailureType::kUnsupportedOperandValue,
              "NNAPI does not support half_pixel_centers == true.", &val_ctx);
@@ -2392,8 +2388,14 @@ TfLiteStatus NNAPIDelegateKernel::Map(
       auto& output = mapping_args.context->tensors[output_id];
       const int output_height = output.dims->data[1];
       const int output_width = output.dims->data[2];
+
+      auto builtin = reinterpret_cast<TfLiteResizeBilinearParams*>
+         (mapping_args.node->builtin_data);
+
+      const bool align_corners = builtin->align_corners;
       mapping_args.builder->AddScalarInt32Operand(output_width);
       mapping_args.builder->AddScalarInt32Operand(output_height);
+      mapping_args.builder->AddScalarBoolOperand(align_corners);
       *nn_op_type = ANEURALNETWORKS_RESIZE_BILINEAR;
     } break;
     case kTfLiteBuiltinResizeNearestNeighbor: {
