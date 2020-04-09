@@ -20,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/../../../.."
 
 DOWNLOADS_DIR=tensorflow/lite/tools/make/downloads
+PATCH_DIR=tensorflow/lite/tools/make/file
 BZL_FILE_PATH=tensorflow/workspace.bzl
 
 if [[ "${OSTYPE}" == "darwin"* ]]; then
@@ -111,6 +112,15 @@ download_and_extract "${FARMHASH_URL}" "${DOWNLOADS_DIR}/farmhash" "${FARMHASH_S
 download_and_extract "${FLATBUFFERS_URL}" "${DOWNLOADS_DIR}/flatbuffers" "${FLATBUFFERS_SHA}"
 download_and_extract "${FFT2D_URL}" "${DOWNLOADS_DIR}/fft2d" "${FFT2D_SHA}"
 download_and_extract "${FP16_URL}" "${DOWNLOADS_DIR}/fp16"
+
+if patch -p1 -N --dry-run < \
+  ${PATCH_DIR}/0001-tensorflow-googletest-remove-headers-instalation.patch; then
+  patch -p1 < ${PATCH_DIR}/0001-tensorflow-googletest-remove-headers-instalation.patch
+else
+  echo The patch ${PATCH_DIR}/0001-tensorflow-googletest-remove-headers-instalation.patch
+  echo is NOT APPLYED!
+  exit 1
+fi
 
 replace_by_sed 's#static uint32x4_t p4ui_CONJ_XOR = vld1q_u32( conj_XOR_DATA );#static uint32x4_t p4ui_CONJ_XOR; // = vld1q_u32( conj_XOR_DATA ); - Removed by script#' \
   "${DOWNLOADS_DIR}/eigen/Eigen/src/Core/arch/NEON/Complex.h"

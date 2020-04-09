@@ -1,0 +1,43 @@
+From 95465d5829c2de3861967077329ac25247583822 Mon Sep 17 00:00:00 2001
+From: Anton <antond@codeaurora.org>
+Date: Mon, 13 Apr 2020 20:22:40 +0300
+Subject: [PATCH] tensorflow: googletest remove headers instalation
+
+---
+ .../tools/make/downloads/googletest/googlemock/CMakeLists.txt | 4 ++--
+ .../tools/make/downloads/googletest/googletest/CMakeLists.txt | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/tensorflow/lite/tools/make/downloads/googletest/googlemock/CMakeLists.txt b/tensorflow/lite/tools/make/downloads/googletest/googlemock/CMakeLists.txt
+index beb259a2..da51e45c 100644
+--- a/tensorflow/lite/tools/make/downloads/googletest/googlemock/CMakeLists.txt
++++ b/tensorflow/lite/tools/make/downloads/googletest/googlemock/CMakeLists.txt
+@@ -105,8 +105,8 @@ endif()
+ # Install rules
+ install(TARGETS gmock gmock_main
+   DESTINATION lib)
+-install(DIRECTORY ${gmock_SOURCE_DIR}/include/gmock
+-  DESTINATION include)
++#install(DIRECTORY ${gmock_SOURCE_DIR}/include/gmock
++#  DESTINATION include)
+ 
+ ########################################################################
+ #
+diff --git a/tensorflow/lite/tools/make/downloads/googletest/googletest/CMakeLists.txt b/tensorflow/lite/tools/make/downloads/googletest/googletest/CMakeLists.txt
+index 621d0f04..2f7be989 100644
+--- a/tensorflow/lite/tools/make/downloads/googletest/googletest/CMakeLists.txt
++++ b/tensorflow/lite/tools/make/downloads/googletest/googletest/CMakeLists.txt
+@@ -104,8 +104,8 @@ endif()
+ # Install rules
+ install(TARGETS gtest gtest_main
+   DESTINATION lib)
+-install(DIRECTORY ${gtest_SOURCE_DIR}/include/gtest
+-  DESTINATION include)
++#install(DIRECTORY ${gtest_SOURCE_DIR}/include/gtest
++#  DESTINATION include)
+ 
+ ########################################################################
+ #
+-- 
+2.17.1
+
