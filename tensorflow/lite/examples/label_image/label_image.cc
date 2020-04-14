@@ -174,7 +174,7 @@ void RunInference(Settings* s) {
   tflite::InterpreterBuilder(*model, resolver)(&interpreter);
   if (!interpreter) {
     LOG(FATAL) << "Failed to construct interpreter\n";
-    exit(-1);
+    return;
   }
 
   interpreter->UseNNAPI(s->old_accel);
@@ -230,6 +230,7 @@ void RunInference(Settings* s) {
 
   if (interpreter->AllocateTensors() != kTfLiteOk) {
     LOG(FATAL) << "Failed to allocate tensors!";
+    return;
   }
 
   if (s->verbose) PrintInterpreterState(interpreter.get());
@@ -256,7 +257,7 @@ void RunInference(Settings* s) {
     default:
       LOG(FATAL) << "cannot handle input type "
                  << interpreter->tensor(input)->type << " yet";
-      exit(-1);
+      return;
   }
 
   auto profiler =
@@ -276,6 +277,7 @@ void RunInference(Settings* s) {
   for (int i = 0; i < s->loop_count; i++) {
     if (interpreter->Invoke() != kTfLiteOk) {
       LOG(FATAL) << "Failed to invoke tflite!\n";
+      return;
     }
   }
   gettimeofday(&stop_time, nullptr);
@@ -320,20 +322,21 @@ void RunInference(Settings* s) {
     default:
       LOG(FATAL) << "cannot handle output type "
                  << interpreter->tensor(output)->type << " yet";
-      exit(-1);
+      return;
   }
 
   std::vector<string> labels;
   size_t label_count;
 
   if (ReadLabelsFile(s->labels_file_name, &labels, &label_count) != kTfLiteOk)
-    exit(-1);
+    return;
 
   for (const auto& result : top_results) {
     const float confidence = result.first;
     const int index = result.second;
     LOG(INFO) << confidence << ": " << index << " " << labels[index] << "\n";
   }
+
 }
 
 void display_usage() {

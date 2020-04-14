@@ -484,6 +484,8 @@ NNMemory::NNMemory(const NnApi* nnapi, const char* name, size_t size) {
         mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0));
     nnapi_->ANeuralNetworksMemory_createFromFd(size, PROT_READ | PROT_WRITE,
                                                fd_, 0, &nn_memory_handle_);
+    string shm_name(name);
+    shm_fd_map_[fd_] = name;
   }
 }
 #else
@@ -499,6 +501,9 @@ NNMemory::~NNMemory() {
   }
   if (nn_memory_handle_) {
     nnapi_->ANeuralNetworksMemory_free(nn_memory_handle_);
+  }
+  if(shm_fd_map_.find(fd_) != shm_fd_map_.end()) {
+    shm_unlink(shm_fd_map_.at(fd_).c_str());
   }
   if (fd_ > 0) close(fd_);
 #endif

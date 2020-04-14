@@ -166,6 +166,7 @@ class NNMemory {
   size_t byte_size_ = 0;
   uint8_t* data_ptr_ = nullptr;
   ANeuralNetworksMemory* nn_memory_handle_ = nullptr;
+  std::map<int, string> shm_fd_map_;
 };
 
 
