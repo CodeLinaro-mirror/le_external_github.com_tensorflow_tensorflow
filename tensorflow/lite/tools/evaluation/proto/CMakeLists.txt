@@ -7,10 +7,12 @@ set(EVALUATION_PROCESS_PROTO_TARGET evaluation_process_proto)
 set(EVALUATION_PROCESS_PROTO_SOURCE
   ${CMAKE_CURRENT_SOURCE_DIR}/evaluation_stages.proto
   ${CMAKE_CURRENT_SOURCE_DIR}/evaluation_config.proto
+  ${CMAKE_CURRENT_SOURCE_DIR}/preprocessing_steps.proto
 )
 set(EVALUATION_PROCESS_PROTO_OUTPUT
   evaluation_stages.pb.cc
   evaluation_config.pb.cc
+  preprocessing_steps.pb.cc
 )
 
 add_custom_target(

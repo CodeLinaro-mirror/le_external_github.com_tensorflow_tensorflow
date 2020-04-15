@@ -78,10 +78,11 @@ class ImagePreprocessingConfigBuilder {
     ImagePreprocessingStepParams params;
     params.mutable_cropping_params()->set_cropping_fraction(cropping_fraction);
     params.mutable_cropping_params()->set_square_cropping(use_square_cropping);
-    config_.mutable_specification()
+    auto p = config_.mutable_specification()
         ->mutable_image_preprocessing_params()
         ->mutable_steps()
-        ->Add(std::move(params));
+        ->Add();
+    *p = params;
   }
 
   // Adds a cropping step with target size.
@@ -91,10 +92,11 @@ class ImagePreprocessingConfigBuilder {
     params.mutable_cropping_params()->mutable_target_size()->set_height(height);
     params.mutable_cropping_params()->mutable_target_size()->set_width(width);
     params.mutable_cropping_params()->set_square_cropping(use_square_cropping);
-    config_.mutable_specification()
+    auto p = config_.mutable_specification()
         ->mutable_image_preprocessing_params()
         ->mutable_steps()
-        ->Add(std::move(params));
+        ->Add();
+    *p = params;
   }
 
   // Adds a resizing step.
@@ -104,10 +106,11 @@ class ImagePreprocessingConfigBuilder {
     params.mutable_resizing_params()->set_aspect_preserving(aspect_preserving);
     params.mutable_resizing_params()->mutable_target_size()->set_height(height);
     params.mutable_resizing_params()->mutable_target_size()->set_width(width);
-    config_.mutable_specification()
+    auto p = config_.mutable_specification()
         ->mutable_image_preprocessing_params()
         ->mutable_steps()
-        ->Add(std::move(params));
+        ->Add();
+    *p = params;
   }
 
   // Adds a padding step.
@@ -116,10 +119,11 @@ class ImagePreprocessingConfigBuilder {
     params.mutable_padding_params()->mutable_target_size()->set_height(height);
     params.mutable_padding_params()->mutable_target_size()->set_width(width);
     params.mutable_padding_params()->set_padding_value(value);
-    config_.mutable_specification()
+    auto p = config_.mutable_specification()
         ->mutable_image_preprocessing_params()
         ->mutable_steps()
-        ->Add(std::move(params));
+        ->Add();
+    *p = params;
   }
 
   // Adds a square padding step.
@@ -127,10 +131,11 @@ class ImagePreprocessingConfigBuilder {
     ImagePreprocessingStepParams params;
     params.mutable_padding_params()->set_square_padding(true);
     params.mutable_padding_params()->set_padding_value(value);
-    config_.mutable_specification()
+    auto p = config_.mutable_specification()
         ->mutable_image_preprocessing_params()
         ->mutable_steps()
-        ->Add(std::move(params));
+        ->Add();
+    *p = params;
   }
 
   // Adds a subtracting means step.
@@ -141,10 +146,11 @@ class ImagePreprocessingConfigBuilder {
     params.mutable_normalization_params()->mutable_means()->set_g_mean(g_mean);
     params.mutable_normalization_params()->mutable_means()->set_b_mean(b_mean);
     params.mutable_normalization_params()->set_scale(scale);
-    config_.mutable_specification()
+    auto p = config_.mutable_specification()
         ->mutable_image_preprocessing_params()
         ->mutable_steps()
-        ->Add(std::move(params));
+        ->Add();
+    *p = params;
   }
 
   // Adds a normalization step.
@@ -152,10 +158,11 @@ class ImagePreprocessingConfigBuilder {
     ImagePreprocessingStepParams params;
     params.mutable_normalization_params()->set_channelwise_mean(mean);
     params.mutable_normalization_params()->set_scale(scale);
-    config_.mutable_specification()
+    auto p = config_.mutable_specification()
         ->mutable_image_preprocessing_params()
         ->mutable_steps()
-        ->Add(std::move(params));
+        ->Add();
+    *p = params;
   }
 
   // Adds a normalization step with default value.

@@ -25,20 +25,41 @@ install(
                 WORLD_EXECUTE WORLD_READ
 )
 
-########################### imagenet_accuracy_eval #############################
+########################### imagenet_accuracy_eval_lib #############################
 
-set(IMAGENET_ACCURACY_EVAL_TARGET_NAME imagenet_accuracy_eval)
+set(IMAGENET_ACCURACY_EVAL_LIB_TARGET_NAME imagenet_accuracy_eval_lib)
 
-set(IMAGENET_ACCURACY_EVAL_SOURCE_FILES
+set(IMAGENET_ACCURACY_EVAL_LIB_SOURCE_FILES
     imagenet_accuracy_eval.cc
 )
 
-add_executable(${IMAGENET_ACCURACY_EVAL_TARGET_NAME}
-    ${IMAGENET_ACCURACY_EVAL_SOURCE_FILES}
+add_library(${IMAGENET_ACCURACY_EVAL_LIB_TARGET_NAME} SHARED
+    ${IMAGENET_ACCURACY_EVAL_LIB_SOURCE_FILES}
 )
 
-target_link_libraries(${IMAGENET_ACCURACY_EVAL_TARGET_NAME}
+target_link_libraries(${IMAGENET_ACCURACY_EVAL_LIB_TARGET_NAME}
     imagenet_model_evaluator
+)
+
+install(
+    TARGETS ${IMAGENET_ACCURACY_EVAL_LIB_TARGET_NAME}
+    LIBRARY DESTINATION ${TFLITE_INSTALL_LIBDIR}
+    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
+                GROUP_EXECUTE GROUP_READ
+                WORLD_EXECUTE WORLD_READ
+)
+
+########################### imagenet_accuracy_eval #############################
+set(IMAGENET_ACCURACY_EVAL_TARGET_NAME imagenet_accuracy_eval)
+
+set(IMAGENET_ACCURACY_EVAL_TARGET_SOURCE_FILES
+    imagenet_accuracy_eval_main.cc
+)
+
+add_executable(${IMAGENET_ACCURACY_EVAL_TARGET_NAME} ${IMAGENET_ACCURACY_EVAL_TARGET_SOURCE_FILES})
+
+target_link_libraries(${IMAGENET_ACCURACY_EVAL_TARGET_NAME}
+    imagenet_accuracy_eval_lib
 )
 
 install(

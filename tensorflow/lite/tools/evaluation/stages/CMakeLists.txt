@@ -37,6 +37,7 @@ add_library(${IMAGE_PREPROCESSING_STAGE_TARGET_NAME} SHARED
 )
 
 target_link_libraries(${IMAGE_PREPROCESSING_STAGE_TARGET_NAME}
+    absl::strings
     evaluation_proto
     tf_logging
     time

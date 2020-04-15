@@ -29,4 +29,4 @@ install(
 
 add_subdirectory(benchmark)
 add_subdirectory(evaluation)
-#add_subdirectory(accuracy/ilsvrc)
+add_subdirectory(accuracy/ilsvrc)
