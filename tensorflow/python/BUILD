@@ -635,6 +635,7 @@ tf_python_pybind_extension(
             "//tensorflow/core:eager_service_proto_cc",
             "//tensorflow/core:master_proto_cc",
             "//tensorflow/core:worker_proto_cc",
+            "//tensorflow/core:version_lib",
         ],
         otherwise = [
             "//tensorflow/core:eager_service_proto_cc_headers_only",
@@ -6475,6 +6476,7 @@ tf_py_test(
         # multiprocessing can be flaky in the internal google
         # environment, so we disable it there.
         "notap",
+        "no_oss_py38",
         # The multiprocessing module behaves differently on
         # windows, so we disable this test on windows.
         "no_windows",

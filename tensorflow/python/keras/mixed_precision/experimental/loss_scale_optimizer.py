@@ -228,6 +228,9 @@ class LossScaleOptimizer(optimizer_v2.OptimizerV2):
     grads = self._optimizer.get_gradients(loss, params)
     return self.get_unscaled_gradients(grads)
 
+  def _create_all_weights(self, var_list):
+    self._optimizer._create_all_weights(var_list)    # pylint: disable=protected-access
+
   def apply_gradients(self,
                       grads_and_vars,
                       name=None,
@@ -328,6 +331,9 @@ class LossScaleOptimizer(optimizer_v2.OptimizerV2):
 
   def set_weights(self, weights):
     return self._optimizer.set_weights(weights)
+
+  def _aggregate_gradients(self, grads_and_vars):
+    return self._optimizer._aggregate_gradients(grads_and_vars)  # pylint: disable=protected-access
 
   # For the most part, we only expose methods in the base OptimizerV2, not
   # individual subclasses like Adam. However, although "learning_rate" and "lr"

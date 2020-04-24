@@ -16,11 +16,11 @@ limitations under the License.
 #include <memory>
 
 #include "Python.h"
-#include "include/pybind11/chrono.h"
-#include "include/pybind11/complex.h"
-#include "include/pybind11/functional.h"
-#include "include/pybind11/pybind11.h"
-#include "include/pybind11/stl.h"
+#include "pybind11/chrono.h"
+#include "pybind11/complex.h"
+#include "pybind11/functional.h"
+#include "pybind11/pybind11.h"
+#include "pybind11/stl.h"
 #include "tensorflow/c/c_api.h"
 #include "tensorflow/c/c_api_experimental.h"
 #include "tensorflow/c/eager/c_api.h"
@@ -1071,7 +1071,8 @@ PYBIND11_MODULE(_pywrap_tfe, m) {
     return capsule;
   });
 
-  m.def("TFE_FromDlpackCapsule", [](const py::capsule& pycapsule) {
+  m.def("TFE_FromDlpackCapsule", [](const py::capsule& pycapsule,
+                                    const py::handle& context) {
     tensorflow::Safe_TF_StatusPtr status =
         tensorflow::make_safe(TF_NewStatus());
     if (absl::string_view(pycapsule.name()) !=
@@ -1082,8 +1083,9 @@ PYBIND11_MODULE(_pywrap_tfe, m) {
           absl::string_view(pycapsule.name()));
       tensorflow::MaybeRaiseRegisteredFromTFStatus(status.get());
     }
-    TFE_TensorHandle* thandle =
-        tensorflow::TFE_HandleFromDLPack(pycapsule, status.get());
+
+    TFE_TensorHandle* thandle = tensorflow::TFE_HandleFromDLPack(
+        pycapsule, status.get(), tensorflow::InputTFE_Context(context));
 
     tensorflow::MaybeRaiseRegisteredFromTFStatus(status.get());
 
