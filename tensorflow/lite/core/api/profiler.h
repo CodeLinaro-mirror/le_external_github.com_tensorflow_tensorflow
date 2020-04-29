@@ -66,9 +66,13 @@ class Profiler {
              /*event_subgraph_index*/ 0);
   }
 
-  virtual void AddEvent(const char* tag, EventType event_type,
-                        uint32_t event_metadata, uint64_t start, uint64_t end,
-                        uint32_t event_subgraph_index) {}
+  virtual void AddEvent(__attribute__((unused)) const char* tag,
+                        __attribute__((unused)) EventType event_type,
+                        __attribute__((unused)) uint32_t event_metadata,
+                        __attribute__((unused)) uint64_t start,
+                        __attribute__((unused)) uint64_t end,
+                        __attribute__((unused)) uint32_t event_subgraph_index) {
+  }
 };
 
 // Adds a profile event to `profiler` that begins with the construction
