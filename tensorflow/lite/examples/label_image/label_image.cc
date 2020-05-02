@@ -99,7 +99,10 @@ namespace label_image {
   return std::make_pair(mean, sigma);
 }
 
-double get_us(struct timeval t) { return (t.tv_sec * 1000000 + t.tv_usec); }
+double get_us(struct timeval t) {
+  return static_cast<double> (t.tv_sec) * 1000000 +
+      static_cast<double> (t.tv_usec);
+}
 
 using TfLiteDelegatePtr = tflite::Interpreter::TfLiteDelegatePtr;
 using TfLiteDelegatePtrMap = std::map<std::string, TfLiteDelegatePtr>;
