@@ -25,6 +25,7 @@ add_custom_command(
   COMMAND protobuf::protoc
       --cpp_out=${TFLITE_TOP_BINARY_DIR}
       --proto_path=${TFLITE_TOP_SOURCE_DIR}
+      --python_out=${TFLITE_TOP_BINARY_DIR}
       ${EVALUATION_PROCESS_PROTO_SOURCE}
   DEPENDS ${EVALUATION_PROCESS_PROTO_SOURCE} protobuf::protoc
   COMMENT ""
