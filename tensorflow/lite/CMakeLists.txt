@@ -178,7 +178,5 @@ add_subdirectory(tools)
 add_subdirectory(tools/make/downloads/absl)
 add_subdirectory(tools/make/downloads/googletest)
 add_subdirectory(experimental/ruy/profiler)
-
-####################################################################################
-
 add_subdirectory(experimental/delegates/hexnn/hexagon_nn_interface)
+add_subdirectory(delegates/xnnpack)

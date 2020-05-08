@@ -68,6 +68,7 @@ set(BENCHMARK_TFLITE_MODEL_SOURCE_FILES
     nnapi_delegate_provider.cc
     gpu_delegate_provider.cc
     hexagon_delegate_provider.cc
+    xnnpack_delegate_provider.cc
 )
 
 add_library(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} SHARED ${BENCHMARK_TFLITE_MODEL_SOURCE_FILES})
@@ -78,6 +79,7 @@ target_link_libraries(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} ${TFLITE_TARGET_NAME
     ruy_profiler
     profile_summarizer
     benchmark_model_lib
+    xnnpack_delegate
 )
 
 install(
