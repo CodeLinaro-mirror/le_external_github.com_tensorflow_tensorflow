@@ -25,7 +25,9 @@ limitations under the License.
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <sstream>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -479,13 +481,23 @@ NNMemory::NNMemory(const NnApi* nnapi, const char* name, size_t size) {
   if (name && size > 0) {
     nnapi_ = nnapi;
     byte_size_ = size;
-    fd_ = nnapi_->ASharedMemory_create(name, size);
+
+    std::stringstream shm_name_stream;
+    size_t pid = getpid();
+    size_t tid = pthread_self();
+    static size_t cnt = 0;
+    shm_name_stream << name << '_' << pid << '_' << tid <<  '_' << cnt++;
+    std::string shm_name = shm_name_stream.str();
+
+    {
+      std::unique_lock<std::mutex> lk(map_mutex_);
+      fd_ = nnapi_->ASharedMemory_create(shm_name.c_str(), size);
+      shm_fd_map_[fd_] = shm_name;
+    }
     data_ptr_ = reinterpret_cast<uint8_t*>(
         mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0));
     nnapi_->ANeuralNetworksMemory_createFromFd(size, PROT_READ | PROT_WRITE,
                                                fd_, 0, &nn_memory_handle_);
-    string shm_name(name);
-    shm_fd_map_[fd_] = name;
   }
 }
 #else
@@ -502,8 +514,11 @@ NNMemory::~NNMemory() {
   if (nn_memory_handle_) {
     nnapi_->ANeuralNetworksMemory_free(nn_memory_handle_);
   }
-  if(shm_fd_map_.find(fd_) != shm_fd_map_.end()) {
-    shm_unlink(shm_fd_map_.at(fd_).c_str());
+  {
+    std::unique_lock<std::mutex> lk(map_mutex_);
+    if(shm_fd_map_.find(fd_) != shm_fd_map_.end()) {
+      shm_unlink(shm_fd_map_.at(fd_).c_str());
+    }
   }
   if (fd_ > 0) close(fd_);
 #endif

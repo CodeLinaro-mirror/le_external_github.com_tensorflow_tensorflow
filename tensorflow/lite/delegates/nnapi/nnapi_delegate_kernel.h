@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <map>
 #include <memory>
+#include <mutex>
 
 #include "tensorflow/lite/allocation.h"
 #include "tensorflow/lite/c/common.h"
@@ -166,7 +167,8 @@ class NNMemory {
   size_t byte_size_ = 0;
   uint8_t* data_ptr_ = nullptr;
   ANeuralNetworksMemory* nn_memory_handle_ = nullptr;
-  std::map<int, string> shm_fd_map_;
+  std::map<int, std::string> shm_fd_map_;
+  std::mutex map_mutex_;
 };
 
 
