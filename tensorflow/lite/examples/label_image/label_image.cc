@@ -573,7 +573,6 @@ void RunInference(Settings* s) {
       break;
     default:
       LOG(FATAL) << "Unsupported parser: " << s->parser << "\n";
-      exit(-1);
   }
 
   // signal and wait for others to quit
@@ -583,8 +582,6 @@ void RunInference(Settings* s) {
     finished_cv.notify_one();
     finished_cv.wait(lk, [&s] { return num_finished == s->num_models; });
   }
-
-  if (rc < 0) exit(rc);
 }
 
 void display_usage() {
