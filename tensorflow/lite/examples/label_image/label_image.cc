@@ -264,6 +264,7 @@ int ParseClassification(tflite::Interpreter *interpreter, Settings* s) {
     const int index = result.second;
     LOG(INFO) << confidence << ": " << index << " " << labels[index] << "\n";
   }
+  return 0;
 }
 
 int ParseDetection(tflite::Interpreter *interpreter, Settings* s,
@@ -319,6 +320,7 @@ int ParseDetection(tflite::Interpreter *interpreter, Settings* s,
                  << interpreter->tensor(input)->type << " yet";
       return -1;
   }
+  return 0;
 }
 
 
@@ -512,6 +514,12 @@ void RunInference(Settings* s) {
         quit = true;
       }
     }
+
+    // this is for limiting inference rate, applicable only when -J valus is set
+    float time_del = time_between_ms - time_ms ;
+    if (time_del > 0) {
+      usleep(time_del * 1000);
+    }
   }
 
   auto mean_std = get_mean_std(times);
@@ -524,12 +532,6 @@ void RunInference(Settings* s) {
         " max freq=" << 1000 / mean_std.first <<
         "\n";
   }
-
-  gettimeofday(&stop_time, nullptr);
-  LOG(INFO) << "invoked \n";
-  LOG(INFO) << "average time: "
-            << (get_us(stop_time) - get_us(start_time)) / (s->loop_count * 1000)
-            << " ms \n";
 
   if (s->profiling) {
     profiler->StopProfiling();
@@ -605,6 +607,7 @@ void display_usage() {
       << "--verbose, -v: [0|1] print more information\n"
       << "--warmup_runs, -w: number of warmup runs\n"
       << "--frequency, -J: [comma-separated] desired frequency for model(s)\n"
+      << "--accelerator_list, -A: [comma-separated] accelrator list where \n\t 0: CPU only \n\t 1: Android NNAPI \n\t 2: Hexagon Delegate \n\t 3: GPU Delegate\n"
       << "--parser, -n: Select parser type. 0 - classification, 1 - detection\n"
       << "--dump_tensors, -u: [0|1] Dump output tensors\n"
       << "--threshold, -y: Threshold float value\n"
@@ -636,6 +639,7 @@ int Main(int argc, char** argv) {
         {"gl_backend", required_argument, nullptr, 'g'},
         {"hexagon_delegate", required_argument, nullptr, 'j'},
         {"frequency", required_argument, nullptr, 'J'},
+        {"accelerator_list", required_argument, nullptr, 'A'},
         {"parser", required_argument, nullptr, 'n'},
         {"dump_tensors", required_argument, nullptr, 'u'},
         {"threshold", required_argument, nullptr, 'y'},
@@ -645,7 +649,7 @@ int Main(int argc, char** argv) {
     int option_index = 0;
 
     c = getopt_long(argc, argv,
-                    "a:b:c:d:e:f:g:i:j:l:m:n:p:r:s:t:u:v:w:x:y:J:", long_options,
+                    "a:b:c:d:e:f:g:i:j:l:m:n:p:r:s:t:u:v:w:x:y:J:A:", long_options,
                     &option_index);
 
     /* Detect the end of the options. */
@@ -653,7 +657,7 @@ int Main(int argc, char** argv) {
 
     switch (c) {
       case 'a':
-        s.accel = strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
+        s.accel = strtol(optarg, nullptr, 10);
         break;
       case 'x': {
           auto pref_str = parse_comma_separated(std::string(optarg));
@@ -743,6 +747,9 @@ int Main(int argc, char** argv) {
           }
         }
         break;
+      case 'A':
+        s.accelerator_list = optarg;
+        break;
       case 'y':
         s.threshold =
             std::stof(optarg);
@@ -757,10 +764,12 @@ int Main(int argc, char** argv) {
     }
   }
 
-
   // Parse the models if more than one comma separated
   auto models = parse_comma_separated(s.model_name);
   s.num_models = models.size();
+  auto labels_files = parse_comma_separated(s.labels_file_name);
+  int labels_file_count = labels_files.size();
+  auto accel_list = parse_comma_separated(s.accelerator_list);
   LOG(INFO) << "Found " << s.num_models << " models to run.\n";
 
   if (s.num_models == 1) {
@@ -772,6 +781,19 @@ int Main(int argc, char** argv) {
 
     for (int i = 0; i < s.num_models; ++i) {
       ss[i].model_name = models[i];
+      if (labels_file_count > 1) {
+        ss[i].labels_file_name = labels_files[i];
+      }
+      if (accel_list.size() > 1) {
+        int accelerator = strtol(accel_list[i].c_str(), nullptr, 10);
+        if (accelerator == 1) {
+          ss[i].accel = true;
+        } else if (accelerator == 2) {
+          ss[i].hexagon_delegate = true;
+        } else if (accelerator == 3) {
+          ss[i].gl_backend = true;
+        }
+      }
       if (s.preferences_list.size() > i) {
         ss[i].preferences = s.preferences_list[i];
       }

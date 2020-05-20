@@ -43,6 +43,7 @@ struct Settings {
   std::vector<string> input_names = {"./grace_hopper.bmp"};
   string labels_file_name = "./labels.txt";
   string input_layer_type = "uint8_t";
+  string accelerator_list = "0";
   int number_of_threads = -1;
   int number_of_results = 5;
   int max_profiling_buffer_entries = 1024;
