@@ -47,6 +47,8 @@ constexpr char kInterpreterThreadsFlag[] = "num_interpreter_threads";
 constexpr char kDelegateFlag[] = "delegate";
 constexpr char kNnapiDelegate[] = "nnapi";
 constexpr char kGpuDelegate[] = "gpu";
+constexpr char kHexagonDelegate[] = "hexagon";
+constexpr char kXnnpackDelegate[] = "xnnpack";
 constexpr char kNumRanksFlag[] = "num_ranks";
 
 template <typename T>
@@ -176,6 +178,10 @@ TfLiteStatus EvaluateModelForShard(const uint64_t shard_id,
     inference_params->set_delegate(TfliteInferenceParams::NNAPI);
   } else if (params.delegate == kGpuDelegate) {
     inference_params->set_delegate(TfliteInferenceParams::GPU);
+  } else if (params.delegate == kHexagonDelegate) {
+    inference_params->set_delegate(TfliteInferenceParams::HEXAGON);
+  } else  if (params.delegate == kXnnpackDelegate) {
+    inference_params->set_delegate(TfliteInferenceParams::XNNPACK);
   }
   classification_params->mutable_topk_accuracy_eval_params()->set_k(num_ranks);
 

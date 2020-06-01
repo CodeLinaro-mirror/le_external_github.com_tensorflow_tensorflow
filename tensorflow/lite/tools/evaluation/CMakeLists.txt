@@ -13,7 +13,11 @@ set(UTILS_SOURCE_FILES
 
 add_library(${UTILS_TARGET_NAME} SHARED ${UTILS_SOURCE_FILES})
 
-target_link_libraries(${UTILS_TARGET_NAME} ${TFLITE_TARGET_NAME})
+target_link_libraries(${UTILS_TARGET_NAME}
+    ${TFLITE_TARGET_NAME}
+    xnnpack_delegate
+    nnapi_delegate
+)
 
 install(
     TARGETS ${UTILS_TARGET_NAME}

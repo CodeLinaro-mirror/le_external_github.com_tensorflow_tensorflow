@@ -37,7 +37,6 @@ FILE(GLOB TFLITE_SOURCE_FILES
     tools/make/downloads/fft2d/fftsg.c
     tools/make/downloads/fft2d/fftsg2d.c
     tools/make/downloads/flatbuffers/src/util.cpp
-    tools/evaluation/utils.cc
     tools/optimize/sparsity/*.cc
     nnapi/nnapi_implementation.cc
     nnapi/nnapi_util.cc
@@ -125,7 +124,11 @@ set(LABEL_IMAGE_SOURCE_FILES
 
 add_executable(${LABEL_IMAGE_TARGET_NAME} ${LABEL_IMAGE_SOURCE_FILES})
 
-target_link_libraries(${LABEL_IMAGE_TARGET_NAME} ${TFLITE_TARGET_NAME})
+target_link_libraries(${LABEL_IMAGE_TARGET_NAME}
+    ${TFLITE_TARGET_NAME}
+    evaluation_utils
+    nnapi_delegate
+)
 
 install(
     TARGETS ${LABEL_IMAGE_TARGET_NAME}
@@ -178,5 +181,6 @@ add_subdirectory(tools)
 add_subdirectory(tools/make/downloads/absl)
 add_subdirectory(tools/make/downloads/googletest)
 add_subdirectory(experimental/ruy/profiler)
+add_subdirectory(delegates/nnapi)
 add_subdirectory(experimental/delegates/hexnn/hexagon_nn_interface)
 add_subdirectory(delegates/xnnpack)

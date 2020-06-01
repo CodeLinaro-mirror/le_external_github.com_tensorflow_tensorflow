@@ -164,5 +164,16 @@ Interpreter::TfLiteDelegatePtr CreateHexagonDelegate(
 #endif  // defined(__ANDROID__)
 }
 
+Interpreter::TfLiteDelegatePtr CreateXnnpackDelegate() {
+#if defined(__ANDROID__) || defined(__LE_NN__)
+  TfLiteXNNPackDelegateOptions options =
+      TfLiteXNNPackDelegateOptionsDefault();
+  return Interpreter::TfLiteDelegatePtr(TfLiteXNNPackDelegateCreate(&options),
+                                        &TfLiteXNNPackDelegateDelete);
+#else
+  return CreateNullDelegate();
+#endif  // defined(__ANDROID__)
+}
+
 }  // namespace evaluation
 }  // namespace tflite

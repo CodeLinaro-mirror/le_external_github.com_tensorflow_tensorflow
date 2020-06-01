@@ -34,6 +34,7 @@ constexpr char kDelegateFlag[] = "delegate";
 constexpr char kNnapiDelegate[] = "nnapi";
 constexpr char kGpuDelegate[] = "gpu";
 constexpr char kHexagonDelegate[] = "hexagon";
+constexpr char kXnnpackDelegate[] = "xnnpack";
 
 bool EvaluateModel(const std::string& model_file_path,
                    const std::string& delegate, int num_runs,
@@ -58,6 +59,10 @@ bool EvaluateModel(const std::string& model_file_path,
   if (delegate == kHexagonDelegate) {
     inference_params->set_delegate(TfliteInferenceParams::HEXAGON);
   }
+  if (delegate == kXnnpackDelegate) {
+    inference_params->set_delegate(TfliteInferenceParams::XNNPACK);
+  }
+
   InferenceProfilerStage eval(eval_config);
   if (eval.Init() != kTfLiteOk) return false;
 

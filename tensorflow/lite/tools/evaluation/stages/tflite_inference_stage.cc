@@ -122,6 +122,14 @@ TfLiteStatus TfliteInferenceStage::Init() {
     } else {
       delegates_.push_back(std::move(delegate));
     }
+  } else if (params.delegate() == TfliteInferenceParams::XNNPACK) {
+    Interpreter::TfLiteDelegatePtr delegate =
+        evaluation::CreateXnnpackDelegate();
+    if (delegate) {
+      delegates_.push_back(std::move(delegate));
+    } else {
+      LOG(WARNING) << "XNNPACK not supported";
+    }
   }
   for (int i = 0; i < delegates_.size(); ++i) {
     if (interpreter_->ModifyGraphWithDelegate(delegates_[i].get()) !=

@@ -38,6 +38,8 @@ constexpr char kInterpreterThreadsFlag[] = "num_interpreter_threads";
 constexpr char kDelegateFlag[] = "delegate";
 constexpr char kNnapiDelegate[] = "nnapi";
 constexpr char kGpuDelegate[] = "gpu";
+constexpr char kHexagonDelegate[] = "hexagon";
+constexpr char kXnnpackDelegate[] = "xnnpack";
 
 template <typename T>
 std::vector<T> GetFirstN(const std::vector<T>& v, int n) {
@@ -62,6 +64,10 @@ bool EvaluateModel(const std::string& model_file_path,
     inference_params->set_delegate(TfliteInferenceParams::NNAPI);
   } else if (delegate == kGpuDelegate) {
     inference_params->set_delegate(TfliteInferenceParams::GPU);
+  } else if (delegate == kHexagonDelegate) {
+    inference_params->set_delegate(TfliteInferenceParams::HEXAGON);
+  } else  if (delegate == kXnnpackDelegate) {
+    inference_params->set_delegate(TfliteInferenceParams::XNNPACK);
   }
   classification_params->mutable_topk_accuracy_eval_params()->set_k(10);
 

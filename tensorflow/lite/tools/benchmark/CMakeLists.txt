@@ -80,6 +80,8 @@ target_link_libraries(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} ${TFLITE_TARGET_NAME
     profile_summarizer
     benchmark_model_lib
     xnnpack_delegate
+    nnapi_delegate
+    evaluation_utils
 )
 
 install(
