@@ -581,7 +581,7 @@ void RunInference(Settings* s) {
   if (s->num_models > 1) {
     std::unique_lock<std::mutex> lk(finished_mutex);
     num_finished++;
-    finished_cv.notify_one();
+    finished_cv.notify_all();
     finished_cv.wait(lk, [&s] { return num_finished == s->num_models; });
   }
 }
@@ -662,11 +662,18 @@ int Main(int argc, char** argv) {
       case 'x': {
           auto pref_str = parse_comma_separated(std::string(optarg));
           if (pref_str.size() == 1) {
-            s.preferences =
-              strtol(optarg, nullptr, 16);  // NOLINT(runtime/deprecated_fn)
+            std::stringstream ss;
+            ss << std::hex << pref_str[0];
+            unsigned int preferences;
+            ss >> preferences;
+            s.preferences = preferences;
           } else {
            for (auto pref: pref_str) {
-              s.preferences_list.push_back(strtol(pref.c_str(), nullptr, 16));
+              std::stringstream ss;
+              ss << std::hex << pref;
+              unsigned int preferences;
+              ss >> preferences;
+              s.preferences_list.push_back(preferences);
             }
           }
         }
