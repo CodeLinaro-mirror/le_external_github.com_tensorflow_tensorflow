@@ -522,14 +522,17 @@ void RunInference(Settings* s) {
     }
   }
 
+  gettimeofday(&stop_time, nullptr);
+  auto time_diff = get_us(stop_time) - get_us(start_time);
   auto mean_std = get_mean_std(times);
   {
     std::unique_lock<std::mutex> lk(print_mutex);
     LOG(INFO) << "Model: " << s->model_name <<
         "\tmean=" << mean_std.first << "ms" <<
         "\tstd=" << mean_std.second << "ms" <<
-        " runs=" << times.size() <<
-        " max freq=" << 1000 / mean_std.first <<
+        "\truns=" << times.size() <<
+        "\nmodel Throughput=" << 1000 / mean_std.first <<
+        "\tThroughput=" << (times.size() * 1000000) / time_diff <<
         "\n";
   }
 
