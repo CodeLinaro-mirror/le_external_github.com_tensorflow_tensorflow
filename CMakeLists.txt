@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.3.1)
 project(tensorflow)
 
+option(TFLITE_WITH_RUY "Enable RUY" ON)
+if(TFLITE_WITH_RUY)
+    add_definitions(-DTFLITE_WITH_RUY)
+endif(TFLITE_WITH_RUY)
+
 set(TFLITE_TOP_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(TFLITE_TOP_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
