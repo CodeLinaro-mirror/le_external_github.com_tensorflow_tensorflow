@@ -9,6 +9,7 @@ add_library(${BENCHMARK_UTILS_TARGET_NAME} SHARED ${BENCHMARK_UTILS_SOURCE_FILES
 
 target_link_libraries(${BENCHMARK_UTILS_TARGET_NAME}
     time
+    memory_info
 )
 
 install(
@@ -82,6 +83,7 @@ target_link_libraries(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} ${TFLITE_TARGET_NAME
     xnnpack_delegate
     nnapi_delegate
     evaluation_utils
+    profile_summarizer_formatter
 )
 
 install(
