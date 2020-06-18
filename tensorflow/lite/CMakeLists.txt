@@ -93,6 +93,10 @@ list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*nnapi/nnapi_implementation_disa
 
 add_library(${TFLITE_TARGET_NAME} SHARED ${TFLITE_SOURCE_FILES})
 
+# Disable RUY_OPT_TUNING
+target_compile_options(${TFLITE_TARGET_NAME}
+    PRIVATE -DRUY_OPT_SET=0xFFFB)
+
 target_link_libraries(${TFLITE_TARGET_NAME} pthread)
 target_link_libraries(${TFLITE_TARGET_NAME} rt)
 target_link_libraries(${TFLITE_TARGET_NAME} dl)
