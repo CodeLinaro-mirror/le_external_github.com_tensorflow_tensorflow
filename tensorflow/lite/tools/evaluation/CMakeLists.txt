@@ -17,6 +17,8 @@ target_link_libraries(${UTILS_TARGET_NAME}
     ${TFLITE_TARGET_NAME}
     xnnpack_delegate
     nnapi_delegate
+    gpu_delegate
+    gl_delegate
 )
 
 install(

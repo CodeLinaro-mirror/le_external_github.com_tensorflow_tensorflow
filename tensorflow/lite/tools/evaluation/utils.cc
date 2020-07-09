@@ -117,7 +117,7 @@ Interpreter::TfLiteDelegatePtr CreateNNAPIDelegate(
 #endif  // defined(__ANDROID__)
 }
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__LE_NN__)
 Interpreter::TfLiteDelegatePtr CreateGPUDelegate(
     TfLiteGpuDelegateOptionsV2* options) {
   return Interpreter::TfLiteDelegatePtr(TfLiteGpuDelegateV2Create(options),
@@ -126,7 +126,7 @@ Interpreter::TfLiteDelegatePtr CreateGPUDelegate(
 #endif  // defined(__ANDROID__)
 
 Interpreter::TfLiteDelegatePtr CreateGPUDelegate() {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__LE_NN__)
   TfLiteGpuDelegateOptionsV2 options = TfLiteGpuDelegateOptionsV2Default();
   options.inference_priority1 = TFLITE_GPU_INFERENCE_PRIORITY_MIN_LATENCY;
   options.inference_preference =

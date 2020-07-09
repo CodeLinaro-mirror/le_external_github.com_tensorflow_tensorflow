@@ -1,7 +1,6 @@
 include_directories(tools/make/downloads/eigen)
 include_directories(tools/make/downloads/gemmlowp)
 include_directories(tools/make/downloads/farmhash/src)
-include_directories(tools/make/downloads/flatbuffers/include)
 include_directories(tools/make/downloads/googletest/googletest/include)
 include_directories(tools/make/downloads/googletest/googlemock/include)
 include_directories(experimental/delegates/hexnn)
@@ -177,6 +176,14 @@ install(
                 WORLD_EXECUTE WORLD_READ
 )
 
+########################### absl ################################
+
+set(ABSL_TARGET_NAME absl)
+
+add_library(${ABSL_TARGET_NAME} INTERFACE)
+
+target_include_directories(${ABSL_TARGET_NAME} INTERFACE make/downloads/absl)
+
 ####################################################################################
 add_subdirectory(profiling)
 add_subdirectory(tools)
@@ -186,3 +193,4 @@ add_subdirectory(experimental/ruy/profiler)
 add_subdirectory(delegates/nnapi)
 add_subdirectory(experimental/delegates/hexnn/hexagon_nn_interface)
 add_subdirectory(delegates/xnnpack)
+add_subdirectory(delegates/gpu)

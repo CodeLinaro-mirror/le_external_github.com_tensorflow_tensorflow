@@ -1,11 +1,3 @@
-########################### absl ################################
-
-set(ABSL_TARGET_NAME absl)
-
-add_library(${ABSL_TARGET_NAME} INTERFACE)
-
-target_include_directories(${ABSL_TARGET_NAME} INTERFACE make/downloads/absl)
-
 ########################### command_line_flags ################################
 set(COMMAND_LINE_FLAGS_TARGET_NAME command_line_flags)
 

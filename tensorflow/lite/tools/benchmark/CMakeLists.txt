@@ -82,6 +82,8 @@ target_link_libraries(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} ${TFLITE_TARGET_NAME
     benchmark_model_lib
     xnnpack_delegate
     nnapi_delegate
+    gpu_delegate
+    gl_delegate
     evaluation_utils
     profile_summarizer_formatter
 )

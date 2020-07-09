@@ -18,7 +18,7 @@ limitations under the License.
 #include "tensorflow/lite/tools/benchmark/delegate_provider.h"
 #include "tensorflow/lite/tools/benchmark/logging.h"
 #include "tensorflow/lite/tools/evaluation/utils.h"
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__LE_NN__)
 #include "tensorflow/lite/delegates/gpu/delegate.h"
 #elif defined(__APPLE__)
 #include "TargetConditionals.h"
@@ -51,7 +51,7 @@ std::vector<Flag> GpuDelegateProvider::CreateFlags(
     BenchmarkParams* params) const {
   std::vector<Flag> flags = {
     CreateFlag<bool>("use_gpu", params, "use gpu"),
-#if defined(__ANDROID__) || defined(REAL_IPHONE_DEVICE)
+#if defined(__ANDROID__) || defined(__LE_NN__) || defined(REAL_IPHONE_DEVICE)
     CreateFlag<bool>("gpu_precision_loss_allowed", params,
                      "Allow to process computation in lower precision than "
                      "FP32 in GPU. By default, it's enabled."),
@@ -68,7 +68,7 @@ std::vector<Flag> GpuDelegateProvider::CreateFlags(
 
 void GpuDelegateProvider::AddParams(BenchmarkParams* params) const {
   params->AddParam("use_gpu", BenchmarkParam::Create<bool>(false));
-#if defined(__ANDROID__) || defined(REAL_IPHONE_DEVICE)
+#if defined(__ANDROID__) || defined(__LE_NN__) || defined(REAL_IPHONE_DEVICE)
   params->AddParam("gpu_precision_loss_allowed",
                    BenchmarkParam::Create<bool>(true));
 #endif
@@ -79,7 +79,7 @@ void GpuDelegateProvider::AddParams(BenchmarkParams* params) const {
 
 void GpuDelegateProvider::LogParams(const BenchmarkParams& params) const {
   TFLITE_LOG(INFO) << "Use gpu : [" << params.Get<bool>("use_gpu") << "]";
-#if defined(__ANDROID__) || defined(REAL_IPHONE_DEVICE)
+#if defined(__ANDROID__) || defined(__LE_NN__) || defined(REAL_IPHONE_DEVICE)
   TFLITE_LOG(INFO) << "Allow lower precision in gpu : ["
                    << params.Get<bool>("gpu_precision_loss_allowed") << "]";
 #endif
@@ -94,7 +94,7 @@ TfLiteDelegatePtr GpuDelegateProvider::CreateTfLiteDelegate(
   TfLiteDelegatePtr delegate(nullptr, [](TfLiteDelegate*) {});
 
   if (params.Get<bool>("use_gpu")) {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__LE_NN__)
     TfLiteGpuDelegateOptionsV2 gpu_opts = TfLiteGpuDelegateOptionsV2Default();
     if (params.Get<bool>("gpu_precision_loss_allowed")) {
       gpu_opts.inference_priority1 = TFLITE_GPU_INFERENCE_PRIORITY_MIN_LATENCY;

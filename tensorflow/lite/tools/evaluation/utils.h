@@ -57,7 +57,7 @@ Interpreter::TfLiteDelegatePtr CreateNNAPIDelegate(
     StatefulNnApiDelegate::Options options);
 
 Interpreter::TfLiteDelegatePtr CreateGPUDelegate();
-#if defined(__ANDROID__)
+#if (defined(__ANDROID__) || defined(__LE_NN__))
 Interpreter::TfLiteDelegatePtr CreateGPUDelegate(
     TfLiteGpuDelegateOptionsV2* options);
 #endif
