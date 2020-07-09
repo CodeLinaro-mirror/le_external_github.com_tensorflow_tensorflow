@@ -80,6 +80,9 @@ namespace label_image {
   int num_finished = 0;
   std::condition_variable finished_cv;
   std::mutex finished_mutex;
+  int num_processed = 0;
+  std::condition_variable inference_cv;
+  std::mutex inference_mutex;
   // int num_threads;
   std::mutex print_mutex;
   std::pair<double, double> get_mean_std(const std::vector<double>& times) {
@@ -191,7 +194,6 @@ void PrintProfilingInfo(const profiling::ProfileEvent* e,
   // output something like
   // time (ms) , Node xxx, OpCode xxx, symblic name
   //      5.352, Node   5, OpCode   4, DEPTHWISE_CONV_2D
-
   LOG(INFO) << std::fixed << std::setw(10) << std::setprecision(3)
             << (e->end_timestamp_us - e->begin_timestamp_us) / 1000.0
             << ", Subgraph " << std::setw(3) << std::setprecision(3)
@@ -264,6 +266,7 @@ int ParseClassification(tflite::Interpreter *interpreter, Settings* s) {
     const int index = result.second;
     LOG(INFO) << confidence << ": " << index << " " << labels[index] << "\n";
   }
+
   return 0;
 }
 
@@ -510,7 +513,7 @@ void RunInference(Settings* s) {
     // other threads finished?
     if (s->num_models > 1) {
       std::unique_lock<std::mutex> lk(finished_mutex);
-      if (num_finished > 0) {
+      if (num_processed > 0) {
         quit = true;
       }
     }
@@ -525,6 +528,15 @@ void RunInference(Settings* s) {
   gettimeofday(&stop_time, nullptr);
   auto time_diff = get_us(stop_time) - get_us(start_time);
   auto mean_std = get_mean_std(times);
+
+  // signal and wait for others to quit
+  if (s->num_models > 1) {
+    std::unique_lock<std::mutex> lk(inference_mutex);
+    num_processed++;
+    inference_cv.notify_all();
+    inference_cv.wait(lk, [&s] { return num_processed == s->num_models; });
+  }
+
   {
     std::unique_lock<std::mutex> lk(print_mutex);
     LOG(INFO) << "Model: " << s->model_name <<
@@ -534,20 +546,35 @@ void RunInference(Settings* s) {
         "\nmodel Throughput=" << 1000 / mean_std.first <<
         "\tThroughput=" << (times.size() * 1000000) / time_diff <<
         "\n";
-  }
 
-  if (s->profiling) {
-    profiler->StopProfiling();
-    auto profile_events = profiler->GetProfileEvents();
-    for (int i = 0; i < profile_events.size(); i++) {
-      auto subgraph_index = profile_events[i]->event_subgraph_index;
-      auto op_index = profile_events[i]->event_metadata;
-      const auto subgraph = interpreter->subgraph(subgraph_index);
-      const auto node_and_registration =
-          subgraph->node_and_registration(op_index);
-      const TfLiteRegistration registration = node_and_registration->second;
-      PrintProfilingInfo(profile_events[i], subgraph_index, op_index,
-                         registration);
+    s->throughput = 1000 / mean_std.first;
+
+    if (s->profiling) {
+      profiler->StopProfiling();
+      auto profile_events = profiler->GetProfileEvents();
+      for (int i = 0; i < profile_events.size(); i++) {
+        auto subgraph_index = profile_events[i]->event_subgraph_index;
+        auto op_index = profile_events[i]->event_metadata;
+        const auto subgraph = interpreter->subgraph(subgraph_index);
+        const auto node_and_registration =
+            subgraph->node_and_registration(op_index);
+        const TfLiteRegistration registration = node_and_registration->second;
+        PrintProfilingInfo(profile_events[i], subgraph_index, op_index,
+                           registration);
+      }
+    }
+
+    LOG(INFO) << "Printing final results.....: " << "\n";
+    int rc = 0;
+    switch(s->parser) {
+      case 0:
+        rc = ParseClassification(interpreter.get(), s);
+        break;
+      case 1:
+        rc = ParseDetection(interpreter.get(), s, image_width, image_height);
+        break;
+      default:
+        LOG(FATAL) << "Unsupported parser: " << s->parser << "\n";
     }
   }
 
@@ -566,18 +593,6 @@ void RunInference(Settings* s) {
       char* data = reinterpret_cast<char*>(tensor->data.uint8);
       tfile.write(data, tensor->bytes);
     }
-  }
-
-  int rc = 0;
-  switch(s->parser) {
-    case 0:
-      rc = ParseClassification(interpreter.get(), s);
-      break;
-    case 1:
-      rc = ParseDetection(interpreter.get(), s, image_width, image_height);
-      break;
-    default:
-      LOG(FATAL) << "Unsupported parser: " << s->parser << "\n";
   }
 
   // signal and wait for others to quit
@@ -820,9 +835,16 @@ int Main(int argc, char** argv) {
       threads[i] = std::thread(RunInference, &ss[i]);
     }
 
+    float usecase_throughput = 0;
     for (int i = 0; i < s.num_models; ++i) {
       threads[i].join();
+      usecase_throughput += ss[i].throughput;
     }
+    if (s.num_models > 1) {
+      LOG(INFO) << "Total Throughput of concurrent usecase " <<
+         usecase_throughput << "\n";
+    }
+
   }
 
   return 0;

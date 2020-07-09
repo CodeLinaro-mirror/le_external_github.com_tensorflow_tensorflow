@@ -54,6 +54,7 @@ struct Settings {
   float frequency = 1000;
   std::vector<float> frequency_list;
   int parser = 0;
+  float throughput = 0;
 };
 
 }  // namespace label_image
