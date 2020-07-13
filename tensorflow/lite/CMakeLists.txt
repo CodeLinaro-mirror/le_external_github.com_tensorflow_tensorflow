@@ -42,10 +42,6 @@ FILE(GLOB TFLITE_SOURCE_FILES
     nnapi/nnapi_util.cc
     delegates/nnapi/nnapi_delegate.cc
     delegates/nnapi/quant_lstm_sup.cc
-    profiling/time.cc
-    profiling/memory_info.cc
-    profiling/profile_summarizer.cc
-    profiling/profile_summary_formatter.cc
     ../core/util/stats_calculator.cc
     experimental/c/*.c
     experimental/c/*.cc
@@ -132,6 +128,8 @@ target_link_libraries(${LABEL_IMAGE_TARGET_NAME}
     ${TFLITE_TARGET_NAME}
     evaluation_utils
     nnapi_delegate
+    time
+    memory_info
 )
 
 install(
