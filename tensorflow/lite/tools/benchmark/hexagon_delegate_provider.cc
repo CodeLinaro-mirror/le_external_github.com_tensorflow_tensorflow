@@ -19,7 +19,7 @@ limitations under the License.
 #include "tensorflow/lite/tools/benchmark/logging.h"
 #include "tensorflow/lite/tools/evaluation/utils.h"
 
-#if (defined(ANDROID) || defined(__ANDROID__)) && \
+#if (defined(ANDROID) || defined(__ANDROID__) || defined(__LE_NN__)) && \
     (defined(__arm__) || defined(__aarch64__))
 #define TFLITE_ENABLE_HEXAGON
 #endif
