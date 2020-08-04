@@ -3,6 +3,7 @@ include_directories(tools/make/downloads/gemmlowp)
 include_directories(tools/make/downloads/farmhash/src)
 include_directories(tools/make/downloads/googletest/googletest/include)
 include_directories(tools/make/downloads/googletest/googlemock/include)
+include_directories(tools/make/downloads/vulkan/include)
 include_directories(experimental/delegates/hexnn)
 
 add_definitions(-DEIGEN_MPL2_ONLY)

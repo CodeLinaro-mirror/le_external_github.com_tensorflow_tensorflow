@@ -58,7 +58,6 @@ set(GPU_API_SOURCE_FILES
 add_library(${GPU_API_TARGET_NAME} SHARED ${GPU_API_SOURCE_FILES})
 
 target_include_directories(${GPU_API_TARGET_NAME} PUBLIC
-    ${TFLITE_VULKAN_INC_DIR}
     gl
     common
 )

@@ -50,6 +50,9 @@ FLATBUFFERS_SHA="3f4a286642094f45b1b77228656fbd7ea123964f19502f9ecfd29933fd23a50
 FFT2D_URL="https://storage.googleapis.com/mirror.tensorflow.org/www.kurims.kyoto-u.ac.jp/~ooura/fft2d.tgz"
 FP16_URL="https://github.com/Maratyszcza/FP16/archive/febbb1c163726b5db24bed55cc9dc42529068997.zip"
 FFT2D_SHA="ada7e99087c4ed477bfdf11413f2ba8db8a840ba9bbf8ac94f4f3972e2a7cec9"
+VULKAN_HEADERS_URL="https://mirror.bazel.build/github.com/KhronosGroup/Vulkan-Headers/archive/0e57fc1cfa56a203efe43e4dfb9b3c9e9b105593.tar.gz"
+VULKAN_HEADERS_SHA="096c4bff0957e9d6777b47d01c63e99ad9cf9d57e52be688a661b2473f8e52cb"
+
 # TODO(petewarden): Some new code in Eigen triggers a clang bug with iOS arm64,
 #                   so work around it by patching the source.
 replace_by_sed() {
@@ -112,6 +115,8 @@ download_and_extract "${FARMHASH_URL}" "${DOWNLOADS_DIR}/farmhash" "${FARMHASH_S
 download_and_extract "${FLATBUFFERS_URL}" "${DOWNLOADS_DIR}/flatbuffers" "${FLATBUFFERS_SHA}"
 download_and_extract "${FFT2D_URL}" "${DOWNLOADS_DIR}/fft2d" "${FFT2D_SHA}"
 download_and_extract "${FP16_URL}" "${DOWNLOADS_DIR}/fp16"
+download_and_extract "${VULKAN_HEADERS_URL}" "${DOWNLOADS_DIR}/vulkan" "${VULKAN_HEADERS_SHA}"
+
 
 if patch -p1 -N --dry-run < \
   ${PATCH_DIR}/0001-tensorflow-googletest-remove-headers-instalation.patch; then

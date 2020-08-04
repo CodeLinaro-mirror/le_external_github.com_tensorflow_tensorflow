@@ -44,9 +44,7 @@ limitations under the License.
 #include "tensorflow/lite/delegates/gpu/common/status.h"
 #include "tensorflow/lite/delegates/gpu/common/util.h"
 #include "tensorflow/lite/delegates/gpu/gl/portable_gl31.h"
-// TODO: Use this when Vulkan is supported into adreno library
-//#include <vulkan/vulkan.h>
-#include "vulkan.h"
+#include <vulkan/vulkan.h>
 
 namespace tflite {
 namespace gpu {
