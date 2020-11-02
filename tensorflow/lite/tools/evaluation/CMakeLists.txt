@@ -17,9 +17,15 @@ target_link_libraries(${UTILS_TARGET_NAME}
     ${TFLITE_TARGET_NAME}
     xnnpack_delegate
     nnapi_delegate
+)
+
+if(TFLITE_ENABLE_GPU)
+add_definitions(-DBUILD_WITHGPU=TRUE)
+target_link_libraries(${UTILS_TARGET_NAME}
     gpu_delegate
     gl_delegate
 )
+endif(TFLITE_ENABLE_GPU)
 
 install(
     TARGETS ${UTILS_TARGET_NAME}
