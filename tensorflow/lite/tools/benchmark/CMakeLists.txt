@@ -71,6 +71,12 @@ set(BENCHMARK_TFLITE_MODEL_SOURCE_FILES
     xnnpack_delegate_provider.cc
 )
 
+if(TFLITE_ENABLE_GPU)
+list(APPEND BENCHMARK_TFLITE_MODEL_SOURCE_FILES
+    gpu_delegate_provider.cc
+)
+endif(TFLITE_ENABLE_GPU)
+
 add_library(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} SHARED ${BENCHMARK_TFLITE_MODEL_SOURCE_FILES})
 
 target_link_libraries(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} ${TFLITE_TARGET_NAME}
@@ -86,9 +92,6 @@ target_link_libraries(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} ${TFLITE_TARGET_NAME
 )
 
 if(TFLITE_ENABLE_GPU)
-set(BENCHMARK_TFLITE_MODEL_SOURCE_FILES
-    gpu_delegate_provider.cc
-)
 target_link_libraries(${BENCHMARK_TFLITE_MODEL_TARGET_NAME} ${TFLITE_TARGET_NAME}
     gpu_delegate
     gl_delegate
