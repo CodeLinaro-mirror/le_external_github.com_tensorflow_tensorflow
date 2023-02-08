@@ -61,9 +61,7 @@ add_executable(label_image
 )
 if(TFLITE_ENABLE_LABEL_IMAGE)
   set_target_properties(label_image PROPERTIES EXCLUDE_FROM_ALL FALSE)
-  if(TFLITE_ENABLE_INSTALL)
     install(TARGETS label_image)
-  endif()  # TFLITE_ENABLE_INSTALL
 else()
   set_target_properties(label_image PROPERTIES EXCLUDE_FROM_ALL TRUE)
 endif()  # TFLITE_ENABLE_LABEL_IMAGE
@@ -71,6 +69,13 @@ target_compile_options(label_image
   PRIVATE
     ${TFLITE_LABEL_IMAGE_CC_OPTIONS}
 )
-target_link_libraries(label_image
-  tensorflow-lite
-)
+
+if (TFLITE_C_BUILD_SHARED_LIBS)
+  target_link_libraries(label_image
+    tensorflowlite_c
+  )
+else ()
+  target_link_libraries(label_image
+    tensorflow-lite
+  )
+endif()

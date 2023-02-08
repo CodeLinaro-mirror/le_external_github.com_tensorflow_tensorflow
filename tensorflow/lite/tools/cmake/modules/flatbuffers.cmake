@@ -41,6 +41,7 @@ add_definitions(-DNOMINMAX=1)
 add_subdirectory(
   "${flatbuffers_SOURCE_DIR}"
   "${flatbuffers_BINARY_DIR}"
+  EXCLUDE_FROM_ALL
 )
 remove_definitions(-DNOMINMAX)
 
@@ -60,7 +61,7 @@ endif()
 
 # In case of a standalone (native) build of flatc for unit test cross-compilation
 # purposes the FLATC_INSTALL_PREFIX is already in cache and is just used in this module.
-# In case of standard flatbuffers build (as a dependency) the variable needs to be set. 
+# In case of standard flatbuffers build (as a dependency) the variable needs to be set.
 if(NOT DEFINED FLATC_INSTALL_PREFIX)
   set(FLATC_INSTALL_PREFIX <INSTALL_DIR> CACHE PATH "Flatc installation directory")
 endif()

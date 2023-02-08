@@ -41,9 +41,16 @@ list(APPEND TFLITE_BENCHMARK_SRCS
   ${TFLITE_SOURCE_DIR}/tools/utils.cc
 )
 
-list(APPEND TFLITE_BENCHMARK_LIBS
-  tensorflow-lite
-)
+if (TFLITE_C_BUILD_SHARED_LIBS)
+  list(APPEND TFLITE_BENCHMARK_LIBS
+    tensorflowlite_c
+  )
+else ()
+  list(APPEND TFLITE_BENCHMARK_LIBS
+    tensorflow-lite
+  )
+endif()
+
 
 # TODO(b/171007016): Enable performance options on Windows.
 if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
@@ -88,6 +95,11 @@ add_executable(benchmark_model
   EXCLUDE_FROM_ALL
   ${TFLITE_BENCHMARK_SRCS}
 )
+
+install(TARGETS benchmark_model
+  RUNTIME
+)
+
 target_compile_options(benchmark_model
   PRIVATE
     ${TFLITE_BENCHMARK_CC_OPTIONS}

@@ -33,6 +33,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
+#Compile time Flags
+if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
+  add_definitions(-DTFLITE_PROFILING_ENABLED)
+  add_definitions(-funsafe-math-optimizations)
+  add_definitions(-ftree-vectorize)
+  add_definitions(-flax-vector-conversions)
+  add_definitions(-fomit-frame-pointer)
+  add_definitions(-DBUILD_TESTING=OFF)
+  add_definitions(-DEIGEN_MPL2_ONLY)
+  add_definitions(-fPIC)
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fno-short-enums -Ofast")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+endif()
+
 # Double colon in target name means ALIAS or IMPORTED target.
 cmake_policy(SET CMP0028 NEW)
 # Enable MACOSX_RPATH (@rpath) for built dynamic libraries.
@@ -158,6 +173,7 @@ endif()
 find_package(cpuinfo REQUIRED)  #CPUINFO is used by XNNPACK and RUY library
 find_package(ml_dtypes REQUIRED)
 find_package(ruy REQUIRED)
+find_package(nsync REQUIRED)
 # Include TSL, which is in tensorflow/third_party
 include_directories(
   ${TSL_SOURCE_DIR}
@@ -287,14 +303,8 @@ populate_tflite_source_vars("core/tools" TFLITE_CORE_TOOLS_SRCS)
 populate_tflite_source_vars("c" TFLITE_C_SRCS)
 populate_tflite_source_vars("delegates" TFLITE_DELEGATES_SRCS)
 if(TFLITE_ENABLE_GPU)
-  find_package(opencl_headers REQUIRED)
-  find_package(vulkan_headers REQUIRED)
+  add_definitions(-DTFLITE_ENABLE_GPU)
   find_package(fp16_headers REQUIRED)
-  # Android NDK already has OpenGL, EGL headers.
-  if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
-    find_package(opengl_headers REQUIRED)
-    find_package(egl_headers REQUIRED)
-  endif()
   populate_tflite_source_vars(
     "delegates/gpu/cl" TFLITE_DELEGATES_GPU_CL_SRCS
     FILTER "(_test|gl_interop|gpu_api_delegate|egl_sync)\\.(cc|h)$"
@@ -505,6 +515,7 @@ if(TFLITE_ENABLE_EXTERNAL_DELEGATE)
     TFLITE_DELEGATES_EXTERNAL_SRCS
     FILTER ".*(_test|_tester)\\.(cc|h)"
   )
+
 endif()
 populate_tflite_source_vars("experimental/remat"
   TFLITE_EXPERIMENTAL_REMAT_SRCS
@@ -557,6 +568,7 @@ populate_tflite_source_vars("kernels/internal/optimized/4bit"
   FILTER "(.*neon.*|.*sse.*)\\.(cc|h)"
 )
 set(TFLITE_PROFILER_SRCS
+  ${TFLITE_SOURCE_DIR}/profiling/profile_buffer.cc
   ${TFLITE_SOURCE_DIR}/profiling/platform_profiler.cc
   ${TFLITE_SOURCE_DIR}/profiling/root_profiler.h
   ${TFLITE_SOURCE_DIR}/profiling/root_profiler.cc
@@ -580,6 +592,16 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "iOS")
   )
   set_source_files_properties(${TFLITE_SOURCE_DIR}/profiling/signpost_profiler.mm PROPERTIES COMPILE_FLAGS -fno-objc-arc)
 endif()
+
+# Common include directories
+set(TFLITE_INCLUDE_DIRS
+  "${TENSORFLOW_SOURCE_DIR}"
+  "${TFLITE_FLATBUFFERS_SCHEMA_DIR}"
+)
+include_directories(
+  BEFORE
+    ${TFLITE_INCLUDE_DIRS}
+)
 
 # TFLite library
 set(_ALL_TFLITE_SRCS
