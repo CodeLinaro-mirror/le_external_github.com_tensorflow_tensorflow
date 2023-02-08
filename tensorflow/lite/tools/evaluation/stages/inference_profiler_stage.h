@@ -11,6 +11,11 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
+
+Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause-Clear
 ==============================================================================*/
 #ifndef TENSORFLOW_LITE_TOOLS_EVALUATION_STAGES_INFERENCE_PROFILER_STAGE_H_
 #define TENSORFLOW_LITE_TOOLS_EVALUATION_STAGES_INFERENCE_PROFILER_STAGE_H_
@@ -65,6 +70,7 @@ class InferenceProfilerStage : public EvaluationStage {
   std::vector<std::vector<int8_t>> int8_tensors_;
   std::vector<std::vector<uint8_t>> uint8_tensors_;
   std::vector<std::vector<uint16_t>> float16_tensors_;
+  std::vector<std::vector<int32_t>> int32_tensors_;
 };
 
 }  // namespace evaluation
