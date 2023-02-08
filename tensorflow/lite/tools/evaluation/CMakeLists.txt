@@ -1,0 +1,5 @@
+add_subdirectory(proto)
+add_subdirectory(stages)
+add_subdirectory(tasks/inference_diff)
+add_subdirectory(tasks/imagenet_image_classification)
+add_subdirectory(tasks/coco_object_detection)
