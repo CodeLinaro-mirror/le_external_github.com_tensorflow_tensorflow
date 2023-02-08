@@ -80,6 +80,8 @@ add_library(tensorflowlite_c ${TFLITE_C_LIBTYPE}
   ${TFLITE_SOURCE_DIR}/core/c/c_api.cc
   ${TFLITE_SOURCE_DIR}/core/c/c_api_experimental.cc
   ${TFLITE_SOURCE_DIR}/core/c/common.cc
+  ${TFLITE_SOURCE_DIR}/core/acceleration/configuration/c/xnnpack_plugin.cc
+  ${TFLITE_SOURCE_DIR}/core/acceleration/configuration/c/xnnpack_plugin.h
   builtin_op_data.h
   c_api.h
   c_api_experimental.h
