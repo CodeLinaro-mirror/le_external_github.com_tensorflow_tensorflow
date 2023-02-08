@@ -95,6 +95,7 @@ if(TFLITE_KERNEL_TEST AND ${CMAKE_CROSSCOMPILING})
                         Please specify it using -DTFLITE_HOST_TOOLS_DIR=<flatc_dir_path> launch argument.")
   endif()
 endif()
+option(TFLITE_ENABLE_EVALUATION_TOOLS "Enable Evaluation Tools" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -453,6 +454,11 @@ if(TFLITE_ENABLE_XNNPACK)
   list(APPEND TFLITE_TARGET_DEPENDENCIES
     XNNPACK
   )
+  if(CMAKE_SYSTEM_NAME MATCHES "Android")
+    list(APPEND TFLITE_TARGET_DEPENDENCIES
+      ${ANDROID_LOG_LIB}
+    )
+  endif()
 endif()
 if(TFLITE_ENABLE_EXTERNAL_DELEGATE)
   populate_tflite_source_vars("delegates/external"
@@ -666,6 +672,12 @@ if(TFLITE_KERNEL_TEST)
   add_subdirectory(${TFLITE_SOURCE_DIR}/kernels)
 endif()
 
+# Adding tensorflow/core/
+if (TFLITE_ENABLE_EVALUATION_TOOLS)
+  add_subdirectory(${TFLITE_SOURCE_DIR}/../core ${CMAKE_CURRENT_BINARY_DIR}/core)
+  add_subdirectory(${TFLITE_SOURCE_DIR}/../tsl/platform ${CMAKE_CURRENT_BINARY_DIR}/tsl/platform)
+endif()
+
 # The benchmark tool.
 add_subdirectory(${TFLITE_SOURCE_DIR}/tools/benchmark)
 
@@ -674,6 +686,11 @@ add_subdirectory(${TFLITE_SOURCE_DIR}/examples/label_image)
 
 # The multimodel_label_image example.
 add_subdirectory(${TFLITE_SOURCE_DIR}/examples/multimodel_label_image)
+
+# The evaluation tools.
+if (TFLITE_ENABLE_EVALUATION_TOOLS)
+  add_subdirectory(${TFLITE_SOURCE_DIR}/tools/evaluation)
+endif()
 
 # Python interpreter wrapper.
 add_library(_pywrap_tensorflow_interpreter_wrapper SHARED EXCLUDE_FROM_ALL
