@@ -39,6 +39,10 @@ if(NOT eigen_POPULATED)
   OverridableFetchContent_Populate(eigen)
 endif()
 
+# Remove bench folder
+file(REMOVE_RECURSE ${eigen_SOURCE_DIR}/bench/)
+file(REMOVE_RECURSE ${eigen_BINARY_DIR}/bench/)
+
 # Patch Eigen to disable Fortran compiler check for BLAS and LAPACK tests.
 if(NOT EIGEN_DISABLED_FORTRAN_COMPILER_CHECK)
   file(WRITE "${eigen_SOURCE_DIR}/cmake/language_support.cmake" "
