@@ -1,4 +1,4 @@
-/* Copyright 2022 The OpenXLA Authors.
+/* Copyright 2024 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,22 +13,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_PYTHON_UTIL_H_
-#define XLA_PYTHON_UTIL_H_
+#ifndef XLA_HLO_IR_HLO_INSTRUCTION_UTILS_H_
+#define XLA_HLO_IR_HLO_INSTRUCTION_UTILS_H_
 
-#include <memory>
-#include <vector>
-
-#include "absl/status/status.h"
-#include "absl/types/span.h"
-#include "xla/python/ifrt/array.h"
+#include "xla/hlo/ir/hlo_instruction.h"
 
 namespace xla {
+namespace hlo_instruction_utils {
+// Returns true if the given HLO is a slice operation which has a unit stride in
+// all dimensions.
+bool IsUnstridedSlice(const HloInstruction* hlo);
 
-// Requests if given buffers are ready, awaits for results and returns OK if
-// all of the buffers are ready or the last non-ok status.
-absl::Status AwaitBuffersReady(absl::Span<ifrt::Array* const> ifrt_arrays);
-
+}  // namespace hlo_instruction_utils
 }  // namespace xla
 
-#endif  // XLA_PYTHON_UTIL_H_
+#endif  // XLA_HLO_IR_HLO_INSTRUCTION_UTILS_H_
