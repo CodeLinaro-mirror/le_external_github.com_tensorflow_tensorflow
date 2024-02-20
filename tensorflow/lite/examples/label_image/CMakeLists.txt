@@ -31,17 +31,19 @@ list(APPEND TFLITE_LABEL_IMAGE_SRCS
   ${TFLITE_SOURCE_DIR}/tools/delegates/delegate_provider.cc
   ${TFLITE_SOURCE_DIR}/tools/evaluation/utils.cc
   ${TFLITE_SOURCE_DIR}/tools/tool_params.cc
+  ${TFLITE_SOURCE_DIR}/delegates/utils/simple_delegate.cc
 )
 
 if(TFLITE_ENABLE_XNNPACK)
   list(APPEND TFLITE_LABEL_IMAGE_SRCS
     ${TFLITE_SOURCE_DIR}/tools/delegates/xnnpack_delegate_provider.cc
+    ${TFLITE_SOURCE_DIR}/core/experimental/acceleration/configuration/c/xnnpack_plugin.cc
   )
 else()
   set(TFLITE_LABEL_IMAGE_CC_OPTIONS "-DTFLITE_WITHOUT_XNNPACK")
 endif()  # TFLITE_ENABLE_XNNPACK
 
-if(CMAKE_SYSTEM_NAME MATCHES "Android")
+if(CMAKE_SYSTEM_NAME MATCHES "Android" OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   if(_TFLITE_ENABLE_NNAPI)
     list(APPEND TFLITE_LABEL_IMAGE_SRCS
       ${TFLITE_SOURCE_DIR}/tools/delegates/nnapi_delegate_provider.cc
@@ -59,10 +61,22 @@ add_executable(label_image
   EXCLUDE_FROM_ALL
   ${TFLITE_LABEL_IMAGE_SRCS}
 )
+
+install(TARGETS label_image
+  RUNTIME
+)
+
 target_compile_options(label_image
   PRIVATE
     ${TFLITE_LABEL_IMAGE_CC_OPTIONS}
 )
-target_link_libraries(label_image
-  tensorflow-lite
-)
+
+if (TFLITE_C_BUILD_SHARED_LIBS)
+  target_link_libraries(label_image
+    tensorflowlite_c
+  )
+else ()
+  target_link_libraries(label_image
+    tensorflow-lite
+  )
+endif()

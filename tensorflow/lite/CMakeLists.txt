@@ -33,6 +33,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
+#Compile time Flags
+if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
+  add_definitions(-DTFLITE_PROFILING_ENABLED)
+  add_definitions(-funsafe-math-optimizations)
+  add_definitions(-ftree-vectorize)
+  add_definitions(-flax-vector-conversions)
+  add_definitions(-fomit-frame-pointer)
+  add_definitions(-DBUILD_TESTING=OFF)
+  add_definitions(-DEIGEN_MPL2_ONLY)
+  add_definitions(-fPIC)
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fno-short-enums -Ofast")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+endif()
+
 # Double colon in target name means ALIAS or IMPORTED target.
 cmake_policy(SET CMP0028 NEW)
 # Enable MACOSX_RPATH (@rpath) for built dynamic libraries.
@@ -88,7 +103,7 @@ if("${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
   set(_TFLITE_ENABLE_RUY ON)
 endif()
 set(_TFLITE_ENABLE_NNAPI "${TFLITE_ENABLE_NNAPI}")
-if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
+if(NOT ("${CMAKE_SYSTEM_NAME}" STREQUAL "Android" OR "${CMAKE_SYSTEM_NAME}" STREQUAL "Linux"))
   set(_TFLITE_ENABLE_NNAPI OFF)
 endif()
 set(_TFLITE_ENABLE_MMAP "${TFLITE_ENABLE_MMAP}")
@@ -148,6 +163,7 @@ find_package(gemmlowp REQUIRED)
 find_package(NEON_2_SSE REQUIRED)
 find_package(cpuinfo REQUIRED)  #CPUINFO is used by XNNPACK and RUY library
 find_package(ruy REQUIRED)
+find_package(nsync REQUIRED)
 # Download necessary dependencies.
 # Download pthreadpool source package if it doesn't exist.
 if(NOT DEFINED PTHREADPOOL_SOURCE_DIR)
@@ -239,6 +255,8 @@ else()
 endif()
 if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
   list(FILTER TFLITE_SRCS EXCLUDE REGEX ".*minimal_logging_android\\.cc$")
+else()
+  list(FILTER TFLITE_SRCS EXCLUDE REGEX ".*minimal_logging_default\\.cc$")
 endif()
 if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "iOS")
   list(FILTER TFLITE_SRCS EXCLUDE REGEX ".*minimal_logging_ios\\.cc$")
@@ -252,6 +270,7 @@ populate_tflite_source_vars("core/tools" TFLITE_CORE_TOOLS_SRCS)
 populate_tflite_source_vars("c" TFLITE_C_SRCS)
 populate_tflite_source_vars("delegates" TFLITE_DELEGATES_SRCS)
 if(TFLITE_ENABLE_GPU)
+  add_definitions(-DTFLITE_ENABLE_GPU)
   find_package(opencl_headers REQUIRED)
   find_package(vulkan_headers REQUIRED)
   find_package(fp16_headers REQUIRED)
@@ -434,13 +453,21 @@ if(TFLITE_ENABLE_XNNPACK)
   list(APPEND TFLITE_TARGET_DEPENDENCIES
     XNNPACK
   )
-  list(APPEND TFLITE_TARGET_PUBLIC_OPTIONS "-DTFLITE_BUILD_WITH_XNNPACK_DELEGATE")
 endif()
 if(TFLITE_ENABLE_EXTERNAL_DELEGATE)
   populate_tflite_source_vars("delegates/external"
     TFLITE_DELEGATES_EXTERNAL_SRCS
     FILTER ".*(_test|_tester)\\.(cc|h)"
   )
+list(APPEND TFLITE_DELEGATES_UTILS_SRCS
+  ${TFLITE_SOURCE_DIR}/delegates/utils/simple_delegate.h
+  ${TFLITE_SOURCE_DIR}/delegates/utils/simple_delegate.cc
+)
+
+add_library(utils_simple_delegate STATIC
+  ${TFLITE_DELEGATES_UTILS_SRCS}
+)
+
 endif()
 populate_tflite_source_vars("experimental/remat"
   TFLITE_EXPERIMENTAL_REMAT_SRCS
@@ -506,6 +533,16 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "iOS")
   )
 endif()
 
+# Common include directories
+set(TFLITE_INCLUDE_DIRS
+  "${TENSORFLOW_SOURCE_DIR}"
+  "${TFLITE_FLATBUFFERS_SCHEMA_DIR}"
+)
+include_directories(
+  BEFORE
+    ${TFLITE_INCLUDE_DIRS}
+)
+
 # TFLite library
 set(_ALL_TFLITE_SRCS
   ${TFLITE_CORE_API_SRCS}
@@ -549,6 +586,8 @@ set(_ALL_TFLITE_HDRS ${_ALL_TFLITE_SRCS})
 list(FILTER _ALL_TFLITE_HDRS INCLUDE REGEX ".*\\.h$")
 target_include_directories(tensorflow-lite
   PUBLIC $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PUBLIC
+    ${TFLITE_INCLUDE_DIRS}
 )
 target_link_libraries(tensorflow-lite
   PUBLIC
@@ -569,6 +608,8 @@ target_link_libraries(tensorflow-lite
     ${CMAKE_DL_LIBS}
     ${TFLITE_TARGET_DEPENDENCIES}
 )
+
+target_link_libraries(utils_simple_delegate tensorflow-lite)
 
 if (NOT BUILD_SHARED_LIBS)
   list(APPEND TFLITE_TARGET_PUBLIC_OPTIONS "-DTFL_STATIC_LIBRARY_BUILD")

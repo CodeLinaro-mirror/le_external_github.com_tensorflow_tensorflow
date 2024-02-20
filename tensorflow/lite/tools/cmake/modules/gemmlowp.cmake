@@ -42,4 +42,5 @@ set(GEMMLOWP_SOURCE_DIR "${gemmlowp_SOURCE_DIR}" CACHE PATH "Source directory")
 add_subdirectory(
   "${CMAKE_CURRENT_LIST_DIR}/gemmlowp"
   "${gemmlowp_BINARY_DIR}"
+  EXCLUDE_FROM_ALL
 )
