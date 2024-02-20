@@ -20,6 +20,12 @@ endif()
 
 include(OverridableFetchContent)
 
+if(${CMAKE_VERSION} VERSION_LESS "3.17.0")
+  set(ABSEIL_PATCH_COMMAND "apply")
+else()
+  set(ABSEIL_PATCH_COMMAND "am")
+endif()
+
 OverridableFetchContent_Declare(
   abseil-cpp
   GIT_REPOSITORY https://github.com/abseil/abseil-cpp
@@ -27,6 +33,7 @@ OverridableFetchContent_Declare(
   GIT_TAG b971ac5250ea8de900eae9f95e06548d14cd95fe
   GIT_SHALLOW TRUE
   GIT_PROGRESS TRUE
+  PATCH_COMMAND git ${ABSEIL_PATCH_COMMAND} ${TFLITE_SOURCE_DIR}/patches/abseil-cpp/0001-Revert-Release-the-CRC-library.patch && git ${ABSEIL_PATCH_COMMAND} ${TFLITE_SOURCE_DIR}/patches/abseil-cpp/0002-Revert-Allow-Cord-to-store-chunked-checksums.patch
   PREFIX "${CMAKE_BINARY_DIR}"
   SOURCE_DIR "${CMAKE_BINARY_DIR}/abseil-cpp"
 )
