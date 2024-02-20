@@ -14,7 +14,22 @@
 # limitations under the License.
 
 cmake_minimum_required(VERSION 3.16)
+
 project(tensorflow-lite-c C CXX)
+
+if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
+  add_definitions(-DTFLITE_PROFILING_ENABLED)
+  add_definitions(-funsafe-math-optimizations)
+  add_definitions(-ftree-vectorize)
+  add_definitions(-flax-vector-conversions)
+  add_definitions(-fomit-frame-pointer)
+  add_definitions(-DBUILD_TESTING=OFF)
+  add_definitions(-DEIGEN_MPL2_ONLY)
+  add_definitions(-fPIC)
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fno-short-enums -Ofast")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+endif()
 
 option(TFLITE_C_BUILD_SHARED_LIBS "Build shared libraries" ON)
 
@@ -33,7 +48,6 @@ set(TFLITE_SOURCE_DIR "${TENSORFLOW_SOURCE_DIR}/tensorflow/lite")
 add_subdirectory(
   "${TFLITE_SOURCE_DIR}"
   "${CMAKE_CURRENT_BINARY_DIR}/tensorflow-lite"
-  EXCLUDE_FROM_ALL
 )
 
 set(CMAKE_CXX_STANDARD 17)
@@ -73,6 +87,7 @@ add_library(tensorflowlite_c ${TFLITE_C_LIBTYPE}
   c_api_internal.h
   c_api_types.h
   common.h
+  dummy.cc
 )
 
 if (TFLITE_C_BUILD_SHARED_LIBS)
@@ -87,4 +102,9 @@ endif()
 
 target_link_libraries(tensorflowlite_c
   tensorflow-lite
+  utils_simple_delegate
+)
+
+install(TARGETS tensorflowlite_c
+  LIBRARY
 )
