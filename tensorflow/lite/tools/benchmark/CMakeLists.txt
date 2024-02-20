@@ -38,11 +38,19 @@ list(APPEND TFLITE_BENCHMARK_SRCS
   ${TFLITE_SOURCE_DIR}/tools/model_loader.cc
   ${TFLITE_SOURCE_DIR}/tools/tool_params.cc
   ${TFLITE_SOURCE_DIR}/tools/utils.cc
+  ${TFLITE_SOURCE_DIR}/delegates/utils/simple_delegate.cc
 )
 
-list(APPEND TFLITE_BENCHMARK_LIBS
-  tensorflow-lite
-)
+if (TFLITE_C_BUILD_SHARED_LIBS)
+  list(APPEND TFLITE_BENCHMARK_LIBS
+    tensorflowlite_c
+  )
+else ()
+  list(APPEND TFLITE_BENCHMARK_LIBS
+    tensorflow-lite
+  )
+endif()
+
 
 # TODO(b/171007016): Enable performance options on Windows.
 if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
@@ -65,7 +73,7 @@ if(TFLITE_ENABLE_EXTERNAL_DELEGATE)
   )
 endif()  # TFLITE_ENABLE_EXTERNAL_DELEGATE
 
-if(CMAKE_SYSTEM_NAME MATCHES "Android")
+if(CMAKE_SYSTEM_NAME MATCHES "Android" OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   if(_TFLITE_ENABLE_NNAPI)
     list(APPEND TFLITE_BENCHMARK_SRCS
       ${TFLITE_SOURCE_DIR}/tools/delegates/nnapi_delegate_provider.cc
@@ -87,6 +95,11 @@ add_executable(benchmark_model
   EXCLUDE_FROM_ALL
   ${TFLITE_BENCHMARK_SRCS}
 )
+
+install(TARGETS benchmark_model
+  RUNTIME
+)
+
 target_compile_options(benchmark_model
   PRIVATE
     ${TFLITE_BENCHMARK_CC_OPTIONS}
