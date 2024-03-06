@@ -292,14 +292,7 @@ populate_tflite_source_vars("c" TFLITE_C_SRCS)
 populate_tflite_source_vars("delegates" TFLITE_DELEGATES_SRCS)
 if(TFLITE_ENABLE_GPU)
   add_definitions(-DTFLITE_ENABLE_GPU)
-  find_package(opencl_headers REQUIRED)
-  find_package(vulkan_headers REQUIRED)
   find_package(fp16_headers REQUIRED)
-  # Android NDK already has OpenGL, EGL headers.
-  if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
-    find_package(opengl_headers REQUIRED)
-    find_package(egl_headers REQUIRED)
-  endif()
   populate_tflite_source_vars(
     "delegates/gpu/cl" TFLITE_DELEGATES_GPU_CL_SRCS
     FILTER "(_test|gl_interop|gpu_api_delegate|egl_sync)\\.(cc|h)$"
