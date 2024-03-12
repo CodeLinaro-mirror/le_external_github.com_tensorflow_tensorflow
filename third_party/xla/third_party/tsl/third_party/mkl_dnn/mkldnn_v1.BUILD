@@ -179,7 +179,7 @@ cc_library(
     textual_hdrs = _TEXTUAL_HDRS_LIST,
     visibility = ["//visibility:public"],
     deps = [":onednn_autogen"] + if_mkl_ml(
-        ["@local_tsl//tsl/mkl:intel_binary_blob"],
+        ["@local_tsl//tensorflow/compiler/xla/tsl/mkl:intel_binary_blob"],
         [],
     ),
 )

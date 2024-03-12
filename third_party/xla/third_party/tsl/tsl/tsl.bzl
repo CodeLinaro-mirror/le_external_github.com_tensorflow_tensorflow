@@ -1,9 +1,20 @@
 """Provides build configuration for TSL"""
 
+# buildifier: disable=out-of-order-load
+# Internally this loads a macro, but in OSS this is a function
+def register_extension_info(**kwargs):
+    pass
+
 load("@bazel_skylib//lib:new_sets.bzl", "sets")
 load(
     "@local_config_cuda//cuda:build_defs.bzl",
     "if_cuda",
+)
+load(
+    "@local_xla//xla/tsl/mkl:build_defs.bzl",
+    "if_enable_mkl",
+    "if_mkl",
+    "onednn_v3_define",
 )
 load(
     "//third_party/compute_library:build_defs.bzl",
@@ -21,12 +32,6 @@ load(
     "if_rocm_is_configured",
 )
 load(
-    "//tsl/mkl:build_defs.bzl",
-    "if_enable_mkl",
-    "if_mkl",
-    "onednn_v3_define",
-)
-load(
     "@local_tsl//tsl/platform:rules_cc.bzl",
     "cc_binary",
     "cc_library",
@@ -36,11 +41,6 @@ load(
     "@local_config_tensorrt//:build_defs.bzl",
     "if_tensorrt",
 )
-
-# buildifier: disable=out-of-order-load
-# Internally this loads a macro, but in OSS this is a function
-def register_extension_info(**kwargs):
-    pass
 
 two_gpu_tags = ["requires-gpu-nvidia:2", "notap", "manual", "no_pip"]
 
@@ -313,11 +313,11 @@ def tsl_copts(
 def tf_openmp_copts():
     # We assume when compiling on Linux gcc/clang will be used and MSVC on Windows
     return select({
-        clean_dep("//tsl/mkl:build_with_mkl_lnx_openmp"): ["-fopenmp"],
+        clean_dep("@local_xla//xla/tsl/mkl:build_with_mkl_lnx_openmp"): ["-fopenmp"],
         # copybara:uncomment_begin
-        # "//tsl/mkl:build_with_mkl_windows_openmp": ["/openmp"],
+        # "@local_xla//xla/tsl/mkl:build_with_mkl_windows_openmp": ["/openmp"],
         # copybara:uncomment_end_and_comment_begin
-        clean_dep("//tsl/mkl:build_with_mkl_windows_openmp"): ["/openmp:llvm"],
+        clean_dep("@local_xla//xla/tsl/mkl:build_with_mkl_windows_openmp"): ["/openmp:llvm"],
         # copybara:comment_end
         "//conditions:default": [],
     })

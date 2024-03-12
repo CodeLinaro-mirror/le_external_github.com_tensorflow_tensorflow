@@ -2,51 +2,51 @@
 # TensorFlow is a computational framework, primarily for use in machine
 # learning applications.
 
-load("@bazel_skylib//lib:selects.bzl", "selects")
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "bool_setting")
-load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
-load(
-    "//tensorflow:tensorflow.bzl",
-    "VERSION",
-    "VERSION_MAJOR",
-    "check_deps",
-    "if_google",
-    "if_oss",
-    "if_xla_available",
-    "tf_cc_shared_object",
-    "tf_custom_op_library_additional_deps_impl",
-    "tf_monitoring_python_deps",
-    "tf_native_cc_binary",
-    "tsl_async_value_deps",
-)
-load(
-    "//tensorflow:tensorflow.default.bzl",
-    "ADDITIONAL_API_INDEXABLE_SETTINGS",
-    "tf_cc_shared_library",
-)
-load(
-    "//tensorflow/core/platform:build_config.bzl",
-    "tf_additional_binary_deps",
-)
-load(
-    "//tensorflow/core/platform:build_config_root.bzl",
-    "if_static",
-    "tf_additional_plugin_deps",
-    "tf_additional_profiler_deps",
-)
-load(
-    "@local_tsl//tsl/mkl:build_defs.bzl",
-    "if_mkl_ml",
-)
-load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-
 # copybara:uncomment_begin
 # # buildifier: disable=out-of-order-load
 # load("//devtools/build_cleaner/skylark:action_config_test.bzl", "action_config_test")
 # load("//devtools/copybara/rules:copybara.bzl", "copybara_config_test")
+# load("@bazel_skylib//lib:selects.bzl", "selects")
+# load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "bool_setting")
+# load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+# load(
+#     "//tensorflow:tensorflow.bzl",
+#     "VERSION",
+#     "VERSION_MAJOR",
+#     "check_deps",
+#     "if_google",
+#     "if_oss",
+#     "if_xla_available",
+#     "tf_cc_shared_object",
+#     "tf_custom_op_library_additional_deps_impl",
+#     "tf_monitoring_python_deps",
+#     "tf_native_cc_binary",
+#     "tsl_async_value_deps",
+# )
+# load(
+#     "//tensorflow:tensorflow.default.bzl",
+#     "ADDITIONAL_API_INDEXABLE_SETTINGS",
+#     "tf_cc_shared_library",
+# )
+# load(
+#     "@local_xla//xla/tsl/mkl:build_defs.bzl",
+#     "if_mkl_ml",
+# )
+# load(
+#     "//tensorflow/core/platform:build_config.bzl",
+#     "tf_additional_binary_deps",
+# )
+# load(
+#     "//tensorflow/core/platform:build_config_root.bzl",
+#     "if_static",
+#     "tf_additional_plugin_deps",
+#     "tf_additional_profiler_deps",
+# )
 # load("@rules_license//rules:license.bzl", "license")
 # # buildifier: enable=out-of-order-load
 # copybara:uncomment_end
+
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 
 # copybara:comment_begin(oss-only)
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
@@ -1095,7 +1095,7 @@ filegroup(
     name = "intel_binary_blob",
     data = if_mkl_ml(
         [
-            "@local_tsl//tsl/mkl:intel_binary_blob",
+            "@local_xla//xla/tsl/mkl:intel_binary_blob",
         ],
     ),
 )
@@ -1116,8 +1116,8 @@ bzl_library(
         "@local_config_rocm//rocm:build_defs_bzl",
         "@local_config_tensorrt//:build_defs_bzl",
         "@local_tsl//tsl:tsl_bzl",
-        "@local_tsl//tsl/mkl:build_defs_bzl",
         "@local_tsl//tsl/platform/default:cuda_build_defs_bzl",
+        "@local_xla//xla/tsl/mkl:build_defs_bzl",
     ],
 )
 

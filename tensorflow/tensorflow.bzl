@@ -1,5 +1,9 @@
 """Provides build configuration for TensorFlow."""
 
+# Do not sort: copybara rule changes this
+def register_extension_info(**kwargs):
+    pass  # buildifier: disable=out-of-order-load
+
 load(
     "//tensorflow:py.default.bzl",
     _plain_py_binary = "py_binary",
@@ -13,6 +17,13 @@ load(
     "cuda_library",
     "if_cuda",
     "if_cuda_exec",
+)
+load(
+    "@local_xla//xla/tsl/mkl:build_defs.bzl",
+    "if_enable_mkl",
+    "if_mkl",
+    "if_mkl_ml",
+    "onednn_v3_define",
 )
 
 #
@@ -69,21 +80,10 @@ load(
     _transitive_hdrs = "transitive_hdrs",
 )
 load(
-    "@local_tsl//tsl/mkl:build_defs.bzl",
-    "if_enable_mkl",
-    "if_mkl",
-    "if_mkl_ml",
-    "onednn_v3_define",
-)
-load(
     "@local_config_tensorrt//:build_defs.bzl",
     "if_tensorrt",
     "if_tensorrt_exec",
 )
-
-# Do not sort: copybara rule changes this
-def register_extension_info(**kwargs):
-    pass  # buildifier: disable=out-of-order-load
 
 # version for the shared libraries, can
 # not contain rc or alpha, only numbers.
@@ -511,11 +511,11 @@ def tf_copts_exec(
 def tf_openmp_copts():
     # We assume when compiling on Linux gcc/clang will be used and MSVC on Windows
     return select({
-        "@local_tsl//tsl/mkl:build_with_mkl_lnx_openmp": ["-fopenmp"],
+        "@local_xla//xla/tsl/mkl:build_with_mkl_lnx_openmp": ["-fopenmp"],
         # copybara:uncomment_begin
-        # "@local_tsl//tsl/mkl:build_with_mkl_windows_openmp": ["/openmp"],
+        # "@local_xla//xla/tsl/mkl:build_with_mkl_windows_openmp": ["/openmp"],
         # copybara:uncomment_end_and_comment_begin
-        "@local_tsl//tsl/mkl:build_with_mkl_windows_openmp": ["/openmp:llvm"],
+        "@local_xla//xla/tsl/mkl:build_with_mkl_windows_openmp": ["/openmp:llvm"],
         # copybara:comment_end
         "//conditions:default": [],
     })
@@ -524,7 +524,7 @@ def tf_openmp_lopts():
     # When compiling on Windows, force MSVC to use libiomp that was compiled
     # as part of this build.
     return select({
-        "@local_tsl//tsl/mkl:build_with_mkl_windows_openmp": [windows_llvm_openmp_linkopts()],
+        "@local_xla//xla/tsl/mkl:build_with_mkl_windows_openmp": [windows_llvm_openmp_linkopts()],
         "//conditions:default": [],
     })
 
@@ -1062,8 +1062,8 @@ def tf_cc_binary(
         names = [name]
 
     # Optional MKL dependency, we also tell buildcleaner to ignore this dep using a tag.
-    mkl_dep = if_mkl_ml([clean_dep("@local_tsl//tsl/mkl:intel_binary_blob")])
-    tags = kwargs.pop("tags", []) + ["req_dep=" + clean_dep("@local_tsl//tsl/mkl:intel_binary_blob")]
+    mkl_dep = if_mkl_ml([clean_dep("@local_xla//xla/tsl/mkl:intel_binary_blob")])
+    tags = kwargs.pop("tags", []) + ["req_dep=" + clean_dep("@local_xla//xla/tsl/mkl:intel_binary_blob")]
 
     for name_os in names:
         cc_binary(
@@ -1565,7 +1565,7 @@ def tf_cc_test(
         }) + linkopts + _rpath_linkopts(name),
         deps = deps + tf_binary_dynamic_kernel_deps(kernels) + if_mkl_ml(
             [
-                clean_dep("@local_tsl//tsl/mkl:intel_binary_blob"),
+                clean_dep("@local_xla//xla/tsl/mkl:intel_binary_blob"),
             ],
         ),
         data = data +
@@ -1608,7 +1608,7 @@ def tf_cc_shared_test(
         }) + linkopts + _rpath_linkopts(name),
         deps = deps + tf_binary_dynamic_kernel_deps(kernels) + if_mkl_ml(
             [
-                clean_dep("@local_tsl//tsl/mkl:intel_binary_blob"),
+                clean_dep("@local_xla//xla/tsl/mkl:intel_binary_blob"),
             ],
         ),
         dynamic_deps = if_static(
@@ -1833,7 +1833,7 @@ def tf_cc_test_mkl(
                     "-lm",
                 ],
             }) + _rpath_linkopts(src_to_test_name(src)) + tf_openmp_lopts(),
-            deps = deps + tf_binary_dynamic_kernel_deps(kernels) + if_mkl_ml(["@local_tsl//tsl/mkl:intel_binary_blob"]),
+            deps = deps + tf_binary_dynamic_kernel_deps(kernels) + if_mkl_ml(["@local_xla//xla/tsl/mkl:intel_binary_blob"]),
             data = data + tf_binary_dynamic_kernel_dsos(),
             exec_properties = tf_exec_properties({"tags": tags}),
             linkstatic = linkstatic,
@@ -3350,7 +3350,7 @@ def tf_python_pybind_extension_opensource(
     It is used for targets under //third_party/tensorflow/python that link
     against libtensorflow_framework.so and pywrap_tensorflow_internal.so.
     """
-    extended_deps = deps + if_mkl_ml(["@local_tsl//tsl/mkl:intel_binary_blob"])
+    extended_deps = deps + if_mkl_ml(["@local_xla//xla/tsl/mkl:intel_binary_blob"])
     extended_deps += [] if dynamic_deps else if_windows([], ["//tensorflow:libtensorflow_framework_import_lib"]) + tf_binary_pybind_deps()
     extended_deps += ["@local_xla//xla:bazel_issue_21519"]  # buildifier: disable=list-append
     pybind_extension_opensource(
