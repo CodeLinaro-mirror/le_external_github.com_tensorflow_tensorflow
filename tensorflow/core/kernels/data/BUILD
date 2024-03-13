@@ -23,6 +23,7 @@ tf_kernel_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/data:dataset_utils",
+        "//tensorflow/core/data:global_shuffle_utils",
         "//tensorflow/core/data:name_utils",
         "@com_google_absl//absl/status",
         "@local_tsl//tsl/platform:mutex",
@@ -1077,8 +1078,8 @@ tf_kernel_library(
     deps = [
         "//tensorflow/core:dataset_ops_op_lib",
         "//tensorflow/core:framework",
-        "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
+        "//tensorflow/core/data:global_shuffle_utils",
         "//tensorflow/core/data:name_utils",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -1155,6 +1156,7 @@ tf_kernel_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/data:dataset_utils",
+        "//tensorflow/core/data:global_shuffle_utils",
         "//tensorflow/core/data:name_utils",
         "@com_google_absl//absl/status",
         "@local_tsl//tsl/platform:thread_annotations",
@@ -1355,6 +1357,7 @@ tf_kernel_library(
         "//tensorflow/core/data:dataset_utils",
         "//tensorflow/core/data:name_utils",
         "//tensorflow/core/data:split_utils",
+        "@com_google_absl//absl/status",
     ],
 )
 

@@ -184,6 +184,16 @@ tf_cc_test(
 )
 
 cc_library(
+    name = "global_shuffle_utils",
+    srcs = ["global_shuffle_utils.cc"],
+    hdrs = ["global_shuffle_utils.h"],
+    # copybara:uncomment copts = ["-Wthread-safety-analysis"],
+    deps = [
+        "//tensorflow/core:framework",
+    ],
+)
+
+cc_library(
     name = "hash_utils",
     srcs = ["hash_utils.cc"],
     hdrs = ["hash_utils.h"],
