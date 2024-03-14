@@ -55,6 +55,7 @@ limitations under the License.
 #include "xla/service/hlo_value.h"
 #include "xla/service/instruction_hoister.h"
 #include "xla/service/memory_space_assignment/allocation.h"
+#include "xla/service/memory_space_assignment/alternate_memory_best_fit_heap.h"
 #include "xla/service/memory_space_assignment/cost_analysis.h"
 #include "xla/service/memory_space_assignment/memory_space_assignment.pb.h"
 #include "xla/service/memory_space_assignment/options.h"
