@@ -802,14 +802,83 @@ Status EraseElementFromVector(std::vector<T>* container, const T& value) {
 // two int4 values. 'input' should have num_elements bytes; 'output' should have
 // (num_elements+1)/2 bytes. The high-order four bits of each byte in 'input'
 // are ignored.
-void PackInt4(absl::Span<const char> input, absl::Span<char> output);
+template <size_t kBitsPerElement>
+void PackIntN(absl::Span<const char> input, absl::Span<char> output) {
+  constexpr auto kElementsPerByte = 8 / kBitsPerElement;
+  size_t aligned_inputs = input.size() / kElementsPerByte;
+  [=](const char* __restrict__ src, char* __restrict dest) {
+    for (size_t i = 0; i < aligned_inputs; ++i) {
+      char byte = 0;
+      for (size_t j = 0; j < kElementsPerByte; ++j) {
+        byte |=
+            (src[i * kElementsPerByte + j] & LsbMask<uint8_t>(kBitsPerElement))
+            << (kBitsPerElement * (kElementsPerByte - j - 1));
+      }
+      dest[i] = byte;
+    }
+    if (size_t remainder = input.size() % kElementsPerByte; remainder != 0) {
+      char byte = 0;
+      for (size_t j = 0; j < remainder; ++j) {
+        auto masked = (src[aligned_inputs * kElementsPerByte + j] &
+                       LsbMask<uint8_t>(kBitsPerElement))
+                      << (kBitsPerElement * (kElementsPerByte - j - 1));
+        byte |= masked;
+      }
+      dest[aligned_inputs] = byte;
+    }
+  }(input.data(), output.data());
+}
+
+inline void PackIntN(int bits_per_element, absl::Span<const char> input,
+                     absl::Span<char> output) {
+  if (bits_per_element == 2) {
+    PackIntN<2>(input, output);
+  } else if (bits_per_element == 4) {
+    PackIntN<4>(input, output);
+  } else {
+    LOG(FATAL) << "Invalid bits_per_element: " << bits_per_element;
+  }
+}
 
 // Takes a sequence of packed int4 values, such that every byte stores two
 // int4 values, and unpacks them so every byte stores one int4 value in the
 // low-order four bits. 'input' should have (num_elements+1)/2 bytes; 'output'
 // should have num_elements bytes. The high-order 4-bits in each output are
 // zero.
-void UnpackInt4(absl::Span<const char> input, absl::Span<char> output);
+template <size_t kBitsPerElement>
+void UnpackIntN(absl::Span<const char> input, absl::Span<char> output) {
+  constexpr auto kElementsPerByte = 8 / kBitsPerElement;
+  size_t aligned_outputs = output.size() / kElementsPerByte;
+  [=](const char* __restrict__ src, char* __restrict dest) {
+    for (size_t i = 0; i < aligned_outputs; ++i) {
+      char byte = src[i];
+      for (int j = 0; j < kElementsPerByte; ++j) {
+        dest[i * kElementsPerByte + j] =
+            (byte >> (kBitsPerElement * (kElementsPerByte - j - 1))) &
+            LsbMask<uint8_t>(kBitsPerElement);
+      }
+    }
+    if (size_t remainder = output.size() % kElementsPerByte; remainder != 0) {
+      char byte = src[aligned_outputs];
+      for (size_t j = 0; j < remainder; ++j) {
+        dest[aligned_outputs * kElementsPerByte + j] =
+            (byte >> (kBitsPerElement * (kElementsPerByte - j - 1))) &
+            LsbMask<uint8_t>(kBitsPerElement);
+      }
+    }
+  }(input.data(), output.data());
+}
+
+inline void UnpackIntN(int bits_per_element, absl::Span<const char> input,
+                       absl::Span<char> output) {
+  if (bits_per_element == 2) {
+    UnpackIntN<2>(input, output);
+  } else if (bits_per_element == 4) {
+    UnpackIntN<4>(input, output);
+  } else {
+    LOG(FATAL) << "Invalid bits_per_element: " << bits_per_element;
+  }
+}
 
 class HloInstruction;
 class HloModule;

@@ -508,7 +508,7 @@ llvm::Value* IrArray::EmitArrayElementAddress(
     return EmitLinearArrayElementAddress(index, b, name, is_high_order_bits);
   }
 
-  if (primitive_util::Is4BitType(shape_.element_type())) {
+  if (primitive_util::IsSubByteNonPredType(shape_.element_type())) {
     // Int4 arrays require the use of a linear index, because the GEP
     // multi-indexing logic below does not properly handle packed subbyte types.
     IrArray::Index linear_index = index;
@@ -557,7 +557,7 @@ llvm::Value* IrArray::EmitLinearArrayElementAddress(
   CHECK(index.LinearValidOnShape(shape_));
   llvm::Module* module = b->GetInsertBlock()->getParent()->getParent();
   llvm::Type* type = PrimitiveTypeToIrType(shape_.element_type(), module);
-  if (!primitive_util::Is4BitType(shape_.element_type())) {
+  if (!primitive_util::IsSubByteNonPredType(shape_.element_type())) {
     auto linear_index = llvm::dyn_cast<llvm::BinaryOperator>(index.linear());
     if (linear_index && (linear_index->getOpcode() == llvm::Instruction::Add)) {
       llvm::Value* index_operand_0 = linear_index->getOperand(0);
@@ -607,9 +607,10 @@ llvm::Value* IrArray::EmitReadArrayElement(const Index& index,
   llvm::Value* is_high_order_bits = nullptr;
   llvm::Value* element_address = EmitArrayElementAddress(
       index, b, name, use_linear_index, &is_high_order_bits);
-  llvm::Type* load_type = primitive_util::Is4BitType(shape_.element_type())
-                              ? b->getInt8Ty()
-                              : element_type_;
+  llvm::Type* load_type =
+      primitive_util::IsSubByteNonPredType(shape_.element_type())
+          ? b->getInt8Ty()
+          : element_type_;
   llvm::LoadInst* load =
       b->CreateLoad(load_type, element_address, llvm_ir::AsStringRef(name));
   AnnotateLoadStoreInstructionWithMetadata(load);
