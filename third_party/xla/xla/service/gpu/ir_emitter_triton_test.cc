@@ -1293,7 +1293,7 @@ ENTRY entry {
   TritonGemmConfig config(16, 32, 512, 1, 4, 8);
   EXPECT_THAT(
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
-                    "test_fn", triton_dot_computation, kTritonGemmFusionKind,
+                    "test_fn", triton_dot_computation,
                     se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
                                               /*minor=*/0},
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context),
@@ -1308,7 +1308,7 @@ ENTRY entry {
   TF_ASSERT_OK_AND_ASSIGN(
       const auto result,
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
-                    "test_fn", triton_dot_computation, kTritonGemmFusionKind,
+                    "test_fn", triton_dot_computation,
                     se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
                                               /*minor=*/0},
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context));
@@ -1796,7 +1796,7 @@ ENTRY entry {
   TritonGemmConfig config(512, 512, 32, 1, 1, 2);
   EXPECT_THAT(
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
-                    "test_fn", triton_dot_computation, kTritonGemmFusionKind,
+                    "test_fn", triton_dot_computation,
                     se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
                                               /*minor=*/0},
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context),
@@ -1810,7 +1810,7 @@ ENTRY entry {
   config.block_k = 32;
   TF_CHECK_OK(
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
-                    "test_fn", triton_dot_computation, kTritonGemmFusionKind,
+                    "test_fn", triton_dot_computation,
                     se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
                                               /*minor=*/0},
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context)
@@ -3117,7 +3117,7 @@ ENTRY e {
   TF_ASSERT_OK_AND_ASSIGN(
       const auto result,
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
-                    "test_fn", triton_dot_computation, kTritonGemmFusionKind,
+                    "test_fn", triton_dot_computation,
                     GetCudaComputeCapability(), dev_info, triton_gemm_config,
                     &llvm_module, &EmitMatMul, mlir_context));
   // The config is chosen so that the used memory size is slightly above the
