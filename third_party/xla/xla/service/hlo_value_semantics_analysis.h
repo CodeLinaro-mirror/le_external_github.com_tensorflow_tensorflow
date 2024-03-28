@@ -108,6 +108,8 @@ class EinsumDepthAnalysis : public DfsHloVisitorWithDefault {
   Status HandleSendDone(HloInstruction* send_done) override;
   Status HandleRecvDone(HloInstruction* recv_done) override;
   Status HandleAllReduce(HloInstruction* all_reduce) override;
+  Status HandleAsyncStart(HloInstruction* async_start) override;
+  Status HandleAsyncDone(HloInstruction* async_done) override;
   const EinsumDepthMap& GetEinsumDepthMap() const { return einsum_depth_map_; }
 
  private:
@@ -159,6 +161,8 @@ class EinsumHeightAnalysis : public DfsHloVisitorWithDefault {
   Status HandleSendDone(HloInstruction* send_done) override;
   Status HandleRecvDone(HloInstruction* recv_done) override;
   Status HandleAllReduce(HloInstruction* all_reduce) override;
+  Status HandleAsyncStart(HloInstruction* async_start) override;
+  Status HandleAsyncDone(HloInstruction* async_done) override;
   const EinsumHeightMap& GetEinsumHeightMap() const {
     return einsum_height_map_;
   }
