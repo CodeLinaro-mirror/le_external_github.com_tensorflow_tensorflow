@@ -39,6 +39,19 @@ absl::flat_hash_map<std::string, absl::Duration> RequestCost::GetCosts() const {
   return cost_map_;
 }
 
+void RequestCost::RecordMetrics(
+    const std::vector<std::pair<absl::string_view, float>>& metrics) {
+  absl::MutexLock lock(&mutex_);
+  for (const auto& metric : metrics) {
+    metric_map_[metric.first] += metric.second;
+  }
+}
+
+absl::flat_hash_map<std::string, float> RequestCost::GetMetrics() const {
+  absl::MutexLock lock(&mutex_);
+  return metric_map_;
+}
+
 void RequestCost::RecordBatchMetrics(const BatchMetrics& batch_metrics) {
   absl::MutexLock lock(&mutex_);
   batch_metrics_.push_back(batch_metrics);
