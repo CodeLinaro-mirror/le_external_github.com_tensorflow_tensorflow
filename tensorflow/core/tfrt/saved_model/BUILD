@@ -246,6 +246,23 @@ cc_library(
 )
 
 cc_library(
+    name = "saved_model_testutil_cpu",
+    testonly = 1,
+    srcs = ["saved_model_testutil.cc"],
+    hdrs = ["saved_model_testutil.h"],
+    deps = [
+        ":saved_model_cpu",
+        "//tensorflow/cc/saved_model:loader",
+        "//tensorflow/compiler/mlir/tfrt:tfrt_compile_options",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core/framework:tensor_testutil",
+        "//tensorflow/core/tfrt/runtime",
+        "@tf_runtime//:hostcontext",
+    ],
+)
+
+cc_library(
     name = "saved_model_import_input",
     srcs = ["saved_model_import_input.cc"],
     hdrs = ["saved_model_import_input.h"],
