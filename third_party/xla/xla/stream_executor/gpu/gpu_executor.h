@@ -40,6 +40,7 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
+#include "xla/stream_executor/blas.h"
 #include "xla/stream_executor/command_buffer.h"
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/dnn.h"
@@ -270,9 +271,9 @@ class GpuExecutor : public internal::StreamExecutorInterface {
   static absl::StatusOr<std::unique_ptr<DeviceDescription>>
   CreateDeviceDescription(int device_ordinal);
 
-  blas::BlasSupport* CreateBlas() override;
+  blas::BlasSupport* AsBlas() override;
 
-  fft::FftSupport* CreateFft() override;
+  fft::FftSupport* AsFft() override;
 
   dnn::DnnSupport* AsDnn() override;
 
@@ -432,6 +433,14 @@ class GpuExecutor : public internal::StreamExecutorInterface {
   // Memoized DNN support object -- we only want to create this once when asked
   // for a DNN interface.
   std::unique_ptr<dnn::DnnSupport> dnn_ ABSL_GUARDED_BY(mu_);
+
+  // Memoized FFT support object -- we only want to create this once when asked
+  // for a FFT interface.
+  std::unique_ptr<fft::FftSupport> fft_ ABSL_GUARDED_BY(mu_);
+
+  // Memoized BLAS support object -- we only want to create this once when asked
+  // for a BLAS interface.
+  std::unique_ptr<blas::BlasSupport> blas_ ABSL_GUARDED_BY(mu_);
 
   GpuExecutor(const GpuExecutor&) = delete;
   void operator=(const GpuExecutor&) = delete;
