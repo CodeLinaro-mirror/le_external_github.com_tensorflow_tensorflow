@@ -66,6 +66,27 @@ py_strict_test(
     ],
 )
 
+py_strict_test(
+    name = "tpu_embedding_v3_cpu_ops_test",
+    srcs = ["tpu_embedding_v3_cpu_ops_test.py"],
+    shard_count = 8,
+    deps = [
+        "//tensorflow/core/tpu/kernels:sparse_core_preprocess_ops",
+        "//tensorflow/python/compat:v2_compat",
+        "//tensorflow/python/framework:dtypes",
+        "//tensorflow/python/framework:ops",
+        "//tensorflow/python/framework:sparse_tensor",
+        "//tensorflow/python/ops:array_ops",
+        "//tensorflow/python/ops:bitwise_ops",
+        "//tensorflow/python/ops:math_ops",
+        "//tensorflow/python/ops:sparse_ops",
+        "//tensorflow/python/platform:client_testlib",
+        "//tensorflow/python/tpu/ops:gen_xla_ops",
+        "//third_party/py/numpy",
+        "@absl_py//absl/testing:parameterized",
+    ],
+)
+
 alias(
     name = "tpu_ops",
     actual = "//tensorflow/python/tpu/ops",
