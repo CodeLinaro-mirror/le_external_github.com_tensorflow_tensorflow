@@ -29,6 +29,7 @@ limitations under the License.
 #include "absl/container/inlined_vector.h"
 #include "absl/strings/str_cat.h"
 #include "xla/hlo/ir/hlo_instruction.h"
+#include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/service/hlo_alias_analysis.h"
 #include "xla/service/hlo_cost_analysis.h"
 #include "xla/service/hlo_pass_interface.h"
@@ -611,13 +612,19 @@ class MemoryPressureTracker {
   const MemoryPressureState& pressure_state() const { return pressure_state_; }
 
  private:
-  static bool ShouldSkipBufferAllocations(const HloInstruction* instruction,
-                                          const ShapeIndex& idx) {
+  static bool ShouldSkipBufferAllocations(
+      const HloInstruction* instruction, const ShapeIndex& idx,
+      const HloInstruction* first_definition) {
     // Make GetTupleElement/kBitcast make alive only the tuple pointer if not
     // array shape.
     if ((instruction->opcode() == HloOpcode::kGetTupleElement ||
          instruction->opcode() == HloOpcode::kBitcast) &&
         !idx.empty()) {
+      return true;
+    }
+    if (first_definition->opcode() == HloOpcode::kParameter &&
+        first_definition->parent() ==
+            first_definition->GetModule()->entry_computation()) {
       return true;
     }
     return false;
