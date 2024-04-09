@@ -50,6 +50,7 @@ limitations under the License.
 #include "xla/stream_executor/kernel.h"
 #include "xla/stream_executor/kernel_spec.h"
 #include "xla/stream_executor/launch_dim.h"
+#include "xla/stream_executor/memory_allocation.h"
 #include "xla/stream_executor/module_spec.h"
 #include "xla/stream_executor/platform.h"
 #include "xla/stream_executor/stream.h"
@@ -139,24 +140,10 @@ int64_t StreamExecutor::GetDeviceLoad() const {
 dnn::DnnSupport* StreamExecutor::AsDnn() { return implementation_->AsDnn(); }
 
 blas::BlasSupport* StreamExecutor::AsBlas() {
-  absl::MutexLock lock(&mu_);
-  if (blas_ != nullptr) {
-    return blas_.get();
-  }
-
-  blas_.reset(implementation_->CreateBlas());
-  return blas_.get();
+  return implementation_->AsBlas();
 }
 
-fft::FftSupport* StreamExecutor::AsFft() {
-  absl::MutexLock lock(&mu_);
-  if (fft_ != nullptr) {
-    return fft_.get();
-  }
-
-  fft_.reset(implementation_->CreateFft());
-  return fft_.get();
-}
+fft::FftSupport* StreamExecutor::AsFft() { return implementation_->AsFft(); }
 
 absl::Status StreamExecutor::Launch(Stream* stream,
                                     const ThreadDim& thread_dims,
@@ -239,7 +226,7 @@ absl::Status StreamExecutor::CollectiveMemoryDeallocate(void* location) {
   return implementation_->CollectiveMemoryDeallocate(location);
 }
 
-absl::StatusOr<std::unique_ptr<HostMemoryAllocation>>
+absl::StatusOr<std::unique_ptr<MemoryAllocation>>
 StreamExecutor::HostMemoryAllocate(uint64_t size) {
   void* buffer = implementation_->HostMemoryAllocate(size);
   if (buffer == nullptr && size > 0) {
@@ -350,12 +337,6 @@ bool StreamExecutor::AllocateStream(Stream* stream) {
 }
 
 void StreamExecutor::DeallocateStream(Stream* stream) {
-  // TODO(b/301020144) Make this part of
-  // StreamExecutorInterface::DeallocateStream methods that care about DNNs.
-  dnn::DnnSupport* dnn = AsDnn();
-  if (dnn) {
-    dnn->NotifyStreamDestroyed(stream);
-  }
   implementation_->DeallocateStream(stream);
 }
 
