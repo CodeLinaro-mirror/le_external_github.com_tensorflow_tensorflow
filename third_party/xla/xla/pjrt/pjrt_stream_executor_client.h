@@ -666,8 +666,8 @@ class PjRtStreamExecutorBuffer : public PjRtBuffer {
       bool wait_for_operations_to_complete) override;
 
   using PjRtBuffer::ToLiteralSync;
-  PjRtFuture<absl::Status> ToLiteral(MutableLiteralBase* literal) override;
-  PjRtFuture<absl::Status> LazyToLiteral(
+  PjRtFuture<> ToLiteral(MutableLiteralBase* literal) override;
+  PjRtFuture<> LazyToLiteral(
       absl::AnyInvocable<absl::StatusOr<MutableLiteralBase*>() &&> generator)
       override;
 
@@ -746,7 +746,7 @@ class PjRtStreamExecutorBuffer : public PjRtBuffer {
       bool wait_for_operations_to_complete);
 
   absl::StatusOr<std::unique_ptr<PjRtBuffer>> DonateWithControlDependency(
-      PjRtFuture<absl::Status> dependency) override;
+      PjRtFuture<> dependency) override;
 
  private:
   friend class PjRtClient;
