@@ -1897,9 +1897,9 @@ PJRT_Error* PJRT_CopyToDeviceStream_AddChunk(
       "PJRT_CopyToDeviceStream_AddChunk_Args",
       PJRT_CopyToDeviceStream_AddChunk_Args_STRUCT_SIZE, args->struct_size));
 
-  xla::PjRtFuture<xla::Status> future =
+  xla::PjRtFuture<> future =
       args->stream->stream->AddChunk(ConvertToCppChunk(*args->chunk));
-  args->transfer_complete = new PJRT_Event{std::move(future)};
+  args->transfer_complete = new PJRT_Event{std::move(future).ToStatusFuture()};
   return nullptr;
 }
 

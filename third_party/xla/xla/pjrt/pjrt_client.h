@@ -372,14 +372,14 @@ class CopyToDeviceStream {
 
   virtual ~CopyToDeviceStream();
 
-  // Emplaces a new Chunk of data to copy to the device. Returns a non-OK status
+  // Emplaces a new Chunk of data to copy to the device. Returns an error future
   // if the Chunk's size causes the amount of transferred data to exceed
   // total_bytes(), if the stream is already complete, or if the chunk is not a
   // multiple of granule_size_in_bytes().
   //
   // The transfer is started immediately, and the returned future is fulfilled
   // when the transfer completes or fails.
-  virtual PjRtFuture<Status> AddChunk(PjRtChunk chunk) = 0;
+  virtual PjRtFuture<> AddChunk(PjRtChunk chunk) = 0;
 
   // Returns the total amount of data the stream expects to be transferred.
   int64_t total_bytes() const { return total_bytes_; }
@@ -1306,8 +1306,23 @@ class PjRtBuffer {
   // If either 'this' or 'dependency' transitions to error, then the returned
   // buffer will transition to error.
   virtual StatusOr<std::unique_ptr<PjRtBuffer>> DonateWithControlDependency(
-      PjRtFuture<Status> dependency) {
+      PjRtFuture<> dependency) {
     return Unimplemented("DonateWithControlDependency is not supported.");
+  }
+
+  // TODO(b/333538339): Delete this adaptor once all users migrate from
+  // PjRtFuture<Status> to PjRtFuture<>.
+  StatusOr<std::unique_ptr<PjRtBuffer>> DonateWithControlDependency(
+      PjRtFuture<Status> dependency) {
+    PjRtFuture<>::Promise promise = PjRtFuture<>::CreatePromise();
+    dependency.OnReady([promise](Status status) mutable {
+      if (status.ok()) {
+        promise.Set();
+      } else {
+        promise.SetError(std::move(status));
+      }
+    });
+    return DonateWithControlDependency(PjRtFuture<>(std::move(promise)));
   }
 
   // Helper to allow a caller to indicate that it is going to do some "sends"
