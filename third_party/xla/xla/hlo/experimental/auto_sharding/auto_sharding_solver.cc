@@ -22,7 +22,6 @@ limitations under the License.
 #include <limits>
 #include <memory>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -69,6 +68,9 @@ constexpr double kMaxCostEpsilon = 1.0001;
 // To compensate, the overbudget objective coefficient must be amplified by the
 // same amount.
 constexpr double kMemoryMultiplier = 1e-6;
+
+// Always include memory constraints with this number of terms or fewer.
+constexpr int64_t kMemoryCardinalityThreshold = 1000;
 
 bool AutoShardingSolverOutput::operator==(
     const AutoShardingSolverOutput& other) const {
@@ -739,7 +741,7 @@ void ImposeMemoryConstraint(const AutoShardingSolverRequest& request,
                             const std::vector<std::vector<MPVariable*>>& e,
                             const MPVariable* overbudget_var, MPSolver& solver,
                             LivenessIdx time_idx) {
-  VLOG(1) << "Imposing a memory constraint at time " << time_idx;
+  VLOG(1) << "Imposing a memory constraint at time index " << time_idx;
   MPConstraint* constraint =
       solver.MakeRowConstraint(-MPSolver::infinity(), MPSolver::infinity(),
                                absl::StrCat("mem[", time_idx, "]"));
@@ -777,15 +779,28 @@ AutoShardingSolverResult SolveAndExtractSolution(
     MPSolver& solver) {
   absl::Time start_time = absl::Now();
   absl::flat_hash_set<LivenessIdx> peak_times;
-  if (request.memory_budget() > 0 && !request.deterministic_mode()) {
-    for (const LivenessIdx peak_time_idx : request.peak_times()) {
-      peak_times.insert(peak_time_idx);
+  if (request.memory_budget() > 0) {
+    // Add in any peak times that were encountered in previous iterations.
+    if (!request.deterministic_mode()) {
+      peak_times.insert(request.peak_times().begin(),
+                        request.peak_times().end());
+    }
+    // Also add in any time points that have a relatively small number of terms.
+    for (LivenessIdx time_idx = 0; time_idx < request.live_size(); ++time_idx) {
+      if (request.live(time_idx).nodes_size() <= kMemoryCardinalityThreshold) {
+        peak_times.insert(time_idx);
+      }
+    }
+    // Impose memory constraints at each of these peak times.
+    for (const LivenessIdx peak_time_idx : peak_times) {
       ImposeMemoryConstraint(request, s, e, overbudget_var, solver,
                              peak_time_idx);
     }
   }
   auto status = solver.Solve();
   if (request.memory_budget() > 0) {
+    // Continue to add memory constraints until (a) they are all satisfied,
+    // (b) the problem becomes infeasible, or (c) the solver times out.
     while (status == operations_research::MPSolver::OPTIMAL) {
       std::vector<std::pair<const MPVariable*, double>> hint;
       for (NodeIdx node_idx = 0; node_idx < request.num_nodes(); ++node_idx) {
@@ -800,6 +815,12 @@ AutoShardingSolverResult SolveAndExtractSolution(
       peak_times.insert(peak_time_idx);
       ImposeMemoryConstraint(request, s, e, overbudget_var, solver,
                              peak_time_idx);
+      if (request.has_solver_timeout()) {
+        auto remaining_time =
+            request.solver_timeout().solver_timeout_in_seconds();
+        remaining_time -= absl::ToInt64Seconds(absl::Now() - start_time);
+        solver.SetTimeLimit(absl::Seconds(std::max(remaining_time, 0L)));
+      }
       status = solver.Solve();
     }
     LOG(INFO) << "Imposed " << peak_times.size()
