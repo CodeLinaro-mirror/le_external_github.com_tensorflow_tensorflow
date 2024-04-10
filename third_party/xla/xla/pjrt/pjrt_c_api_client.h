@@ -488,16 +488,16 @@ class PjRtCApiBuffer : public PjRtBuffer {
   StatusOr<std::unique_ptr<ExternalReference>> AcquireExternalReference()
       override;
 
-  PjRtFuture<absl::Status> ToLiteral(MutableLiteralBase* literal) override;
-  PjRtFuture<absl::Status> LazyToLiteral(
+  PjRtFuture<> ToLiteral(MutableLiteralBase* literal) override;
+  PjRtFuture<> LazyToLiteral(
       absl::AnyInvocable<absl::StatusOr<MutableLiteralBase*>() &&> generator)
       override;
 
   StatusOr<size_t> GetOnDeviceSizeInBytes() const override;
 
-  PjRtFuture<Status> CopyRawToHost(void* dst, int64_t offset,
-                                   int64_t transfer_size) override {
-    return PjRtFuture<Status>(
+  PjRtFuture<> CopyRawToHost(void* dst, int64_t offset,
+                             int64_t transfer_size) override {
+    return PjRtFuture<>(
         Unimplemented("PJRT C API does not support CopyRawToHost"));
   }
 
@@ -530,7 +530,7 @@ class PjRtCApiBuffer : public PjRtBuffer {
     LOG(ERROR) << "PJRT C API does not support CopyToRemoteDeviceScattered";
   }
 
-  PjRtFuture<Status> GetReadyFuture() override;
+  PjRtFuture<> GetReadyFuture() override;
 
   bool IsOnCpu() const override;
 
@@ -554,7 +554,7 @@ class PjRtCApiBuffer : public PjRtBuffer {
   // This is a shared_ptr to keep the underlying future alive even if
   // `readiness_promise` is destroyed before `readiness_event`, and the callback
   // we set on `readiness_event` modifies `readiness_promise_`.
-  std::shared_ptr<PjRtFuture<Status>::Promise> readiness_promise_;
+  std::shared_ptr<PjRtFuture<>::Promise> readiness_promise_;
   // Set and cached the first time layout() is called.
   mutable std::optional<PjRtXlaLayout> layout_;
   // Set and cached the first time is_dynamic_dimension() is called.
@@ -780,7 +780,7 @@ class CApiCopyToDeviceStream : public CopyToDeviceStream {
                          const PJRT_Api* c_api);
   ~CApiCopyToDeviceStream() override;
 
-  PjRtFuture<Status> AddChunk(PjRtChunk chunk) override;
+  PjRtFuture<> AddChunk(PjRtChunk chunk) override;
 
  private:
   PJRT_CopyToDeviceStream* c_stream_;

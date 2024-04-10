@@ -1794,10 +1794,9 @@ PJRT_Error* PJRT_Buffer_ToHostBuffer(PJRT_Buffer_ToHostBuffer_Args* args) {
 
   auto literal = std::make_unique<xla::MutableBorrowingLiteral>(
       static_cast<char*>(args->dst), host_shape);
-  xla::PjRtFuture<xla::Status> future =
-      args->src->buffer->ToLiteral(literal.get());
+  xla::PjRtFuture<> future = args->src->buffer->ToLiteral(literal.get());
 
-  args->event = new PJRT_Event{std::move(future)};
+  args->event = new PJRT_Event{std::move(future).ToStatusFuture()};
   args->event->future.OnReady(
       [literal{std::move(literal)}](xla::Status status) {
         /* To keep literal alive */
@@ -1818,9 +1817,8 @@ PJRT_Error* PJRT_Buffer_ReadyEvent(PJRT_Buffer_ReadyEvent_Args* args) {
   PJRT_RETURN_IF_ERROR(ActualStructSizeIsGreaterOrEqual(
       "PJRT_Buffer_ReadyEvent_Args", PJRT_Buffer_ReadyEvent_Args_STRUCT_SIZE,
       args->struct_size));
-  xla::PjRtFuture<xla::Status> wrapped_promise =
-      args->buffer->buffer->GetReadyFuture();
-  args->event = new PJRT_Event{std::move(wrapped_promise)};
+  xla::PjRtFuture<> wrapped_promise = args->buffer->buffer->GetReadyFuture();
+  args->event = new PJRT_Event{std::move(wrapped_promise).ToStatusFuture()};
   return nullptr;
 }
 
@@ -1897,9 +1895,9 @@ PJRT_Error* PJRT_CopyToDeviceStream_AddChunk(
       "PJRT_CopyToDeviceStream_AddChunk_Args",
       PJRT_CopyToDeviceStream_AddChunk_Args_STRUCT_SIZE, args->struct_size));
 
-  xla::PjRtFuture<xla::Status> future =
+  xla::PjRtFuture<> future =
       args->stream->stream->AddChunk(ConvertToCppChunk(*args->chunk));
-  args->transfer_complete = new PJRT_Event{std::move(future)};
+  args->transfer_complete = new PJRT_Event{std::move(future).ToStatusFuture()};
   return nullptr;
 }
 
