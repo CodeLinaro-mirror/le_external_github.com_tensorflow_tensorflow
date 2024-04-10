@@ -109,9 +109,9 @@ class AbstractTfrtCpuBuffer : public PjRtBuffer {
 
   absl::StatusOr<size_t> GetOnDeviceSizeInBytes() const override;
 
-  PjRtFuture<Status> CopyRawToHost(void* dst, int64_t offset,
-                                   int64_t transfer_size) override {
-    return PjRtFuture<Status>(Unimplemented("CopyRawToHost not implemented"));
+  PjRtFuture<> CopyRawToHost(void* dst, int64_t offset,
+                             int64_t transfer_size) override {
+    return PjRtFuture<>(Unimplemented("CopyRawToHost not implemented"));
   }
 
   absl::StatusOr<std::unique_ptr<PjRtBuffer>> CopyToMemorySpace(
@@ -245,8 +245,8 @@ class AbstractTfrtCpuBuffer : public PjRtBuffer {
  protected:
   virtual absl::string_view buffer_name() const = 0;
 
-  PjRtFuture<Status> ToLiteralHelper(MutableLiteralBase* literal,
-                                     AsyncWorkRunner* async_work_runner);
+  PjRtFuture<> ToLiteralHelper(MutableLiteralBase* literal,
+                               AsyncWorkRunner* async_work_runner);
 
   absl::StatusOr<std::unique_ptr<PjRtBuffer>> CopyToDeviceAcrossClients(
       PjRtDevice* dst_device);
