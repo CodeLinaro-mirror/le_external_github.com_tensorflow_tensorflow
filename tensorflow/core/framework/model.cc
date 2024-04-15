@@ -2655,6 +2655,15 @@ void Model::OptimizeHillClimbHelper(
     RamBudgetManager& ram_budget_manager, StopPredicate should_stop) {
   VLOG(2) << "Starting optimization of tunable parameters with Hill Climb.";
   const double processing_time = TotalProcessingTime(snapshot);
+  if (snapshot->num_elements() <= 0) {
+    VLOG(2) << "The root node has not seen any element produced. Will start "
+               "optimizing only when at least a "
+               "path of nodes from file sources to the root has element "
+               "sizes. This is to ensure "
+               "autotune will not increase too much on nodes closer to file "
+               "sources when the pipeline starts initially.";
+    return;
+  }
   auto parameters = CollectTunableParameters(snapshot);
   if (parameters.empty()) {
     VLOG(2) << "There are no tunable parameters.";

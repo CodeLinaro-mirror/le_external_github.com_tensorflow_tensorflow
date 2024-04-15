@@ -24,7 +24,7 @@ limitations under the License.
 #include <tuple>
 #include <utility>
 
-#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 #include "absl/status/status.h"
 #include "tensorflow/core/framework/cancellation.h"
 #include "tensorflow/core/framework/model.pb.h"
@@ -3570,6 +3570,68 @@ TEST(RamBudgetManagerTest, RequestAllocationsWithBudgetAdjustment) {
   EXPECT_FALSE(rbm.RequestLegacyPrefetchBytes(5));
   // Just fits
   EXPECT_TRUE(rbm.RequestLegacyPrefetchBytes(4));
+}
+
+TEST(NodeTest, OnlyCollectParametersThatHaveElementsProduced) {
+  std::shared_ptr<Node> parallel_interleave, parallel_map, root;
+
+  auto prepare_model_tree = [&]() {
+    // Builds a graph:
+    // root <- parallel_map <- parallel_interleave
+
+    static constexpr int IRRELEVANT_MIN = 1;
+    constexpr int IRRELEVANT_MAX = 16;
+
+    parallel_interleave = model::MakeAsyncKnownRatioNode(
+        {0, "parallel_interleave", nullptr}, /*ratio=*/1,
+        {model::MakeParameter(
+            kParallelism,
+            std::make_shared<SharedState>(kAutotune,
+                                          /*mu=*/nullptr,
+                                          /*cond_var=*/nullptr),
+            IRRELEVANT_MIN, IRRELEVANT_MAX)},
+        /*is_legacy_prefetch_autotuned=*/false);
+
+    parallel_map = model::MakeAsyncKnownRatioNode(
+        {1, "parallel_map", nullptr}, /*ratio=*/1,
+        {model::MakeParameter(
+            kParallelism,
+            std::make_shared<SharedState>(kAutotune,
+                                          /*mu=*/nullptr,
+                                          /*cond_var=*/nullptr),
+            IRRELEVANT_MIN, IRRELEVANT_MAX)},
+        /*is_legacy_prefetch_autotuned=*/false);
+
+    parallel_map->add_input(parallel_interleave);
+
+    root = MakeUnknownNode({2, "unknown0", nullptr});
+    root->add_input(parallel_map);
+  };
+
+  prepare_model_tree();
+
+  // When there is no nodes seeing any input element, it should return 0
+  Node::ModelParameters parameters;
+  parameters = root->CollectTunableParameters();
+  EXPECT_EQ(parameters.size(), 0);
+
+  // Simulates the situation when the data has been produced by the first op.
+  parallel_interleave->record_element();
+  parameters = root->CollectTunableParameters();
+  EXPECT_EQ(parameters.size(), 1);
+
+  // Now that the second op has seen one element, there should be two parameters
+  // with nodes having element sizes.
+  parallel_map->record_element();
+  parameters = root->CollectTunableParameters();
+  EXPECT_EQ(parameters.size(), 2);
+
+  // Finally, the root op has seen an element.
+  // But because it does not have parameters, the parameter size should still
+  // be 2.
+  root->record_element();
+  parameters = root->CollectTunableParameters();
+  EXPECT_EQ(parameters.size(), 2);
 }
 
 }  // namespace
