@@ -68,10 +68,14 @@ class HostOffloader : public HloModulePass {
   // positions_to_move_to_host_memory_.
   void AddAllPositionsToBeMovedToHostMemory(const HloBuffer& unique_buffer);
 
+  // Process streamed inputs for the given computation, finding the relevant
+  // move-to-device custom calls and inserting the appropriate copies.
+  Status HandleInputStreaming(HloComputation* computation);
+  // Creates a copy to device for the input streaming custom call.
+  Status CreateCopyForInputStreaming(HloInstruction* custom_call);
   absl::StatusOr<bool> TryParameterStreaming(HloInstruction* custom_call);
   absl::StatusOr<bool> TryOutputStreaming(HloInstruction* custom_call);
   Status HandleMoveToHostCustomCall(HloInstruction* custom_call);
-  Status HandleMoveToDeviceCustomCall(HloInstruction* custom_call);
 
   // Handle memory-only offloading where the data is written to the host via a
   // dynamic-update-slice and is read back via a dynamic-slice.

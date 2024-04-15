@@ -540,8 +540,33 @@ Status HostOffloader::MemoryOnlyOffloadInsertCopies(
   return OkStatus();
 }
 
-absl::StatusOr<bool> HostOffloader::TryParameterStreaming(
-    HloInstruction* custom_call) {
+Status HostOffloader::DynamifySlice(HloInstruction* slice) {
+  VLOG(3) << "Dynamifying slice " << slice->ToString();
+  std::vector<HloInstruction*> start_constants;
+  for (int64_t start : slice->slice_starts()) {
+    HloInstruction* constant = slice->parent()->AddInstruction(
+        HloInstruction::CreateConstant(LiteralUtil::CreateR0<int32_t>(start)));
+    start_constants.push_back(constant);
+  }
+  std::vector<int64_t> slice_sizes;
+  slice_sizes.reserve(slice->slice_limits().size());
+  for (int i = 0; i < slice->slice_limits().size(); ++i) {
+    slice_sizes.push_back(slice->slice_limits()[i] - slice->slice_starts()[i]);
+  }
+  HloInstruction* new_ds =
+      slice->parent()->AddInstruction(HloInstruction::CreateDynamicSlice(
+          slice->shape(), slice->mutable_operand(0), start_constants,
+          slice_sizes));
+  VLOG(3) << "Newly created dynamic slice: " << new_ds->name();
+  TF_RETURN_IF_ERROR(slice->ReplaceAllUsesWith(new_ds));
+  TF_RETURN_IF_ERROR(slice->parent()->RemoveInstruction(slice));
+  return OkStatus();
+}
+
+// Taking an instruction representing a move-to-device custom call, creates a
+// copy to device for that operand and replaces all uses of the operand of the
+// load annotation with the copy.
+Status HostOffloader::CreateCopyForInputStreaming(HloInstruction* custom_call) {
   HloInstruction* operand_of_load_annotation = custom_call->mutable_operand(0);
   const HloBuffer& unique_buffer =
       alias_analysis_->GetUniqueBufferAt(operand_of_load_annotation);
@@ -631,44 +656,45 @@ absl::StatusOr<bool> HostOffloader::TryParameterStreaming(
     }
   }
 
-  AddAllPositionsToBeMovedToHostMemory(unique_buffer);
-  return true;
-}
-
-Status HostOffloader::HandleMoveToDeviceCustomCall(
-    HloInstruction* custom_call) {
-  VLOG(2) << "Found a custom call annotating end-of-host-offload: "
-          << custom_call->ToString();
-  TF_ASSIGN_OR_RETURN(bool did_parameter_streaming,
-                      TryParameterStreaming(custom_call));
-  if (did_parameter_streaming) {
-    expected_host_to_device_annotations_.emplace(custom_call);
-  }
-  // Save a pointer to this custom call for later removal.
-  found_host_to_device_annotations_.emplace(custom_call);
   return OkStatus();
 }
 
-Status HostOffloader::DynamifySlice(HloInstruction* slice) {
-  VLOG(3) << "Dynamifying slice " << slice->ToString();
-  std::vector<HloInstruction*> start_constants;
-  for (int64_t start : slice->slice_starts()) {
-    HloInstruction* constant = slice->parent()->AddInstruction(
-        HloInstruction::CreateConstant(LiteralUtil::CreateR0<int32_t>(start)));
-    start_constants.push_back(constant);
+// Finds parameters of the entry computation that are in host memory space and
+// corresponding move-to-device custom calls for these parameters. Once found,
+// adds these move-to-device custom calls to the expected host-to-device
+// annotations, and creates the necessary copies for input streaming.
+Status HostOffloader::HandleInputStreaming(HloComputation* computation) {
+  const ComputationLayout& entry_computation_layout =
+      computation->parent()->entry_computation_layout();
+  for (int i = 0; i < entry_computation_layout.parameter_count(); ++i) {
+    if (entry_computation_layout.parameter_layout(i).layout().memory_space() !=
+        kHostMemorySpaceColor) {
+      continue;
+    }
+
+    HloInstruction* streamed_input = computation->parameter_instruction(i);
+    VLOG(4) << "Handling streamed input: " << streamed_input->ToString();
+    const HloBuffer& unique_buffer =
+        alias_analysis_->GetUniqueBufferAt(streamed_input);
+
+    // Find all move-to-device custom calls that are using this buffer.
+    for (const HloValue* value : unique_buffer.values()) {
+      for (const HloUse& use : value->GetUses()) {
+        if (use.instruction->IsCustomCall(host_memory_offload_annotations::
+                                              kMoveToDeviceCustomCallTarget)) {
+          HloInstruction* move_to_device_custom_call = use.instruction;
+
+          // Create a copy to device for the move-to-device custom call. Mark
+          // the move-to-device custom call as expected.
+          TF_RETURN_IF_ERROR(
+              CreateCopyForInputStreaming(move_to_device_custom_call));
+          expected_host_to_device_annotations_.emplace(
+              move_to_device_custom_call);
+        }
+      }
+    }
+    AddAllPositionsToBeMovedToHostMemory(unique_buffer);
   }
-  std::vector<int64_t> slice_sizes;
-  slice_sizes.reserve(slice->slice_limits().size());
-  for (int i = 0; i < slice->slice_limits().size(); ++i) {
-    slice_sizes.push_back(slice->slice_limits()[i] - slice->slice_starts()[i]);
-  }
-  HloInstruction* new_ds =
-      slice->parent()->AddInstruction(HloInstruction::CreateDynamicSlice(
-          slice->shape(), slice->mutable_operand(0), start_constants,
-          slice_sizes));
-  VLOG(3) << "Newly created dynamic slice: " << new_ds->name();
-  TF_RETURN_IF_ERROR(slice->ReplaceAllUsesWith(new_ds));
-  TF_RETURN_IF_ERROR(slice->parent()->RemoveInstruction(slice));
   return OkStatus();
 }
 
@@ -685,6 +711,9 @@ absl::StatusOr<bool> HostOffloader::Run(
   // Iterate over all instructions and look for XLA host offload annotations.
   for (HloComputation* computation :
        module->MakeNonfusionComputations(execution_threads)) {
+    if (computation->IsEntryComputation()) {
+      TF_RETURN_IF_ERROR(HandleInputStreaming(computation));
+    }
     for (HloInstruction* instruction :
          computation->MakeInstructionPostOrder()) {
       if (instruction->opcode() != HloOpcode::kCustomCall) {
@@ -696,7 +725,7 @@ absl::StatusOr<bool> HostOffloader::Run(
       } else if (instruction->custom_call_target() ==
                  host_memory_offload_annotations::
                      kMoveToDeviceCustomCallTarget) {
-        TF_RETURN_IF_ERROR(HandleMoveToDeviceCustomCall(instruction));
+        found_host_to_device_annotations_.emplace(instruction);
       }
     }
   }
