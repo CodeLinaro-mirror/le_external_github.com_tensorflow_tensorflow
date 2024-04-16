@@ -43,6 +43,7 @@ limitations under the License.
 #include "tensorflow/core/tfrt/fallback/op_kernel_runner.h"
 #include "tensorflow/core/tfrt/ifrt/ifrt_config.pb.h"
 #include "tensorflow/core/tfrt/ifrt/ifrt_model_context.h"
+#include "tensorflow/core/tfrt/ifrt/ifrt_restore_tensor_registry.h"
 #include "tensorflow/core/tfrt/mlrt/bytecode/bytecode.h"
 #include "tensorflow/core/tfrt/mlrt/bytecode/executable.h"
 #include "tensorflow/core/tfrt/mlrt/interpreter/builtin_kernels.h"
@@ -401,10 +402,13 @@ TEST(KernelTest, IfrtLoadVariableOp) {
   auto input_tensor_future =
       xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>>(
           input_tensor_promise);
+  ifrt_serving::IfrtRestoreTensorRegistry::RestoredTensorInfo
+      restore_tensor_info{{input_tensor.dtype(), input_tensor.shape()},
+                          input_tensor_future};
   input_tensor_promise.Set(input_tensor);
   TF_ASSERT_OK((*ifrt_model_context)
                    ->GetRestoreTensorRegistry()
-                   .TryRegister(kVariableRuntimeName, input_tensor_future));
+                   .TryRegister(kVariableRuntimeName, restore_tensor_info));
 
   std::vector<mlrt::Value> args;
   std::vector<uint8_t> last_uses;
@@ -422,11 +426,6 @@ TEST(KernelTest, IfrtLoadVariableOp) {
   notification.WaitForNotification();
 
   TF_ASSERT_OK(execution_context.status());
-
-  TF_ASSERT_OK((*ifrt_model_context)
-                   ->GetLoadedVariableRegistry()
-                   .GetLoadedVariable(kVariableRuntimeName)
-                   .status());
 
   ExpectEqual(results[0].Get<tfrt_stub::FallbackTensor>().tensor(),
               AsScalar(tsl::tstring(kVariableRuntimeName)));
@@ -500,10 +499,13 @@ TEST(KernelTest, DuplicateIfrtLoadVariableOpShallSucceed) {
   auto input_tensor_future =
       xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>>(
           input_tensor_promise);
+  ifrt_serving::IfrtRestoreTensorRegistry::RestoredTensorInfo
+      restore_tensor_info{{input_tensor.dtype(), input_tensor.shape()},
+                          input_tensor_future};
   input_tensor_promise.Set(input_tensor);
   TF_ASSERT_OK((*ifrt_model_context)
                    ->GetRestoreTensorRegistry()
-                   .TryRegister(kVariableRuntimeName, input_tensor_future));
+                   .TryRegister(kVariableRuntimeName, restore_tensor_info));
 
   std::vector<mlrt::Value> args;
   std::vector<uint8_t> last_uses;
@@ -521,11 +523,6 @@ TEST(KernelTest, DuplicateIfrtLoadVariableOpShallSucceed) {
   notification.WaitForNotification();
 
   TF_ASSERT_OK(execution_context.status());
-
-  TF_ASSERT_OK((*ifrt_model_context)
-                   ->GetLoadedVariableRegistry()
-                   .GetLoadedVariable(kVariableRuntimeName)
-                   .status());
 
   ExpectEqual(results[0].Get<tfrt_stub::FallbackTensor>().tensor(),
               AsScalar(tsl::tstring(kVariableRuntimeName)));
@@ -589,7 +586,7 @@ TEST(KernelTest, IfrtRestoreVariableOp) {
   xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>> uninitialized_entry =
       (*ifrt_model_context)
           ->GetRestoreTensorRegistry()
-          .Get(kVariableRuntimeName);
+          .GetRestoredTensor(kVariableRuntimeName);
   ASSERT_TRUE(uninitialized_entry.IsReady());
   EXPECT_THAT(uninitialized_entry.Await().status(),
               ::tsl::testing::StatusIs(absl::StatusCode::kNotFound));
@@ -630,7 +627,7 @@ TEST(KernelTest, IfrtRestoreVariableOp) {
   xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>> restored_future =
       (*ifrt_model_context)
           ->GetRestoreTensorRegistry()
-          .Get(kVariableRuntimeName);
+          .GetRestoredTensor(kVariableRuntimeName);
   absl::StatusOr<tensorflow::Tensor> restored_tensor = restored_future.Await();
   TF_ASSERT_OK(restored_tensor.status());
   EXPECT_THAT(*restored_tensor, TensorEq(AsTensor<int32_t>({1, 2, 3}, {3})));

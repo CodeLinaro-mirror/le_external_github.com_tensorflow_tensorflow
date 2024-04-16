@@ -33,6 +33,9 @@ limitations under the License.
 namespace tensorflow {
 namespace ifrt_serving {
 
+absl::StatusOr<ifrt_serving::DtypeAndShape> GetDtypeAndShape(
+    const ResourceHandle& resource_handle);
+
 // Returns the runtime name from the resource handle. The name will be concat of
 // handle's container name and handle's name.
 std::string GetRuntimeNameFromVarHandle(const ResourceHandle& handle);
@@ -44,14 +47,13 @@ std::string GetRuntimeNameFromVarHandle(const ResourceHandle& handle);
 // can look for the actual loaded variable value in
 // `ifrt_loaded_variable_registry`.
 absl::Status LoadRestoredTensorAsIfrtLoadedVariable(
-    const tensorflow::Tensor& variable_handle_tensor,
+    absl::string_view runtime_name,
     std::shared_ptr<xla::ifrt::Client> ifrt_client,
     const tsl::thread::ThreadPool& thread_pool,
-    ifrt_serving::IfrtRestoreTensorRegistry& ifrt_restore_tensor_registry,
+    const ifrt_serving::IfrtRestoreTensorRegistry& ifrt_restore_tensor_registry,
     ifrt_serving::IfrtLoadedVariableRegistry& ifrt_loaded_variable_registry,
     tfrt::ConcurrentWorkQueue* checkpoint_loader_queue,
-    const VariableDeviceShardingConfigProto& sharding_config,
-    mlrt::Promise* restored_tensor_promise);
+    const VariableDeviceShardingConfigProto& sharding_config);
 
 }  // namespace ifrt_serving
 }  // namespace tensorflow
