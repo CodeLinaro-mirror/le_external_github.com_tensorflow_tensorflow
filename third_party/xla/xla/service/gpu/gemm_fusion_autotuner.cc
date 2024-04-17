@@ -879,35 +879,25 @@ absl::StatusOr<AutotuneResult> Execute(const AutotuneConfig& config,
   }
   TF_ASSIGN_OR_RETURN(se::Stream* const stream,
                       allocator->GetStream(stream_exec->device_ordinal()));
-  TF_ASSIGN_OR_RETURN(
-      se::RedzoneAllocator rz_allocator,
-      AutotunerUtil::CreateRedzoneAllocator(config, debug_opts));
 
   const HloInstruction& root = *fusion_computation->root_instruction();
   BufferComparator comparator(root.shape(),
                               fusion_computation->parent()->config());
 
-  std::vector<se::DeviceMemoryBase> inputs;
-  inputs.reserve(fusion_computation->parameter_instructions().size());
-  std::vector<Shape> input_shapes;
-  input_shapes.reserve(fusion_computation->parameter_instructions().size());
-  int64_t rng_state = 0;
-  for (const HloInstruction* param :
-       fusion_computation->parameter_instructions()) {
-    TF_ASSIGN_OR_RETURN(se::DeviceMemoryBase param_buffer,
-                        AutotunerUtil::CreateBuffer(
-                            rz_allocator, param->shape(), config, rng_state));
-    inputs.push_back(param_buffer);
-    input_shapes.push_back(param->shape());
-  }
+  TF_ASSIGN_OR_RETURN(auto rz_buffers,
+                      RedzoneBuffers::FromInstruction(
+                          fusion_computation->FusionInstruction(), config,
+                          debug_opts, RedzoneBuffers::kAllInputs));
 
   // Run with cuBLAS (optional).
   std::optional<ScopedShapedBuffer> reference_buffer;
   absl::Duration cublas_duration = absl::InfiniteDuration();
   if (executable_set.reference != nullptr) {
-    TF_ASSIGN_OR_RETURN(std::optional<ProfilingOutput> output,
-                        util.ProfileExecutable(&*executable_set.reference,
-                                               stream, inputs, input_shapes));
+    TF_ASSIGN_OR_RETURN(
+        std::optional<ProfilingOutput> output,
+        util.ProfileExecutable(&*executable_set.reference, stream,
+                               rz_buffers.input_buffers(),
+                               rz_buffers.input_shapes()));
     TF_RET_CHECK(output.has_value());
     if (config.should_check_correctness()) {
       reference_buffer = std::move(output->output);
@@ -938,9 +928,11 @@ absl::StatusOr<AutotuneResult> Execute(const AutotuneConfig& config,
     }
     VLOG(5) << "Trying : " << candidate_description;
 
-    TF_ASSIGN_OR_RETURN(std::optional<ProfilingOutput> profiling_output,
-                        util.ProfileExecutable(candidate.executable.get(),
-                                               stream, inputs, input_shapes));
+    TF_ASSIGN_OR_RETURN(
+        std::optional<ProfilingOutput> profiling_output,
+        util.ProfileExecutable(candidate.executable.get(), stream,
+                               rz_buffers.input_buffers(),
+                               rz_buffers.input_shapes()));
     ran_so_far += 1;
     if (ran_so_far % log_every_n == 0) {
       VLOG(2) << "Ran " << ran_so_far << " configs of " << executable_count
@@ -966,7 +958,7 @@ absl::StatusOr<AutotuneResult> Execute(const AutotuneConfig& config,
     if (reference_buffer.has_value()) {
       TF_ASSIGN_OR_RETURN(
           se::RedzoneAllocator::RedzoneCheckStatus rz_check_status,
-          rz_allocator.CheckRedzones());
+          rz_buffers.RedzoneAllocator().CheckRedzones());
       if (!rz_check_status.ok()) {
         LOG(ERROR) << "Red zone modified";
         res.mutable_failure()->set_kind(AutotuneResult::REDZONE_MODIFIED);
