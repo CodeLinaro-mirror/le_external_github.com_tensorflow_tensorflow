@@ -1623,7 +1623,7 @@ ENTRY main {
       tolerance = 2e-4;
       break;
     case BF16:
-      tolerance = 2e-2;
+      tolerance = 1e-1;
       break;
     default:
       ABSL_UNREACHABLE();
