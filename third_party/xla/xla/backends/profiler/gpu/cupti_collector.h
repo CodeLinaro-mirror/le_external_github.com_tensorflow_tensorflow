@@ -16,7 +16,10 @@ limitations under the License.
 #ifndef XLA_BACKENDS_PROFILER_GPU_CUPTI_COLLECTOR_H_
 #define XLA_BACKENDS_PROFILER_GPU_CUPTI_COLLECTOR_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <list>
 #include <memory>
 
 #include "absl/container/fixed_array.h"
@@ -24,8 +27,9 @@ limitations under the License.
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
-#include "tsl/platform/types.h"
+#include "tsl/platform/mutex.h"
 #include "tsl/profiler/protobuf/xplane.pb.h"
+#include "tsl/profiler/utils/buffer_pool.h"
 
 namespace xla {
 namespace profiler {
@@ -255,6 +259,37 @@ class AnnotationMap {
   void operator=(const AnnotationMap&) = delete;
 };
 
+class CuptiTraceCollector;
+class CuptiActivityBufferManager {
+ public:
+  struct ActivityBufferAndSize {
+    std::unique_ptr<uint8_t, std::function<void(uint8_t*)>> buffer;
+    size_t size;  // size in bytes for the events filled by CUPTI.
+    explicit ActivityBufferAndSize(uint8_t* p = nullptr, size_t sz = 0);
+  };
+
+  explicit CuptiActivityBufferManager(size_t buffer_size_in_bytes)
+      : buffer_pool_(buffer_size_in_bytes) {}
+
+  size_t GetBufferSizeInBytes() { return buffer_pool_.GetBufferSizeInBytes(); }
+
+  uint8_t* GetOrCreateBuffer() { return buffer_pool_.GetOrCreateBuffer(); }
+
+  void ReclaimBuffer(uint8_t* p) { buffer_pool_.ReclaimBuffer(p); }
+
+  void CacheCuptiFilledActivityBuffer(uint8_t* p, size_t sz) {
+    tsl::mutex_lock lock(buffer_mutex_);
+    cached_buffers_.emplace_back(p, sz);
+  }
+
+  void AddCachedEventsToCollector(CuptiTraceCollector* collector);
+
+ private:
+  tsl::profiler::BufferPool buffer_pool_;
+  tsl::mutex buffer_mutex_;
+  std::list<ActivityBufferAndSize> cached_buffers_ TF_GUARDED_BY(buffer_mutex_);
+};
+
 class CuptiTraceCollector {
  public:
   explicit CuptiTraceCollector(const CuptiTracerCollectorOptions& options)
@@ -268,6 +303,17 @@ class CuptiTraceCollector {
                                uint32_t num_events) = 0;
   virtual void Flush() = 0;
 
+  // CuptiTracer tracer now cache all activity buffers during tracing.
+  // After tracing stop, the cached activity buffers will be send here.
+  // Default behavior is direct process those cached activity events and
+  // add it into this class by calling AddEvent().
+  // Yet collector could just save activity buffers without processing here,
+  // but process and AddEvent() later when needed, such as during export().
+  // This could make the profiling stop() timestamp, if used by upper
+  // level wrapper, do not contains time used by exporting events.
+  virtual void OnTracerCachedActivityBuffers(
+      std::unique_ptr<CuptiActivityBufferManager> activity_buffers);
+
   // Consumer side functions (i.e. called by GPU tracer);
   virtual bool Export(tensorflow::profiler::XSpace* space,
                       uint64_t end_gpu_ns) {
@@ -276,6 +322,8 @@ class CuptiTraceCollector {
   virtual std::string ReportNumEventsIfDropped() { return ""; }
 
   AnnotationMap* annotation_map() { return &annotation_map_; }
+
+  const CuptiTracerCollectorOptions& GetOptions() const { return options_; }
 
  protected:
   CuptiTracerCollectorOptions options_;

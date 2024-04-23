@@ -217,7 +217,6 @@ tsl_gpu_library(
         "@local_tsl//tsl/platform:types",
         "@local_tsl//tsl/profiler/backends/cpu:annotation_stack",
         "@local_tsl//tsl/profiler/lib:scoped_annotation",
-        "@local_tsl//tsl/profiler/utils:buffer_pool",
     ],
 )
 
@@ -291,11 +290,15 @@ tsl_gpu_library(
 
 tsl_gpu_library(
     name = "cupti_collector",
-    srcs = if_cuda(["cupti_collector.cc"]),
+    srcs = if_cuda([
+        "cupti_buffer_events.cc",
+        "cupti_collector.cc",
+    ]),
     hdrs = ["cupti_collector.h"],
     copts = tf_profiler_copts() + tsl_copts(),
     visibility = ["//visibility:public"],
     deps = [
+        ":cupti_interface",
         "@com_google_absl//absl/container:fixed_array",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -304,11 +307,13 @@ tsl_gpu_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@local_tsl//tsl/platform:abi",
+        "@local_tsl//tsl/platform:errors",
         "@local_tsl//tsl/platform:macros",
         "@local_tsl//tsl/platform:mutex",
         "@local_tsl//tsl/platform:platform_port",
         "@local_tsl//tsl/platform:types",
         "@local_tsl//tsl/profiler/protobuf:xplane_proto_cc",
+        "@local_tsl//tsl/profiler/utils:buffer_pool",
         "@local_tsl//tsl/profiler/utils:parse_annotation",
         "@local_tsl//tsl/profiler/utils:trace_utils",
         "@local_tsl//tsl/profiler/utils:xplane_builder",
