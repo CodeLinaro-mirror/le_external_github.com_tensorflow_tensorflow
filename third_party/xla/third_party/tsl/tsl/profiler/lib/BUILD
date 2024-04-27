@@ -12,6 +12,10 @@ load(
     "tf_profiler_copts",
     "tf_profiler_pybind_cc_library_wrapper",
 )
+load(
+    "third_party/tensorflow/compiler/xla/tsl/tsl.bzl",
+    "if_libtpu",
+)
 
 # copybara:uncomment package(default_applicable_licenses = ["//tensorflow:license"])
 
@@ -281,6 +285,13 @@ cc_library(
 )
 
 cc_library(
+    name = "nvtx_utils_libtpu",
+    srcs = ["nvtx_utils_stub.cc"],
+    hdrs = ["nvtx_utils.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "scoped_annotation",
     hdrs = [
         "nvtx_utils.h",
@@ -288,13 +299,16 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":nvtx_utils",
         "//tsl/platform:macros",
         "//tsl/platform:types",
         "@com_google_absl//absl/strings",
     ] + if_not_android([
         "//tsl/profiler/backends/cpu:annotation_stack",
-    ]),
+    ]) + if_libtpu(
+        # Remove this once we clean up all the CUDA specific deps.
+        if_false = [":nvtx_utils"],
+        if_true = [":nvtx_utils_libtpu"],
+    ),
 )
 
 tsl_cc_test(
