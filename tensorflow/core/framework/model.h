@@ -630,6 +630,11 @@ class Node {
   // name matches `parameter_name`.
   void SyncStateValuesToParameterValues(const std::string& parameter_name);
 
+  void SetElementSize(std::optional<int64_t> element_size) {
+    mutex_lock l(mu_);
+    element_size_ = element_size;
+  }
+
  protected:
   // Used for (incrementally) recording metrics. The class is thread-safe.
   class Metrics {
@@ -854,6 +859,7 @@ class Node {
   // node results in recursive deletion of the subtree rooted in the node.
   Node* const output_;
   std::weak_ptr<Node> output_weak_ptr_;
+  std::optional<int64_t> element_size_ TF_GUARDED_BY(mu_) = std::nullopt;
 };
 
 // InterleaveMany is used to model datasets whose inputs are used to create
@@ -879,7 +885,8 @@ std::shared_ptr<Node> MakeAsyncKnownRatioNode(
 std::shared_ptr<Node> MakeAsyncKnownRatioNode(
     Node::Args args, double ratio,
     std::vector<std::shared_ptr<Parameter>> parameters,
-    bool is_legacy_prefetch_autotuned = false);
+    bool is_legacy_prefetch_autotuned = false,
+    std::optional<int64_t> element_size = std::nullopt);
 
 // Source nodes represent data sources.
 std::shared_ptr<Node> MakeSourceNode(Node::Args args);

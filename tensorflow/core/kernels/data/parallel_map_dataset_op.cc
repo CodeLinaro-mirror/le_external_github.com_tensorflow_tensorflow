@@ -14,9 +14,11 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/core/kernels/data/parallel_map_dataset_op.h"
 
+#include <cstddef>
 #include <deque>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,11 +29,13 @@ limitations under the License.
 #include "tensorflow/core/data/dataset_utils.h"
 #include "tensorflow/core/data/name_utils.h"
 #include "tensorflow/core/data/stats_utils.h"
+#include "tensorflow/core/framework/dataset.h"
 #include "tensorflow/core/framework/metrics.h"
 #include "tensorflow/core/framework/model.h"
 #include "tensorflow/core/framework/partial_tensor_shape.h"
 #include "tensorflow/core/framework/stats_aggregator.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/random/random.h"
 #include "tensorflow/core/platform/status.h"
@@ -315,11 +319,43 @@ class ParallelMapDatasetOp::Dataset : public DatasetBase {
    protected:
     std::shared_ptr<model::Node> CreateNode(
         IteratorContext* ctx, model::Node::Args args) const override {
+      auto parameter =
+          model::MakeParameter("parallelism", num_parallel_calls_, /*min=*/1,
+                               /*max=*/ctx->runner_threadpool_size());
+
+      if (num_parallel_calls_ && num_parallel_calls_->tunable) {
+        // This is to ensure before this op has seen its first element,
+        // `MaximumBufferedBytes()` can use the correct `parameter->value`
+        // to estimate the maximum buffer bytes.
+        parameter->value = GetAutotuneDefaultParallelism(ctx);
+      }
+
+      auto output_shapes = dataset()->output_shapes();
+      auto output_dtypes = dataset()->output_dtypes();
+      size_t num_outputs = output_shapes.size();
+      std::optional<int64_t> element_size = 0;
+      for (int i = 0; i < num_outputs; ++i) {
+        const auto& partial_shape = output_shapes[i];
+        const auto& dtype = output_dtypes[i];
+        auto num_elements = partial_shape.num_elements();
+        if (num_elements == -1) {
+          element_size = std::nullopt;
+          LOG(ERROR) << absl::StrFormat(
+              "Cannot estimate the size of the output tensor because the "
+              "output shape of node %s(id:%d) is only partially known.",
+              args.name, args.id);
+          break;
+        }
+        TensorShape shape;
+        partial_shape.AsTensorShape(&shape);
+        Tensor fake_tensor(ctx->allocator({}), dtype, TensorShape({1}));
+        element_size = element_size.value() +
+                       num_elements * GetAllocatedBytes({fake_tensor});
+      }
       return model::MakeAsyncKnownRatioNode(
           std::move(args),
-          /*ratio=*/1,
-          {model::MakeParameter("parallelism", num_parallel_calls_, /*min=*/1,
-                                /*max=*/ctx->runner_threadpool_size())});
+          /*ratio=*/1, {std::move(parameter)},
+          /*is_legacy_prefetch_autotuned=*/false, element_size);
     }
 
     Status SaveInternal(SerializationContext* ctx,

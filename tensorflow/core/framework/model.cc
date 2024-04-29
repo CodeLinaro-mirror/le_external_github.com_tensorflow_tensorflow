@@ -1446,10 +1446,13 @@ std::shared_ptr<Node> MakeAsyncKnownRatioNode(
 std::shared_ptr<Node> MakeAsyncKnownRatioNode(
     Node::Args args, double ratio,
     std::vector<std::shared_ptr<Parameter>> parameters,
-    bool is_legacy_prefetch_autotuned) {
-  return MakeAsyncKnownRatioNode(std::move(args), /*ratio=*/ratio,
-                                 /*memory_ratio=*/ratio, std::move(parameters),
-                                 is_legacy_prefetch_autotuned);
+    bool is_legacy_prefetch_autotuned, std::optional<int64_t> element_size) {
+  auto node =
+      MakeAsyncKnownRatioNode(std::move(args), /*ratio=*/ratio,
+                              /*memory_ratio=*/ratio, std::move(parameters),
+                              is_legacy_prefetch_autotuned);
+  node->SetElementSize(element_size);
+  return node;
 }
 
 std::shared_ptr<Node> MakeSourceNode(Node::Args args) {
@@ -1770,6 +1773,11 @@ double Node::AverageBufferedElementSizeLocked() const {
     if (buffered_elements_ <= 0) {
       // If there are no produced elements or buffered elements recorded, return
       // 0.
+      if (element_size_) {
+        LOG(ERROR) << "name_: " << name_
+                   << " element_size: " << element_size_.value();
+        return element_size_.value();
+      }
       return 0;
     }
     // If there are no produced elements but some buffered elements, return the
@@ -2070,7 +2078,12 @@ std::shared_ptr<Node> Node::SnapshotHelper(
       for (const auto& [parameter_name, parameter_ptr] : parameters_) {
         cloned_current->parameters_[parameter_name] =
             std::make_shared<Parameter>(parameter_ptr);
+        if (parameter_name == "parallelism") {
+          LOG(ERROR) << "parallelism: "
+                     << cloned_current->parameters_[parameter_name]->value;
+        }
       }
+      cloned_current->element_size_ = element_size_;
       cloned_current->previous_processing_time_ = previous_processing_time_;
       cloned_current->processing_time_ema_ = processing_time_ema_;
     }
@@ -2332,7 +2345,9 @@ void Model::Optimize(AutotuneAlgorithm algorithm,
   std::shared_ptr<Node> snapshot;
   {
     tf_shared_lock l(mu_);
+    LOG(ERROR) << "Start of snapshot";
     snapshot = output_->Snapshot();
+    LOG(ERROR) << "End of snapshot";
   }
   MaybeSyncStateValuesToValues(snapshot);
   int64_t total_ram_budget;
