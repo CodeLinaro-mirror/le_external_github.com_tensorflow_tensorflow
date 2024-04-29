@@ -418,8 +418,12 @@ struct ConvertPackToReshape : public OpRewritePattern<PackOp> {
 
     // Create constant shape for reshape.
     auto type = tensorflow::GetTypeFromTFTensorShape(
-        output_ty.getRank(), rewriter.getIntegerType(64));
-    auto shape_attr = DenseIntElementsAttr::get(type, output_ty.getShape());
+        output_ty.getRank(), rewriter.getIntegerType(32));
+    std::vector<int32> output_shape(output_ty.getRank(), 0);
+    for (int i = 0; i < output_shape.size(); ++i) {
+      output_shape[i] = output_ty.getShape()[i];
+    }
+    auto shape_attr = DenseIntElementsAttr::get(type, output_shape);
     auto shape = rewriter.create<ConstOp>(pack_op.getLoc(), shape_attr);
 
     // TODO(b/173622615): Remove after fixed.
