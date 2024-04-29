@@ -55,6 +55,13 @@ TfLiteStatus QuantizeModel(flatbuffers::FlatBufferBuilder* builder,
                            const TensorType& output_type, bool allow_float,
                            ErrorReporter* error_reporter);
 
+// Same as above but with added option of disabling per channel quantization
+TfLiteStatus QuantizeModel(flatbuffers::FlatBufferBuilder* builder,
+                           ModelT* input_model, const TensorType& input_type,
+                           const TensorType& output_type, bool allow_float,
+                           bool disable_per_channel,
+                           ErrorReporter* error_reporter);
+
 // Same as above, but enables only quantizing an allowlist of operations,
 // specified by their operator output name.
 //
