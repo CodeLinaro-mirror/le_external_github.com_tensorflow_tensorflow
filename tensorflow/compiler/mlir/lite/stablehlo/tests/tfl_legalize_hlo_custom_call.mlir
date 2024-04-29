@@ -8,7 +8,7 @@ func.func @mhlo_custom_call_test__legalize_string_backend_config(%arg0: tensor<1
   } : (tensor<1x4xf32>) -> (tensor<1x8xf32>)
   func.return %0 : tensor<1x8xf32>
 
-  //       CHECK: %0 = "tfl.custom"(%arg0) {
+  //       CHECK: %0 = "tfl.custom"(%arg0) <{
   //  CHECK-SAME:   custom_code = "custom_call.my_custom_op",
   //  CHECK-SAME:   custom_option = #tfl<const_bytes : "0x746869735F69735F615F746573745F737472696E67">
   //  CHECK-SAME: } : (tensor<1x4xf32>) -> tensor<1x8xf32>
@@ -35,7 +35,7 @@ func.func @mhlo_custom_call_test__api_version_4(%arg0: tensor<1x4xf32>) -> tenso
   } : (tensor<1x4xf32>) -> (tensor<1x8xf32>)
   func.return %0 : tensor<1x8xf32>
 
-  //       CHECK: %0 = "tfl.custom"(%arg0) {
+  //       CHECK: %0 = "tfl.custom"(%arg0) <{
   //  CHECK-SAME:   custom_code = "custom_call.my_custom_op",
   //  CHECK-SAME:   custom_option = #tfl<const_bytes : "0x">
   //  CHECK-SAME: } : (tensor<1x4xf32>) -> tensor<1x8xf32>

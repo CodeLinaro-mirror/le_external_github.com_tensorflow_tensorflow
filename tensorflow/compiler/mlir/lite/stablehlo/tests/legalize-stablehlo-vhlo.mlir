@@ -62,9 +62,9 @@ func.func @op_with_region(%arg0: tensor<1x16x16x320xf32>, %arg1: tensor<f32>) ->
 func.func @op_with_region_mixed_tfl_shlo_tfl(%arg0: tensor<7x5xf32>, %arg1 : tensor<5xf32>) -> tensor<5xf32> {
   %0 = "stablehlo.reduce"(%arg0, %arg1) ({
   ^bb0(%arg2: tensor<5xf32>, %arg3: tensor<5xf32>):
-    // CHECK:      %1 = "tfl.abs"(%arg2) {fused_activation_function = "NONE"} : (tensor<5xf32>) -> tensor<5xf32>
+    // CHECK:      %1 = "tfl.abs"(%arg2) <{fused_activation_function = "NONE"}> : (tensor<5xf32>) -> tensor<5xf32>
     // CHECK-NEXT: %2 = "vhlo.add_v1"(%1, %arg2) : (tensor<5xf32>, tensor<5xf32>) -> tensor<5xf32>
-    // CHECK-NEXT: %3 = "tfl.abs"(%2) {fused_activation_function = "NONE"} : (tensor<5xf32>) -> tensor<5xf32>
+    // CHECK-NEXT: %3 = "tfl.abs"(%2) <{fused_activation_function = "NONE"}> : (tensor<5xf32>) -> tensor<5xf32>
     %1 = "tfl.abs"(%arg2) {fused_activation_function = "NONE"} : (tensor<5xf32>) -> tensor<5xf32>
     %2 = stablehlo.add %1, %arg2 : tensor<5xf32>
     %3 = "tfl.abs"(%2) {fused_activation_function = "NONE"} : (tensor<5xf32>) -> tensor<5xf32>
