@@ -183,6 +183,65 @@ TEST_F(IndexingMapTest, Composition_ProducerAndConsumerHaveConstraints) {
                         )"));
 }
 
+TEST_F(IndexingMapTest, RemoveUnusedDimensions_ConstraintUsesDim) {
+  IndexingMap indexing_map = IndexingMap::FromTensorSizes(
+      ParseAffineMap("(d0, d1)[s0, s1] -> (d1, s0, s1)", &mlir_context_),
+      {50, 60}, {70, 20});
+  // This constraint cannot be removed, because it contains a "used dim".
+  indexing_map.AddConstraint(ParseAffineExpr("s0 + d0", &mlir_context_),
+                             Interval{1, 100});
+  indexing_map.AddConstraint(ParseAffineExpr("s0 mod 3", &mlir_context_),
+                             Interval{0, 0});
+  indexing_map.RemoveUnusedDimensions();
+  EXPECT_THAT(indexing_map, MatchIndexingMap(R"(
+                          (d0, d1)[s0, s1] -> (d1, s0, s1)
+                          domain:
+                          d0 in [0, 49]
+                          d1 in [0, 59]
+                          s0 in [0, 69]
+                          s1 in [0, 19]
+                          d0 + s0 in [1, 100]
+                          s0 mod 3 in [0, 0]
+                        )"));
+}
+
+TEST_F(IndexingMapTest, RemoveUnusedDimensions_ConstraintUsesOnlyUnusedDim) {
+  IndexingMap indexing_map = IndexingMap::FromTensorSizes(
+      ParseAffineMap("(d0, d1)[s0, s1] -> (s0, d1, s1)", &mlir_context_),
+      {50, 60}, {70, 20});
+  // This constraint can be removed, because it contains only the unused dim.
+  indexing_map.AddConstraint(ParseAffineExpr("d0 mod 3", &mlir_context_),
+                             Interval{0, 0});
+  indexing_map.RemoveUnusedDimensions();
+  EXPECT_THAT(indexing_map, MatchIndexingMap(R"(
+                          (d0)[s0, s1] -> (s0, d0, s1)
+                          domain:
+                          d0 in [0, 59]
+                          s0 in [0, 69]
+                          s1 in [0, 19]
+                        )"));
+}
+
+TEST_F(IndexingMapTest, RemoveUnusedDimensions_ConstraintsWithManyDims) {
+  IndexingMap indexing_map = IndexingMap::FromTensorSizes(
+      ParseAffineMap("(d0, d1, d2, d3, d4)[s0, s1] -> (s0 * 4 + d1 + d3 - 42)",
+                     &mlir_context_),
+      {1, 2, 3, 4, 5}, {32, 64});
+  indexing_map.AddConstraint(
+      ParseAffineExpr("s0 * 4 + d1 + d3", &mlir_context_), Interval{24, 459});
+  indexing_map.RemoveUnusedDimensions();
+  // dimensions d0, d2, d4 will be removed and d1 and d3 will become d0 and d1.
+  EXPECT_THAT(indexing_map, MatchIndexingMap(R"(
+                              (d0, d1)[s0, s1] -> (d0 + s0 * 4 + d1 - 42)
+                              domain:
+                              d0 in [0, 1]
+                              d1 in [0, 3]
+                              s0 in [0, 31]
+                              s1 in [0, 63]
+                              d0 + s0 * 4 + d1 in [24, 459]
+                            )"));
+}
+
 TEST_F(IndexingMapTest, RemoveUnusedSymbols_ConstraintUsesSymbol) {
   IndexingMap indexing_map = IndexingMap::FromTensorSizes(
       ParseAffineMap("(d0, d1)[s0, s1] -> (d1, d0, s1)", &mlir_context_),
