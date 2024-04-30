@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
@@ -66,7 +67,7 @@ constexpr int kPendingTaskLogLimit = 20;
 constexpr int kPendingStragglerLogLimit = 3;
 
 std::string GetTaskName(absl::string_view job_name, int task_id) {
-  return strings::StrCat("/job:", job_name, "/replica:", 0, "/task:", task_id);
+  return absl::StrCat("/job:", job_name, "/replica:", 0, "/task:", task_id);
 }
 
 std::string GetTaskName(const CoordinatedTask& task) {
@@ -548,7 +549,7 @@ void CoordinationServiceStandaloneImpl::LogConnectStatusLocked() const {
 
 absl::Status CoordinationServiceStandaloneImpl::RegisterTask(
     const CoordinatedTask& task, uint64_t incarnation) {
-  const std::string& task_name = GetTaskName(task);
+  const std::string task_name = GetTaskName(task);
 
   absl::Status error;
   std::string error_message;
@@ -698,7 +699,7 @@ uint64_t CoordinationServiceStandaloneImpl::GetServiceIncarnation() {
 
 absl::Status CoordinationServiceStandaloneImpl::ReportTaskError(
     const CoordinatedTask& task, absl::Status error) {
-  const std::string& task_name = GetTaskName(task);
+  const std::string task_name = GetTaskName(task);
   {
     mutex_lock l(state_mu_);
     if (!cluster_state_.contains(task_name)) {
@@ -742,7 +743,7 @@ CoordinationServiceStandaloneImpl::GetTaskState(
 
 absl::Status CoordinationServiceStandaloneImpl::RecordHeartbeat(
     const CoordinatedTask& task, uint64_t incarnation) {
-  const std::string& task_name = GetTaskName(task);
+  const std::string task_name = GetTaskName(task);
   absl::Status s = absl::OkStatus();
   {
     mutex_lock l(state_mu_);
@@ -911,7 +912,7 @@ std::string NormalizeKey(const StringPiece orig_key) {
 absl::Status CoordinationServiceStandaloneImpl::InsertKeyValue(
     const std::string& key, const std::string& value) {
   VLOG(3) << "InsertKeyValue(): " << key << ": " << value;
-  const std::string& norm_key = NormalizeKey(key);
+  const std::string norm_key = NormalizeKey(key);
   mutex_lock l(kv_mu_);
   if (kv_store_.find(norm_key) != kv_store_.end()) {
     return MakeCoordinationError(
@@ -931,7 +932,7 @@ absl::Status CoordinationServiceStandaloneImpl::InsertKeyValue(
 void CoordinationServiceStandaloneImpl::GetKeyValueAsync(
     const std::string& key, StatusOrValueCallback done) {
   VLOG(3) << "GetKeyValue(): " << key;
-  const std::string& norm_key = NormalizeKey(key);
+  const std::string norm_key = NormalizeKey(key);
   mutex_lock l(kv_mu_);
   const auto& iter = kv_store_.find(norm_key);
   if (iter != kv_store_.end()) {
@@ -949,7 +950,7 @@ void CoordinationServiceStandaloneImpl::GetKeyValueAsync(
 absl::StatusOr<std::string> CoordinationServiceStandaloneImpl::TryGetKeyValue(
     const std::string& key) {
   VLOG(3) << "TryGetKeyValue(): " << key;
-  const std::string& norm_key = NormalizeKey(key);
+  const std::string norm_key = NormalizeKey(key);
   mutex_lock l(kv_mu_);
   const auto& iter = kv_store_.find(norm_key);
   if (iter == kv_store_.end()) {
@@ -989,10 +990,10 @@ std::vector<KeyValueEntry> CoordinationServiceStandaloneImpl::GetKeyValueDir(
 absl::Status CoordinationServiceStandaloneImpl::DeleteKeyValue(
     const std::string& key) {
   VLOG(3) << "DeleteKeyValue(): " << key;
-  const std::string& norm_key = NormalizeKey(key);
+  const std::string norm_key = NormalizeKey(key);
   mutex_lock l(kv_mu_);
   // Delete directory: find key range that match directory prefix
-  const std::string& dir = strings::StrCat(norm_key, "/");
+  const std::string dir = absl::StrCat(norm_key, "/");
   auto begin = kv_store_.lower_bound(dir);
   std::map<std::string, std::string>::iterator end;
   for (end = begin; end != kv_store_.end(); end++) {
@@ -1060,6 +1061,13 @@ void CoordinationServiceStandaloneImpl::BarrierAsync(
     return;
   }
   mutex_lock l(state_mu_);
+  // Check if coordination service has shut down and cleared its own cluster
+  // state. If so, return an error immediately.
+  if (cluster_state_.size() == 0) {
+    done(MakeCoordinationError(absl::InternalError(
+        "Barrier requested after coordination service has shut down.")));
+    return;
+  }
   auto pair = barriers_.try_emplace(barrier_id);
   auto it = pair.first;
   bool inserted = pair.second;
