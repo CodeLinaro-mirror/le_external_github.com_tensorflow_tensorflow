@@ -366,6 +366,14 @@ class ConstDoubleValueLessThan<string n> : Constraint<
   "std::abs(*$0.cast<DenseElementsAttr>().getValues<float>().begin()) < "
   # n>>;
 
+// Constraint that the attribute value is negative infinity or smallest.
+// We use both -inf & flt_min due to the forward compatibility.
+def ConstAPFloatSmallestOrNegInfinity : Constraint<CPred<
+  "$0.isa<DenseElementsAttr>() && "
+  "$0.cast<DenseElementsAttr>().getNumElements() == 1 && "
+  "($0.cast<DenseElementsAttr>().getValues<APFloat>()[0].isSmallest() || "
+  "$0.cast<DenseElementsAttr>().getValues<APFloat>()[0].isNegInfinity())">>;
+
 def L2NormValidReduceIndex : Constraint<CPred<
   "L2NormalizeReduceAxis($0, $1.cast<DenseElementsAttr>())">>;
 
@@ -1014,6 +1022,30 @@ def FoldNormalizationIntoSoftmax : Pat<
   (TFL_SoftmaxOp $input, $beta),
   [(IsSame $input, $max_input),
    (AxesIsLastDimension $axes, $max_input),
+   (HasOneUse $sub),
+   (HasOneUse $max)]>;
+
+// Convert softmax(x-reshape(maximum(max(x), -inf))) into softmax(x) as the softmax op already deals
+// with the max normalization. This comes from upstream Jax (https://github.com/google/jax/pull/15677)
+def FoldNormalizationIntoSoftmaxJaxWithAxisMinus1 : Pat<
+  (TFL_SoftmaxOp
+    (TFL_SubOp:$sub $input,
+    (TFL_ReshapeOp:$reshape
+      (TFL_MaximumOp:$maximum
+        (TFL_ReduceMaxOp:$max $max_input, (Arith_ConstantOp I32ElementsAttr: $axes),
+                              ConstBoolAttrFalse),
+        (Arith_ConstantOp F32ElementsAttr: $threshold)
+      ),
+      (Arith_ConstantOp I32ElementsAttr: $shape)
+    ),
+    TFL_AF_None),
+    $beta),
+  (TFL_SoftmaxOp $input, $beta),
+  [(IsSame $input, $max_input),
+   (AxesIsLastDimension $axes, $max_input),
+   (ConstAPFloatSmallestOrNegInfinity $threshold),
+   (HasOneUse $maximum),
+   (HasOneUse $reshape),
    (HasOneUse $sub),
    (HasOneUse $max)]>;
 
