@@ -37,7 +37,7 @@ class IfrtRestoreTensorRegistry {
  public:
   struct RestoredTensorInfo {
     DtypeAndShape dtype_and_shape;
-    xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>> tensor_future;
+    xla::ifrt::Future<tensorflow::Tensor> tensor_future;
   };
   // Tries to register a loaded variable with the given name.
   // Returns an error if the named tensor already exists.
@@ -45,7 +45,7 @@ class IfrtRestoreTensorRegistry {
                            RestoredTensorInfo restored_tensor_info)
       ABSL_LOCKS_EXCLUDED(mutex_);
 
-  xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>> GetRestoredTensor(
+  xla::ifrt::Future<tensorflow::Tensor> GetRestoredTensor(
       absl::string_view name) const ABSL_LOCKS_EXCLUDED(mutex_);
 
   absl::StatusOr<DtypeAndShape> GetDtypeAndShape(absl::string_view name) const

@@ -457,8 +457,7 @@ TEST_P(VariableInputTest, InterleaveVariable) {
       auto input_tensor_promise = xla::ifrt::Future<
           absl::StatusOr<tensorflow::Tensor>>::CreatePromise();
       auto input_tensor_future =
-          xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>>(
-              input_tensor_promise);
+          xla::ifrt::Future<tensorflow::Tensor>(input_tensor_promise);
       IfrtRestoreTensorRegistry::RestoredTensorInfo restore_tensor_info = {
           .dtype_and_shape{.dtype = GetParam().in_tensors[i].dtype(),
                            .shape = GetParam().in_tensors[i].shape()},

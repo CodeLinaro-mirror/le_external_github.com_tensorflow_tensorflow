@@ -162,10 +162,8 @@ void MlrtIfrtRestoreVariableKernel::Invoke() {
   ifrt_serving::IfrtRestoreTensorRegistry& ifrt_restore_tensor_registry =
       (*ifrt_model_context)->GetRestoreTensorRegistry();
   for (int i = 0; i < num_outputs; ++i) {
-    auto promise =
-        xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>>::CreatePromise();
-    auto future =
-        xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>>(promise);
+    auto promise = xla::ifrt::Future<tensorflow::Tensor>::CreatePromise();
+    auto future = xla::ifrt::Future<tensorflow::Tensor>(promise);
     const ResourceHandle& var_handle =
         var_handles()[i].tensor().scalar<ResourceHandle>()();
     absl::StatusOr<ifrt_serving::DtypeAndShape> dtype_and_shape =
@@ -271,7 +269,7 @@ absl::Status MlrtIfrtLoadVariableKernel::InvokeHelper() {
   std::string runtime_name = ifrt_serving::GetRuntimeNameFromVarHandle(
       variable_handler_tensor().scalar<ResourceHandle>()());
 
-  xla::ifrt::Future<absl::StatusOr<tensorflow::Tensor>> restored_tensor_future =
+  xla::ifrt::Future<tensorflow::Tensor> restored_tensor_future =
       ifrt_restore_tensor_registry.GetRestoredTensor(runtime_name);
 
   restored_tensor_future.OnReady(
