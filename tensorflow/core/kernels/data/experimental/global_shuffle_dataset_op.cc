@@ -56,7 +56,9 @@ constexpr const char kGlobalShuffleDataset[] = "GlobalShuffleDataset";
 constexpr const char kReshuffleEachIteration[] = "reshuffle_each_iteration";
 constexpr const char kSeed[] = "seed";
 constexpr const char kSeed2[] = "seed2";
+constexpr const char kSeed3[] = "seed3";
 constexpr const char kSeedGenerator[] = "SeedGenerator";
+constexpr const char kEpochNumRandomSamples[] = "epoch_num_random_samples";
 
 class GlobalShuffleDatasetOp : public UnaryDatasetOpKernel {
  public:
@@ -247,6 +249,13 @@ class GlobalShuffleDatasetOp::Dataset::Iterator
     absl::MutexLock l(&mu_);
     TF_RETURN_IF_ERROR(
         writer->WriteScalar(prefix(), kElementCount, element_count_));
+    TF_RETURN_IF_ERROR(
+        writer->WriteScalar(prefix(), kEpochNumRandomSamples,
+                            seed_generator_->num_random_samples()));
+
+    TF_RETURN_IF_ERROR(writer->WriteScalar(prefix(), kSeed, seed_));
+    TF_RETURN_IF_ERROR(writer->WriteScalar(prefix(), kSeed2, seed2_));
+    TF_RETURN_IF_ERROR(writer->WriteScalar(prefix(), kSeed3, seed3_));
     return absl::OkStatus();
   }
 
@@ -259,6 +268,23 @@ class GlobalShuffleDatasetOp::Dataset::Iterator
       TF_RETURN_IF_ERROR(
           reader->ReadScalar(prefix(), kElementCount, &element_count_));
     }
+
+    // Restoring the seed_generator is necessary when
+    // combine this op with `.repeat()`.
+    int64_t num_random_samples;
+    TF_RETURN_IF_ERROR(reader->ReadScalar(prefix(), kEpochNumRandomSamples,
+                                          &num_random_samples));
+    seed_generator_->set_num_random_samples(num_random_samples);
+    seed_generator_->Reset();
+
+    {
+      // Required to recover seeds because `Initialize` is always called
+      // before `RestoreInternal.
+      TF_RETURN_IF_ERROR(reader->ReadScalar(prefix(), kSeed, &seed_));
+      TF_RETURN_IF_ERROR(reader->ReadScalar(prefix(), kSeed2, &seed2_));
+      TF_RETURN_IF_ERROR(reader->ReadScalar(prefix(), kSeed3, &seed3_));
+    }
+
     IteratorContext::Params params(ctx);
     params.restored_element_count = element_count_;
     params.index_mapper = GetIndexMapper(ctx->index_mapper());

@@ -198,5 +198,109 @@ class GlobalShuffleCheckpointTest(checkpoint_test_base.CheckpointTestBase,
         assert_items_equal=reshuffle_each_iteration)
 
 
+class GlobalShuffleNumpyIteratorCheckpointTest(parameterized.TestCase):
+
+  @combinations.generate(
+      combinations.times(
+          test_base.v2_eager_only_combinations(),
+          combinations.combine(
+              dataset_range=[6, 10],
+              reshuffle_each_iteration=[True, False],
+              prefetch=[True, False],
+              symbolic_checkpoint=[True, False],
+          ),
+      )
+  )
+  def testRange(
+      self,
+      dataset_range: int,
+      reshuffle_each_iteration: bool,
+      prefetch: bool,
+      symbolic_checkpoint: bool,
+  ):
+
+    def _build_dataset() -> dataset_ops.Dataset:
+      dataset = dataset_ops.Dataset.range(dataset_range)
+      if prefetch:
+        dataset = dataset.prefetch(buffer_size=dataset_ops.AUTOTUNE)
+      dataset = global_shuffle_op._global_shuffle(
+          dataset, seed=10, reshuffle_each_iteration=reshuffle_each_iteration
+      )
+      if symbolic_checkpoint:
+        options = options_lib.Options()
+        options.experimental_symbolic_checkpoint = symbolic_checkpoint
+        dataset = dataset.with_options(options)
+      return dataset
+
+    dataset = _build_dataset()
+    it = dataset.as_numpy_iterator()
+
+    expected_elements = []
+    for _ in range(dataset_range):
+      checkpoint = it.save()
+      expected = next(it)
+      it.restore(checkpoint)
+      actual = next(it)
+
+      self.assertEqual(expected, actual)
+
+      expected_elements.append(expected)
+
+    self.assertCountEqual(expected_elements, range(dataset_range))
+
+  @combinations.generate(
+      combinations.times(
+          test_base.v2_eager_only_combinations(),
+          combinations.combine(
+              dataset_range=[6, 10],
+              reshuffle_each_iteration=[True, False],
+              prefetch=[True, False],
+              symbolic_checkpoint=[True, False],
+          ),
+      )
+  )
+  def testRangeAndRepeat(
+      self,
+      dataset_range: int,
+      reshuffle_each_iteration: bool,
+      prefetch: bool,
+      symbolic_checkpoint: bool,
+  ):
+
+    num_repeat = 3
+
+    def _build_dataset() -> dataset_ops.Dataset:
+      dataset = dataset_ops.Dataset.range(dataset_range)
+      if prefetch:
+        dataset = dataset.prefetch(buffer_size=dataset_ops.AUTOTUNE)
+      dataset = global_shuffle_op._global_shuffle(
+          dataset, seed=10, reshuffle_each_iteration=reshuffle_each_iteration
+      )
+      dataset = dataset.repeat(num_repeat)
+      if symbolic_checkpoint:
+        options = options_lib.Options()
+        options.experimental_symbolic_checkpoint = symbolic_checkpoint
+        dataset = dataset.with_options(options)
+      return dataset
+
+    dataset = _build_dataset()
+    it = dataset.as_numpy_iterator()
+
+    expected_elements = []
+    for _ in range(dataset_range * num_repeat):
+      checkpoint = it.save()
+      expected = next(it)
+      it.restore(checkpoint)
+      actual = next(it)
+
+      self.assertEqual(expected, actual)
+
+      expected_elements.append(expected)
+
+    self.assertCountEqual(
+        expected_elements, list(range(dataset_range)) * num_repeat
+    )
+
+
 if __name__ == "__main__":
   test.main()
