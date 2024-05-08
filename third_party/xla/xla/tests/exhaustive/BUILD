@@ -46,7 +46,7 @@ xla_test(
     name = "exhaustive_unary_test_f32_or_smaller",
     srcs = ["exhaustive_unary_test_f32_or_smaller.cc"],
     real_hardware_only = True,  # Very slow on the interpreter.
-    shard_count = 48,
+    shard_count = 50,
     tags = [
         "optonly",
         # This is a big test that we skip for capacity reasons in OSS testing.
