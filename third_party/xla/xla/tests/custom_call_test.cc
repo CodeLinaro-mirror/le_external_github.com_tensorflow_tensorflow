@@ -260,6 +260,30 @@ XLA_TEST_F(CustomCallTest, LayoutConstrained) {
   LiteralTestUtil::ExpectR2Equal<float>({{3.f, 4.f}, {5.f, 6.f}}, result);
 }
 
+XLA_TEST_F(CustomCallTest, DimensionSizeMatches) {
+  auto module = CreateNewVerifiedModule();
+  auto builder = HloComputation::Builder(TestName());
+
+  auto input = builder.AddInstruction(HloInstruction::CreateParameter(
+      0, ShapeUtil::MakeShape(S32, {3, 4}), "arg0"));
+
+  builder.AddInstruction(HloInstruction::CreateCustomCall(
+      ShapeUtil::MakeTupleShape({}), {input},
+      "__xla_test$$DimensionSizeMatches",
+      /*opaque=*/"{dims = 2 : i32, rows = 3 : i32, cols = 4 : i32}",
+      /*api_version=*/CustomCallApiVersion::API_VERSION_TYPED_FFI));
+
+  module->AddEntryComputation(builder.Build());
+
+  Literal arg0 = LiteralUtil::CreateR2<int>({
+      {0, 0, 0, 0},  //
+      {0, 0, 0, 0},  //
+      {0, 0, 0, 0},  //
+  });
+
+  TF_ASSERT_OK_AND_ASSIGN(auto result, Execute(std::move(module), {&arg0}));
+}
+
 XLA_TEST_F(CustomCallTest, TupleOutput) {
   const char* kModuleStr = R"(
     HloModule m
@@ -640,6 +664,39 @@ XLA_FFI_DEFINE_HANDLER(kFfiTupleRotate, FfiTupleRotate,
 
 XLA_FFI_REGISTER_HANDLER(ffi::GetXlaFfiApi(), "__xla_test$$FfiTupleRotate",
                          "Host", kFfiTupleRotate);
+
+static absl::Status FfiDimensionSizeMatches(ffi::BufferBase in, int32_t dims,
+                                            int32_t rows, int32_t cols) {
+  std::string message;
+  if (in.dimensions.size() != dims) {
+    message += absl::StrFormat("dimensions.size() != dims because %d != %d\n",
+                               in.dimensions.size(), dims);
+  }
+  if (in.dimensions.front() != rows) {
+    message += absl::StrFormat("dimensions.front() != rows because %d != %d\n",
+                               in.dimensions.front(), rows);
+  }
+  if (in.dimensions.back() != cols) {
+    message += absl::StrFormat("dimensions.back() != cols because %d != %d\n",
+                               in.dimensions.back(), cols);
+  }
+  if (!message.empty()) {
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
+                        std::move(message));
+  }
+  return absl::OkStatus();
+}
+
+XLA_FFI_DEFINE_HANDLER(kFfiDimensionSizeMatches, FfiDimensionSizeMatches,
+                       ffi::Ffi::Bind()
+                           .Arg<ffi::BufferBase>()  // in
+                           .Attr<int32_t>("dims")
+                           .Attr<int32_t>("rows")
+                           .Attr<int32_t>("cols"));
+
+XLA_FFI_REGISTER_HANDLER(ffi::GetXlaFfiApi(),
+                         "__xla_test$$DimensionSizeMatches", "Host",
+                         kFfiDimensionSizeMatches);
 
 }  // namespace
 
