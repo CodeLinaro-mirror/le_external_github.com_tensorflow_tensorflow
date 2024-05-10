@@ -2875,11 +2875,51 @@ PjRtStreamExecutorLoadedExecutable::MakeOutputBuffers(
   return outputs;
 }
 
+static Status GetFirstInputError(
+    absl::Span<PjRtBuffer* const> argument_handles) {
+  for (auto* handle : argument_handles) {
+    auto* buffer = tensorflow::down_cast<PjRtStreamExecutorBuffer*>(handle);
+    PjRtStreamExecutorBuffer::ScopedHold hold =
+        buffer->GetBufferWithUsageHold();
+    for (const auto& event : hold->definition_events()) {
+      if (event->IsPredeterminedError()) {
+        return event->GetDefinedStatus();
+      }
+    }
+  }
+  return OkStatus();
+}
+
 StatusOr<PjRtLoadedExecutable::Result>
 PjRtStreamExecutorLoadedExecutable::ExecuteHelper(
     absl::Span<PjRtBuffer* const> argument_handles, int replica, int partition,
     const RunId& run_id, const ExecuteOptions& options, bool fill_future,
     PjRtDevice* device) const {
+  Status input_error = GetFirstInputError(argument_handles);
+  if (!input_error.ok()) {
+    PjRtMemorySpace* memory_space;
+    if (device != nullptr) {
+      TF_ASSIGN_OR_RETURN(memory_space, device->default_memory_space());
+    } else {
+      TF_ASSIGN_OR_RETURN(
+          memory_space,
+          client_->addressable_devices()[0]->default_memory_space());
+    }
+    std::vector<std::unique_ptr<PjRtBuffer>> outputs;
+    TF_ASSIGN_OR_RETURN(auto hlo_modules, GetHloModules());
+    for (const auto& hlo_module : hlo_modules) {
+      TF_ASSIGN_OR_RETURN(
+          auto error_buffer,
+          client_->CreateErrorBuffer(input_error, hlo_module->result_shape(),
+                                     memory_space));
+      outputs.push_back(std::move(error_buffer));
+    }
+    PjRtFuture<>::Promise promise = PjRtFuture<>::CreatePromise();
+    auto future = std::make_optional(PjRtFuture<>(promise));
+    promise.Set();
+    return Result({std::move(future), /*buffers=*/std::move(outputs)});
+  }
+
   const uint64_t start_time_usecs = tsl::Env::Default()->NowMicros();
   std::shared_ptr<DeviceAssignment> device_assignment;
   if (device == nullptr) {
