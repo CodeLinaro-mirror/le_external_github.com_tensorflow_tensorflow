@@ -1,4 +1,4 @@
-/* Copyright 2015 The OpenXLA Authors.
+/* Copyright 2024 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,23 +13,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/stream_executor/event.h"
+#ifndef XLA_PJRT_C_PJRT_C_API_FFI_INTERNAL_H_
+#define XLA_PJRT_C_PJRT_C_API_FFI_INTERNAL_H_
 
-#include <cstdint>
-#include <memory>
-#include <utility>
+#include "xla/pjrt/c/pjrt_c_api.h"
+#include "xla/pjrt/c/pjrt_c_api_ffi_extension.h"
 
-#include "absl/log/log.h"
-#include "absl/status/status.h"
-#include "xla/stream_executor/stream_executor_interface.h"
+namespace pjrt {
 
-namespace stream_executor {
+PJRT_FFI_Extension CreateFfiExtension(PJRT_Extension_Base* next);
 
-Event::Event(StreamExecutorInterface* stream_exec)
-    : stream_exec_(stream_exec) {}
+}  // namespace pjrt
 
-Event::Status Event::PollForStatus() {
-  return stream_exec_->PollForEventStatus(this);
-}
-
-}  // namespace stream_executor
+#endif  // XLA_PJRT_C_PJRT_C_API_FFI_INTERNAL_H_
