@@ -86,7 +86,7 @@ absl::Status CreateTritonPipeline(
   // triton/lib/Dialect/TritonGPU/Transforms/OptimizeDotOperands.cpp in
   // HoistLayoutConversion pattern.
   // Bug: b/331360119
-  // pm.addPass(mt::gpu::createRemoveLayoutConversionsPass());
+  pm.addPass(mt::gpu::createRemoveLayoutConversionsPass());
   pm.addPass(mt::gpu::createReduceDataDuplicationPass());
   pm.addPass(mt::gpu::createReorderInstructionsPass());
   pm.addPass(mlir::createCSEPass());
