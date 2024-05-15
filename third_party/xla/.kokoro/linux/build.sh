@@ -51,7 +51,6 @@ docker run --name xla -w /tf/xla -itd --rm \
 TAGS_FILTER="-no_oss"
 ADDITIONAL_FLAGS=""
 RBE_FLAGS=""
-TARGET_FILTERS="-@local_tsl//tsl/platform:subprocess_test -@local_tsl//tsl/platform/cloud:google_auth_provider_test -@local_tsl//tsl/platform/cloud:oauth_client_test"
 
 if is_linux_gpu_job ; then
     TAGS_FILTER="$TAGS_FILTER,requires-gpu-nvidia"
@@ -73,9 +72,6 @@ else
     if is_linux_cpu_arm64_job ; then
         TAGS_FILTER="$TAGS_FILTER,-no_aarch64"
         ADDITIONAL_FLAGS="$ADDITIONAL_FLAGS --action_env PYTHON_BIN_PATH=/usr/bin/python3.11 --python_path=/usr/bin/python3.11"
-        # Some cross-compile tests are not working for XLA Linux Aarch64.
-        # TODO(ddunleavy): Revisit these when hermetic python is available.
-        TARGET_FILTERS="$TARGET_FILTERS -//xla/python_api:xla_shape_test -//xla/python_api:xla_literal_test -//xla/service:xla_aot_compile_stablehlo_cpu_test -//xla/tests:local_client_aot_test"
         RBE_FLAGS="--config=rbe_cross_compile_linux_arm64_xla --jobs=150"
     else
         RBE_FLAGS="--config=rbe_linux_cpu --jobs=150"
@@ -96,7 +92,7 @@ docker exec xla bazel \
         --config=warnings \
         $RBE_FLAGS \
         $ADDITIONAL_FLAGS \
-        -- //xla/... //build_tools/... @local_tsl//tsl/... $TARGET_FILTERS
+        -- //xla/... //build_tools/... @local_tsl//tsl/...
 
 
 # Print build time statistics, including critical path.

@@ -2490,6 +2490,7 @@ xla_cc_test(
         ":local_client_aot_test_computation.o",
     ],
     linkstatic = 1,
+    tags = ["no_aarch64"],  # TODO(ddunleavy): Enable after XLA uses hermetic Python
     deps = [
         "//xla:executable_run_options",
         "@com_google_absl//absl/base:dynamic_annotations",

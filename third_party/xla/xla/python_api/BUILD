@@ -54,6 +54,7 @@ py_strict_test(
     python_version = "PY3",
     srcs_version = "PY3",
     tags = [
+        "no_aarch64",  # TODO(ddunleavy): Revisit when XLA uses hermetic python
         "optonly",
     ],
     deps = [
@@ -70,6 +71,7 @@ py_strict_test(
     python_version = "PY3",
     srcs_version = "PY3",
     tags = [
+        "no_aarch64",  # TODO(ddunleavy): Revisit when XLA uses hermetic python
         "optonly",
     ],
     deps = [
