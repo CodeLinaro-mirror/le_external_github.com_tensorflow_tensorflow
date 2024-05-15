@@ -1840,18 +1840,6 @@ GpuDriver::CreateMemoryHandle(GpuContext* context, uint64_t bytes) {
   return absl::OkStatus();
 }
 
-/* static */ absl::StatusOr<CUresult> GpuDriver::QueryEvent(GpuContext* context,
-                                                            CUevent event) {
-  ScopedActivateContext activated{context};
-  CUresult res = cuEventQuery(event);
-  if (res != CUDA_SUCCESS && res != CUDA_ERROR_NOT_READY) {
-    return absl::InternalError(
-        absl::StrFormat("failed to query event: %s", ToString(res)));
-  }
-
-  return res;
-}
-
 /* static */ bool GpuDriver::GetEventElapsedTime(GpuContext* context,
                                                  float* elapsed_milliseconds,
                                                  CUevent start, CUevent stop) {

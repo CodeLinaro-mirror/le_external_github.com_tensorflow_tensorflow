@@ -458,12 +458,15 @@ cuda_only_cc_library(
     srcs = ["cuda_event.cc"],
     hdrs = ["cuda_event.h"],
     deps = [
+        ":cuda_driver",
         "//xla/stream_executor",
         "//xla/stream_executor/gpu:gpu_driver_header",
         "//xla/stream_executor/gpu:gpu_event",
         "//xla/stream_executor/gpu:gpu_executor_header",
+        "//xla/stream_executor/gpu:gpu_types_header",
         "@com_google_absl//absl/log",
-        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:str_format",
         "@local_config_cuda//cuda:cuda_headers",
     ],
 )

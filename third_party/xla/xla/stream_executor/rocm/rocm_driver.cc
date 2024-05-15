@@ -1466,19 +1466,6 @@ struct BitPatternToValue {
   }
 }
 
-/* static */ absl::StatusOr<hipError_t> GpuDriver::QueryEvent(
-    GpuContext* context, GpuEventHandle event) {
-  ScopedActivateContext activated{context};
-  hipError_t res = wrap::hipEventQuery(event);
-  if (res != hipSuccess && res != hipErrorNotReady) {
-    return absl::Status{
-        absl::StatusCode::kInternal,
-        absl::StrFormat("failed to query event: %s", ToString(res).c_str())};
-  }
-
-  return res;
-}
-
 /* static */ bool GpuDriver::GetEventElapsedTime(GpuContext* context,
                                                  float* elapsed_milliseconds,
                                                  GpuEventHandle start,

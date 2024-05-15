@@ -14,19 +14,34 @@ limitations under the License.
 ==============================================================================*/
 
 #include "absl/log/log.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "third_party/gpus/cuda/include/cuda.h"
+#include "xla/stream_executor/cuda/cuda_driver.h"
 #include "xla/stream_executor/event.h"
 #include "xla/stream_executor/gpu/gpu_driver.h"
 #include "xla/stream_executor/gpu/gpu_event.h"
 #include "xla/stream_executor/gpu/gpu_executor.h"
+#include "xla/stream_executor/gpu/gpu_types.h"
 
 namespace stream_executor {
 namespace gpu {
 
+absl::StatusOr<CUresult> QueryEvent(GpuContext* context, GpuEventHandle event) {
+  ScopedActivateContext activated{context};
+  CUresult res = cuEventQuery(event);
+  if (res != CUDA_SUCCESS && res != CUDA_ERROR_NOT_READY) {
+    return absl::InternalError(
+        absl::StrFormat("failed to query event: %s", ToString(res)));
+  }
+
+  return res;
+}
+
 Event::Status GpuEvent::PollForStatus() {
   absl::StatusOr<CUresult> status =
-      GpuDriver::QueryEvent(parent_->gpu_context(), gpu_event_);
+      QueryEvent(parent_->gpu_context(), gpu_event_);
   if (!status.ok()) {
     LOG(ERROR) << "Error polling for event status: "
                << status.status().message();
