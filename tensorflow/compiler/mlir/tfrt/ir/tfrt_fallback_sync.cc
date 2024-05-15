@@ -50,7 +50,7 @@ FallbackSyncDialect::FallbackSyncDialect(MLIRContext *context)
 }
 
 static Type GetTensorType(Builder *builder) {
-  return tfrt::t::TensorType::get(builder->getContext());
+  return tfrt::tfrt_tensor::TensorType::get(builder->getContext());
 }
 
 }  // namespace fallback_sync
