@@ -80,7 +80,12 @@ tf_cuda_cc_test(
     srcs = ["gpu_runner_test.cc"],
     tags = [
         "config-cuda-only",
+        "gpu",  # This test only runs with GPU.
         "no_oss",  # This test only runs with GPU.
+        "noasan",
+        "nomsan",
+        "noopt",
+        "notsan",
         "requires-gpu-nvidia",
     ],
     deps = [
