@@ -7,4 +7,5 @@ internal patch during the next triton integration process.
 
 temporary_patch_list = [
     "//third_party/triton/temporary:linear_layout_compose_asan.patch",
+    "//third_party/triton/temporary:reduction_mma_v3_fix.patch",
 ]
