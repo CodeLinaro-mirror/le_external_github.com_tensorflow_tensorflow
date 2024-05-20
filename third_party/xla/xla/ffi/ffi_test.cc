@@ -17,9 +17,11 @@ limitations under the License.
 
 #include <complex>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -36,6 +38,22 @@ limitations under the License.
 #include "tsl/lib/core/status_test_util.h"
 #include "tsl/platform/status_matchers.h"
 #include "tsl/platform/test.h"
+
+enum class Int32BasedEnum : int32_t {
+  kOne = 1,
+  kTwo = 2,
+};
+
+constexpr const int64_t large_int =
+    static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1;
+
+enum class Int64BasedEnum : int64_t {
+  kOne = large_int + 1,
+  kTwo = large_int + 2,
+};
+
+XLA_FFI_REGISTER_ENUM_ATTR_DECODING(Int32BasedEnum);
+XLA_FFI_REGISTER_ENUM_ATTR_DECODING(Int64BasedEnum);
 
 namespace xla::ffi {
 
@@ -388,6 +406,68 @@ TEST(FfiTest, AttrsAsStruct) {
   TF_ASSERT_OK(status);
 }
 
+TEST(FfiTest, EnumAttr) {
+  CallFrameBuilder::AttributesBuilder attrs;
+  attrs.Insert("i32_one", static_cast<std::underlying_type_t<Int32BasedEnum>>(
+                              Int32BasedEnum::kOne));
+  attrs.Insert("i32_two", static_cast<std::underlying_type_t<Int32BasedEnum>>(
+                              Int32BasedEnum::kTwo));
+  attrs.Insert("i64_one", static_cast<std::underlying_type_t<Int64BasedEnum>>(
+                              Int64BasedEnum::kOne));
+  attrs.Insert("i64_two", static_cast<std::underlying_type_t<Int64BasedEnum>>(
+                              Int64BasedEnum::kTwo));
+
+  CallFrameBuilder builder;
+  builder.AddAttributes(attrs.Build());
+  auto call_frame = builder.Build();
+
+  auto fn = [&](Int32BasedEnum i32_one, Int32BasedEnum i32_two,
+                Int64BasedEnum i64_one, Int64BasedEnum i64_two) {
+    EXPECT_EQ(i32_one, Int32BasedEnum::kOne);
+    EXPECT_EQ(i32_two, Int32BasedEnum::kTwo);
+    EXPECT_EQ(i64_one, Int64BasedEnum::kOne);
+    EXPECT_EQ(i64_one, Int64BasedEnum::kOne);
+    return absl::OkStatus();
+  };
+
+  auto handler = Ffi::Bind()
+                     .Attr<Int32BasedEnum>("i32_one")
+                     .Attr<Int32BasedEnum>("i32_two")
+                     .Attr<Int64BasedEnum>("i64_one")
+                     .Attr<Int64BasedEnum>("i64_two")
+                     .To(fn);
+
+  auto status = Call(*handler, call_frame);
+
+  TF_ASSERT_OK(status);
+}
+
+TEST(FfiTest, WrongEnumAttrType) {
+  CallFrameBuilder::AttributesBuilder attrs;
+  attrs.Insert("i32_enum", 42u);
+
+  CallFrameBuilder builder;
+  builder.AddAttributes(attrs.Build());
+  auto call_frame = builder.Build();
+
+  auto fn = [](Int32BasedEnum) { return absl::OkStatus(); };
+
+  auto handler = Ffi::Bind().Attr<Int32BasedEnum>("i32_enum").To(fn);
+
+  auto status = Call(*handler, call_frame);
+
+  EXPECT_TRUE(absl::StrContains(
+      status.message(),
+      "Failed to decode all FFI handler operands (bad operands at: 0)"))
+      << "status.message():\n"
+      << status.message() << "\n";
+
+  EXPECT_TRUE(absl::StrContains(status.message(),
+                                "Wrong scalar data type: expected 4 but got"))
+      << "status.message():\n"
+      << status.message() << "\n";
+}
+
 TEST(FfiTest, DecodingErrors) {
   CallFrameBuilder::AttributesBuilder attrs;
   attrs.Insert("i32", 42);
@@ -414,16 +494,24 @@ TEST(FfiTest, DecodingErrors) {
 
   EXPECT_TRUE(absl::StrContains(
       status.message(),
-      "Failed to decode all FFI handler operands (bad operands at: 0, 1, 3)"));
+      "Failed to decode all FFI handler operands (bad operands at: 0, 1, 3)"))
+      << "status.message():\n"
+      << status.message() << "\n";
 
   EXPECT_TRUE(absl::StrContains(
-      status.message(), "Attribute name mismatch: i32 vs not_i32_should_fail"));
+      status.message(), "Attribute name mismatch: i32 vs not_i32_should_fail"))
+      << "status.message():\n"
+      << status.message() << "\n";
 
   EXPECT_TRUE(absl::StrContains(
-      status.message(), "Attribute name mismatch: i64 vs not_i64_should_fail"));
+      status.message(), "Attribute name mismatch: i64 vs not_i64_should_fail"))
+      << "status.message():\n"
+      << status.message() << "\n";
 
   EXPECT_TRUE(absl::StrContains(
-      status.message(), "Attribute name mismatch: str vs not_str_should_fail"));
+      status.message(), "Attribute name mismatch: str vs not_str_should_fail"))
+      << "status.message():\n"
+      << status.message() << "\n";
 }
 
 TEST(FfiTest, BufferBaseArgument) {

@@ -17,12 +17,15 @@ limitations under the License.
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "absl/log/check.h"
 #include "absl/status/status.h"
+#include "absl/strings/match.h"
 #include "xla/ffi/call_frame.h"
 #include "xla/ffi/execution_context.h"
 #include "xla/ffi/ffi_api.h"
@@ -33,6 +36,22 @@ limitations under the License.
 #include "tsl/platform/status_matchers.h"
 #include "tsl/platform/test.h"
 #include "tsl/platform/test_benchmark.h"
+
+enum class Int32BasedEnum : int32_t {
+  kOne = 1,
+  kTwo = 2,
+};
+
+constexpr const int64_t large_int =
+    static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1;
+
+enum class Int64BasedEnum : int64_t {
+  kOne = large_int + 1,
+  kTwo = large_int + 2,
+};
+
+XLA_FFI_REGISTER_ENUM_ATTR_DECODING(Int32BasedEnum);
+XLA_FFI_REGISTER_ENUM_ATTR_DECODING(Int64BasedEnum);
 
 namespace xla::ffi {
 
@@ -349,6 +368,68 @@ TEST(FfiTest, PointerAttr) {
   auto status = Call(*handler, call_frame);
 
   TF_ASSERT_OK(status);
+}
+
+TEST(FfiTest, EnumAttr) {
+  CallFrameBuilder::AttributesBuilder attrs;
+  attrs.Insert("i32_one", static_cast<std::underlying_type_t<Int32BasedEnum>>(
+                              Int32BasedEnum::kOne));
+  attrs.Insert("i32_two", static_cast<std::underlying_type_t<Int32BasedEnum>>(
+                              Int32BasedEnum::kTwo));
+  attrs.Insert("i64_one", static_cast<std::underlying_type_t<Int64BasedEnum>>(
+                              Int64BasedEnum::kOne));
+  attrs.Insert("i64_two", static_cast<std::underlying_type_t<Int64BasedEnum>>(
+                              Int64BasedEnum::kTwo));
+
+  CallFrameBuilder builder;
+  builder.AddAttributes(attrs.Build());
+  auto call_frame = builder.Build();
+
+  auto fn = [&](Int32BasedEnum i32_one, Int32BasedEnum i32_two,
+                Int64BasedEnum i64_one, Int64BasedEnum i64_two) {
+    EXPECT_EQ(i32_one, Int32BasedEnum::kOne);
+    EXPECT_EQ(i32_two, Int32BasedEnum::kTwo);
+    EXPECT_EQ(i64_one, Int64BasedEnum::kOne);
+    EXPECT_EQ(i64_one, Int64BasedEnum::kOne);
+    return Error::Success();
+  };
+
+  auto handler = Ffi::Bind()
+                     .Attr<Int32BasedEnum>("i32_one")
+                     .Attr<Int32BasedEnum>("i32_two")
+                     .Attr<Int64BasedEnum>("i64_one")
+                     .Attr<Int64BasedEnum>("i64_two")
+                     .To(fn);
+
+  auto status = Call(*handler, call_frame);
+
+  TF_ASSERT_OK(status);
+}
+
+TEST(FfiTest, WrongEnumAttrType) {
+  CallFrameBuilder::AttributesBuilder attrs;
+  attrs.Insert("i32_enum", 42u);
+
+  CallFrameBuilder builder;
+  builder.AddAttributes(attrs.Build());
+  auto call_frame = builder.Build();
+
+  auto fn = [](Int32BasedEnum) { return Error::Success(); };
+
+  auto handler = Ffi::Bind().Attr<Int32BasedEnum>("i32_enum").To(fn);
+
+  auto status = Call(*handler, call_frame);
+
+  EXPECT_TRUE(absl::StrContains(
+      status.message(),
+      "Failed to decode all FFI handler operands (bad operands at: 0)"))
+      << "status.message():\n"
+      << status.message() << "\n";
+
+  EXPECT_TRUE(absl::StrContains(status.message(),
+                                "Wrong scalar data type: expected 4 but got"))
+      << "status.message():\n"
+      << status.message() << "\n";
 }
 
 struct MyData {
