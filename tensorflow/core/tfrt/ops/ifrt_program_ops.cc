@@ -53,18 +53,15 @@ REGISTER_OP("IfrtLoadVariable")
     .Output("tensor: Tout")
     .Attr("Tin: type")
     .Attr("Tout: type")
-    .Attr("config: string")
-    .Attr("name: string")
+    .Attr("used_by_host: bool")
     .SetIsStateful()
     .SetShapeFn(tensorflow::shape_inference::UnknownShape)
     .Doc(R"(
-Converts the given tensor to a named array.
+This op loads a restored variable tensor as a tensor future. It is areplacement of `tf.ReadVariableOp`.
 
-This op loads the `variable` tensor to an IFRT device array based the sharding
-spec in a `config` and the array can be looked up by `name` by the runtime.
-The `config` is a text proto of `IfrtVariableDeviceShardingConfigProto`. 
-The `name` is typically a concatenation of `container` and `shared_name` from `tf.VarHandle`.
-The idea is to avoid transferring to device repeatedly.
+This op returns a scalar string tensor containing the restored variable name, which 
+is composed from `container_name` and `shared_name` from a `var_handle` and can be
+used as a key within the runtime, as well as a future for the tensor.
 
 Note that this op is not part of a stable interface. Users must not use this op
 in their SavedModel and instead rely on Ifrt Serving's mechanism that
