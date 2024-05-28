@@ -24,7 +24,7 @@ limitations under the License.
 #include "absl/container/flat_hash_set.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/literal.h"
-#include "xla/status.h"
+#include "absl/status/status.h"
 #include "xla/statusor.h"
 
 namespace xla {

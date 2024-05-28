@@ -47,7 +47,7 @@ limitations under the License.
 #include "xla/service/hlo_value.h"
 #include "xla/service/memory_space_assignment/repacking.h"
 #include "xla/service/time_utils.h"
-#include "xla/status.h"
+#include "absl/status/status.h"
 #include "xla/util.h"
 
 namespace xla {

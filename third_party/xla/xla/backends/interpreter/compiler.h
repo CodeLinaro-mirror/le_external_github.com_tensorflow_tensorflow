@@ -25,7 +25,7 @@ limitations under the License.
 #include "xla/service/executable.h"
 #include "xla/service/hlo_cost_analysis.h"
 #include "xla/service/hlo_module_config.h"
-#include "xla/status.h"
+#include "absl/status/status.h"
 #include "xla/statusor.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "tsl/platform/status.h"

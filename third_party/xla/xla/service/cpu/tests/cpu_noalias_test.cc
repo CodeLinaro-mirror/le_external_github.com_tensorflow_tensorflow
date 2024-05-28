@@ -38,7 +38,7 @@ limitations under the License.
 #include "xla/service/llvm_ir/llvm_util.h"
 #include "xla/service/logical_buffer.h"
 #include "xla/shape_util.h"
-#include "xla/status.h"
+#include "absl/status/status.h"
 #include "xla/tests/filecheck.h"
 #include "xla/xla_data.pb.h"
 #include "tsl/platform/statusor.h"
