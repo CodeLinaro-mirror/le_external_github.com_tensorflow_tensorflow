@@ -74,7 +74,7 @@ if is_linux_gpu_job ; then
       #TODO(b/338885148): Remove this block after TF was updated to cuDNN 9
       sed -i 's/@sigbuild-r2\.17-clang_/@sigbuild-r2.17-clang-cudnn9_/g' ./github/xla/.bazelrc
       echo "The following changes were made:"
-      git diff -- .bazelrc || true
+      git diff -- ./github/xla/.bazelrc || true
     )
     echo "***NOTE: nvidia-smi lists the highest CUDA version the driver supports, which may be different than the version of CUDA actually used!!***"
     nvidia-smi
