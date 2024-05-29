@@ -77,7 +77,8 @@ enum class ResourceUsageType {
 enum class ResourceHazardType {
   kShareable = 0,
   kSerial = 1,
-  kUnshareable = 2,
+  kNonextendable = 2,
+  kUnshareable = 3,
 };
 
 constexpr int64_t ResourceTypeToIndex(ResourceType resource_type) {
@@ -252,6 +253,12 @@ class AsyncTracker {
   // Returns the list of the occupied serial resources filtered from the given
   // resources vector.
   virtual absl::InlinedVector<int64_t, 1> GetOccupiedSerialResourcesFromVector(
+      const ResourcesVector& resources) const;
+
+  // Returns the list of the released nonextendable resources filtered from the
+  // given resources vector.
+  virtual absl::InlinedVector<int64_t, 1>
+  GetReleasedNonextendableResourcesFromVector(
       const ResourcesVector& resources) const;
 
   inline CanonicalAsyncOp GetCanonicalAsyncOp(const HloInstruction& hlo) const {
