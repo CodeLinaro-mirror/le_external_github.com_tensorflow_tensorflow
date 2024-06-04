@@ -79,8 +79,14 @@ absl::Status KernelThunk::Execute(const ExecuteParams& params) {
 
   // TODO(ezhulenev): Kernel ptr should be loaded as a part of Thunk
   // initialization stage.
-  TF_ASSIGN_OR_RETURN(SE_HOST_Kernel * kernel_ptr,
-                      params.host_kernels->Find(kernel_name_));
+  SE_HOST_Kernel* kernel_ptr = kernel_ptr_.load();
+
+  // Because thunks are owned by a parent CpuExecutable, we can safely assume
+  // that kernel pointer will not change after we find it the first time.
+  if (kernel_ptr == nullptr) {
+    TF_ASSIGN_OR_RETURN(kernel_ptr, params.host_kernels->Find(kernel_name_));
+    kernel_ptr_.store(kernel_ptr);
+  }
 
   // TODO(ezhulenev): Instead of using HostKernel directly we should be going
   // through the stream executor APIs.
