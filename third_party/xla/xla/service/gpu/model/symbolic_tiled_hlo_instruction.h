@@ -34,10 +34,11 @@ namespace gpu {
 // with different tiling parameters.
 class SymbolicTiledHloInstruction {
  public:
-  SymbolicTiledHloInstruction(const HloInstruction* hlo,
+  SymbolicTiledHloInstruction(const HloInstruction* hlo, bool is_parameter,
                               IndexingMap indexing_map,
                               SymbolicTile symbolic_tile)
       : hlo_(hlo),
+        is_parameter_(is_parameter),
         indexing_map_(std::move(indexing_map)),
         symbolic_tile_(std::move(symbolic_tile)) {}
 
@@ -52,6 +53,7 @@ class SymbolicTiledHloInstruction {
       absl::Span<int64_t const> tile_parameters) const;
 
   const HloInstruction* hlo() const { return hlo_; }
+  bool is_parameter() const { return is_parameter_; }
   const IndexingMap& indexing_map() const { return indexing_map_; }
   const SymbolicTile& symbolic_tile() const { return symbolic_tile_; }
 
@@ -77,6 +79,13 @@ class SymbolicTiledHloInstruction {
  private:
   // Pointer to the original HLO instruction.
   const HloInstruction* hlo_;
+
+  // Indicates whether this tiled HLO instruction is a parameter of the fusion.
+  //
+  // If true, `hlo_` points to the operand of the fusion and not the kParameter
+  // instruction inside the fusion. This is done to make it possible to build
+  // tiled HLO computations from HloFusionAdaptor.
+  bool is_parameter_;
 
   // Indexing map from the computation root to this instruction output.
   IndexingMap indexing_map_;

@@ -58,12 +58,14 @@ class TiledHloInstruction {
   // * `block_id_to_tile_offsets_indexing` should have only 1 dimension and 0
   //   symbols.
   static absl::StatusOr<std::unique_ptr<TiledHloInstruction>> Create(
-      const HloInstruction* hlo, std::vector<int64_t> tile_sizes,
-      std::vector<int64_t> tile_strides,
+      const HloInstruction* hlo, bool is_parameter,
+      std::vector<int64_t> tile_sizes, std::vector<int64_t> tile_strides,
       IndexingMap block_id_to_tile_offsets_indexing);
 
   // Returns the original HLO instruction.
   const HloInstruction* hlo() const { return hlo_; }
+
+  bool is_parameter() const { return is_parameter_; }
 
   // Returns the tile sizes. The number of tile sizes is equal to the rank of
   // the output shape.
@@ -101,11 +103,12 @@ class TiledHloInstruction {
   }
 
  private:
-  TiledHloInstruction(const HloInstruction* hlo,
+  TiledHloInstruction(const HloInstruction* hlo, bool is_parameter,
                       std::vector<int64_t> tile_sizes,
                       std::vector<int64_t> tile_strides,
                       IndexingMap block_id_to_tile_offsets_indexing)
       : hlo_(hlo),
+        is_parameter_(is_parameter),
         tile_sizes_(std::move(tile_sizes)),
         tile_strides_(std::move(tile_strides)),
         block_id_to_tile_offsets_indexing_(
@@ -113,6 +116,13 @@ class TiledHloInstruction {
 
   // Pointer to the original HLO instruction.
   const HloInstruction* hlo_;
+
+  // Indicates whether this tiled HLO instruction is a parameter of the fusion.
+  //
+  // If true, `hlo_` points to the operand of the fusion and not the kParameter
+  // instruction inside the fusion. This is done to make it possible to build
+  // tiled HLO computations from HloFusionAdaptor.
+  bool is_parameter_;
 
   // Tile sizes and strides.
   std::vector<int64_t> tile_sizes_;
@@ -131,6 +141,7 @@ bool operator!=(const TiledHloInstruction& lhs, const TiledHloInstruction& rhs);
 template <typename H>
 H AbslHashValue(H h, const TiledHloInstruction& tiled_hlo_instruction) {
   return H::combine(std::move(h), tiled_hlo_instruction.hlo(),
+                    tiled_hlo_instruction.is_parameter(),
                     tiled_hlo_instruction.tile_sizes(),
                     tiled_hlo_instruction.tile_strides(),
                     tiled_hlo_instruction.block_id_to_tile_offsets_indexing());

@@ -61,7 +61,7 @@ bool operator!=(const TiledHloInstruction& lhs,
 
 /*static*/
 absl::StatusOr<std::unique_ptr<TiledHloInstruction>>
-TiledHloInstruction::Create(const HloInstruction* hlo,
+TiledHloInstruction::Create(const HloInstruction* hlo, bool is_parameter,
                             std::vector<int64_t> tile_sizes,
                             std::vector<int64_t> tile_strides,
                             IndexingMap block_id_to_tile_offsets_indexing) {
@@ -100,7 +100,7 @@ TiledHloInstruction::Create(const HloInstruction* hlo,
   }
 
   return absl::WrapUnique(new TiledHloInstruction(
-      hlo, std::move(tile_sizes), std::move(tile_strides),
+      hlo, is_parameter, std::move(tile_sizes), std::move(tile_strides),
       std::move(block_id_to_tile_offsets_indexing)));
 }
 
