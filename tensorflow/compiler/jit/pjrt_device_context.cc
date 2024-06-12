@@ -58,7 +58,8 @@ absl::StatusOr<std::unique_ptr<xla::PjRtBuffer>> HostTensorToPjRtBuffer(
       tsl::GetDeviceIdFromDeviceParsedName(device->parsed_name(),
                                            DeviceType(device->device_type())));
   TF_ASSIGN_OR_RETURN(xla::PjRtDevice * pjrt_device,
-                      pjrt_client->LookupAddressableDevice(pjrt_device_id));
+                      pjrt_client->LookupAddressableDevice(
+                          xla::PjRtLocalDeviceId(pjrt_device_id)));
   auto first_try_buffer = pjrt_client->BufferFromHostBuffer(
       cpu_tensor->data(), shape.element_type(), shape.dimensions(),
       /*byte_strides=*/std::nullopt,
@@ -265,7 +266,9 @@ void PjRtDeviceToDeviceCopy(DeviceContext* send_dev_context,
                                            DeviceType(dst->device_type()))
           .value();
   xla::PjRtDevice* pjrt_dst_device =
-      (*pjrt_dst_client)->LookupAddressableDevice(pjrt_dst_device_id).value();
+      (*pjrt_dst_client)
+          ->LookupAddressableDevice(xla::PjRtLocalDeviceId(pjrt_dst_device_id))
+          .value();
 
   absl::StatusOr<std::unique_ptr<xla::PjRtBuffer>> buffer_or =
       src_device_buffer->CopyToDevice(pjrt_dst_device);

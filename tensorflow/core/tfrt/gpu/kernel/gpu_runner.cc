@@ -397,8 +397,9 @@ GpuRunner::Run(const GpuRunInputs& run_inputs) {
         "Execution with collectives is not supported yet.");
   }
 
-  TF_ASSIGN_OR_RETURN(xla::PjRtDevice * pjrt_device,
-                      pjrt_client->LookupAddressableDevice(device_idx));
+  TF_ASSIGN_OR_RETURN(
+      xla::PjRtDevice * pjrt_device,
+      pjrt_client->LookupAddressableDevice(xla::PjRtLocalDeviceId(device_idx)));
   TF_ASSIGN_OR_RETURN(
       std::vector<std::unique_ptr<xla::PjRtBuffer>> executable_outputs,
       RunPjRtExecutable(/*num_missing_prefix_ctx_inputs=*/0, inputs,

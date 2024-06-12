@@ -861,7 +861,8 @@ Status RunPjRtExecutable(
                       tsl::GetDeviceIdFromDeviceParsedName(
                           ctx->device()->parsed_name(), device_type));
   TF_ASSIGN_OR_RETURN(xla::PjRtDevice * device,
-                      pjrt_client->LookupAddressableDevice(pjrt_device_id));
+                      pjrt_client->LookupAddressableDevice(
+                          xla::PjRtLocalDeviceId(pjrt_device_id)));
 
   gpu::GpuServingDeviceSelectorResource* device_selector_resource = nullptr;
   if (device_type == DEVICE_GPU && gpu::kUseGpuServingDeviceSelector) {
