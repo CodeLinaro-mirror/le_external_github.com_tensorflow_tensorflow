@@ -191,5 +191,67 @@ test {
   EXPECT_THAT(module->entry_computation()->root_instruction(),
               GmockMatch(m::Parameter(0)));
 }
+
+TEST_F(AllReduceSimplifierTest, TrivialSubgroupNonCrossReplicaAllReduce) {
+  const char* kModuleStr = R"(
+HloModule m
+
+sum {
+  a = f32[] parameter(0)
+  b = f32[] parameter(1)
+  ROOT add.2 = f32[] add(a, b)
+}
+
+
+test {
+  p0 = f32[8,16] parameter(0), parameter_replication={false}
+  ROOT all-reduce = f32[8,16] all-reduce(p0),
+    channel_id=1,
+    use_global_device_ids=true,
+    replica_groups={{0},{1},{2},{3},{4},{5},{6},{7}},
+    to_apply=sum
+}
+)";
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto module, ParseAndReturnVerifiedModule(kModuleStr, /*replica_count=*/1,
+                                                /*num_partitions=*/8));
+  AllReduceSimplifier simplifier(/*replica_count=*/1);
+  EXPECT_TRUE(simplifier.Run(module.get()).value());
+  EXPECT_THAT(module->entry_computation()->root_instruction(),
+              GmockMatch(m::Parameter(0)));
+}
+
+TEST_F(AllReduceSimplifierTest, NonCrossReplicaAllReduceAfterAllReduce) {
+  const char* kModuleStr = R"(
+HloModule m
+
+sum {
+  a = f32[] parameter(0)
+  b = f32[] parameter(1)
+  ROOT add.2 = f32[] add(a, b)
+}
+
+
+test {
+  p0 = f32[8,16] parameter(0), parameter_replication={false}
+  all-reduce = f32[8,16] all-reduce(p0),
+    channel_id=1,
+    use_global_device_ids=true,
+    replica_groups={{0,2},{1,3},{4,6},{5,7}},
+    to_apply=sum
+  ROOT all-reduce.1 = f32[8,16] all-reduce(all-reduce),
+    channel_id=2,
+    use_global_device_ids=true,
+    replica_groups={{0,4},{1,5},{2,6},{3,7}},
+    to_apply=sum
+}
+)";
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto module, ParseAndReturnVerifiedModule(kModuleStr, /*replica_count=*/1,
+                                                /*num_partitions=*/8));
+  AllReduceSimplifier simplifier(/*replica_count=*/1);
+  EXPECT_FALSE(simplifier.Run(module.get()).value());
+}
+
 }  // namespace
 }  // namespace xla
