@@ -22,7 +22,10 @@ cc_library(
     visibility = ["//tensorflow/compiler/mlir/lite:__subpackages__"],
     deps = [
         ":debug_options_proto_cc",
+        "//tensorflow/compiler/mlir/lite/metrics:error_collector_inst",
         "//tensorflow/core:portable_gif_internal",
+        "//tensorflow/lite:model_builder",
+        "//tensorflow/lite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -32,10 +35,11 @@ cc_library(
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:Transforms",
         "@local_tsl//tsl/lib/io:buffered_file",
         "@local_tsl//tsl/platform:env",
         "@local_tsl//tsl/platform:path",
-        "@local_tsl//tsl/platform:status",
         "@local_tsl//tsl/platform:stringpiece",
     ],
 )

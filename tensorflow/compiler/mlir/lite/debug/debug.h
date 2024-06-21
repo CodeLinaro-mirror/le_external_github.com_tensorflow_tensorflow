@@ -16,7 +16,11 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_MLIR_LITE_DEBUG_DEBUG_H_
 #define TENSORFLOW_COMPILER_MLIR_LITE_DEBUG_DEBUG_H_
 
+#include <string>
+
+#include "absl/status/status.h"
 #include "llvm/Support/raw_ostream.h"
+#include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/lite/debug/debug_options.pb.h"
 
@@ -28,6 +32,14 @@ namespace tensorflow {
 void InitPassManager(mlir::PassManager& pm,
                      const converter::DebugOptions& options,
                      llvm::raw_ostream& out = llvm::outs());
+
+// Print function mapping in the flatbuffer.
+absl::Status PrintFunctionResultMapping(const std::string& result,
+                                        mlir::ModuleOp module);
+
+// Dumps the op graph of the `module` to `filename` in DOT format.
+absl::Status DumpOpGraphToFile(mlir::ModuleOp module,
+                               const std::string& filename);
 
 }  // namespace tensorflow
 

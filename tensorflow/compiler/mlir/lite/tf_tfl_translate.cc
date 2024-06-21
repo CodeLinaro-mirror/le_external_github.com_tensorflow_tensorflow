@@ -29,7 +29,6 @@ limitations under the License.
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
@@ -39,7 +38,6 @@ limitations under the License.
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/IR/Diagnostics.h"  // from @llvm-project
 #include "mlir/IR/DialectRegistry.h"  // from @llvm-project
-#include "mlir/IR/Location.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "mlir/Parser/Parser.h"  // from @llvm-project
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
@@ -49,7 +47,6 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/init_mlir.h"
 #include "tensorflow/compiler/mlir/lite/common/tfl_pass_config.h"
 #include "tensorflow/compiler/mlir/lite/flatbuffer_export_flags.h"
-#include "tensorflow/compiler/mlir/lite/schema/schema_generated.h"
 #include "tensorflow/compiler/mlir/lite/tf_tfl_translate_cl.h"
 #include "tensorflow/compiler/mlir/lite/tf_to_tfl_flatbuffer.h"
 #include "tensorflow/compiler/mlir/lite/transforms/passes.h"
@@ -60,12 +57,9 @@ limitations under the License.
 #include "xla/translate/hlo_to_mhlo/translate.h"
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/platform/errors.h"
-#include "tensorflow/core/public/session.h"
-#include "tensorflow/lite/model_builder.h"
 
 using mlir::MLIRContext;
 using mlir::ModuleOp;
-using mlir::func::FuncOp;
 
 // Debugging flag to print function mapping in the flatbuffer.
 // NOLINTNEXTLINE
@@ -83,56 +77,6 @@ static llvm::cl::opt<std::string> weight_quantization(
     llvm::cl::init("NONE"));
 
 enum TranslationStatus { kTrSuccess, kTrFailure };
-
-static int PrintFunctionResultMapping(const std::string &result,
-                                      ModuleOp module) {
-  // Build model from the resultant string to extract the return values from
-  // their source of truth.
-  auto model =
-      tflite::FlatBufferModel::BuildFromBuffer(result.data(), result.size());
-  if (!model) return kTrFailure;
-
-  // Get an unknown location for where we don't have a terminator to get the
-  // location of the return value from.
-  auto unknown_loc = mlir::UnknownLoc::get(module.getContext());
-
-  auto print_buffer = [&](const tflite::SubGraph &subgraph, int id, int buffer,
-                          std::function<mlir::Location(int)> loc) {
-    const auto &output_tensor = (*subgraph.tensors())[buffer];
-    std::cout << "\tname: '"
-              << (output_tensor->name() ? output_tensor->name()->str()
-                                        : "<<unnamed>>")
-              << "' buffer: " << buffer;
-    if (loc) std::cout << llvm::formatv(" {0}", loc(id)).str();
-    std::cout << '\n';
-  };
-
-  // For every subgraph print out the name (if available), each result's output
-  // buffer number and location of the return value (if available).
-  for (auto *subgraph : *(*model)->subgraphs()) {
-    std::string subgraph_name =
-        subgraph->name() ? subgraph->name()->str() : "<<unnamed subgraph>>";
-
-    std::cout << '\'' << subgraph_name << "' inputs:\n";
-    int i = 0;
-    for (auto input : *subgraph->inputs())
-      print_buffer(*subgraph, i++, input, nullptr);
-
-    std::cout << '\'' << subgraph_name << "' outputs:\n";
-    mlir::Operation *terminator = nullptr;
-    if (subgraph->name()) {
-      if (auto fn = module.lookupSymbol<FuncOp>(subgraph->name()->str()))
-        terminator = fn.back().getTerminator();
-    }
-    i = 0;
-    for (auto output : *subgraph->outputs()) {
-      print_buffer(*subgraph, i, output, [&](int i) {
-        return terminator ? terminator->getOperand(i).getLoc() : unknown_loc;
-      });
-    }
-  }
-  return kTrSuccess;
-}
 
 int main(int argc, char **argv) {
   // TODO(jpienaar): Revise the command line option parsing here.
@@ -155,9 +99,7 @@ int main(int argc, char **argv) {
 
   mlir::DialectRegistry registry;
   mlir::func::registerAllExtensions(registry);
-  MLIRContext context(registry);
-  llvm::SourceMgr source_mgr;
-  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(source_mgr, &context);
+  auto context = std::make_unique<mlir::MLIRContext>(registry);
 
   if (input_mlir) {
     // TODO(@zichuanwei): hack to enable mlir conversion via this tool, will get
@@ -166,7 +108,7 @@ int main(int argc, char **argv) {
     RegisterAllTensorFlowDialects(registry);
     registry
         .insert<mlir::func::FuncDialect, mlir::stablehlo::StablehloDialect>();
-    context.appendDialectRegistry(registry);
+    context->appendDialectRegistry(registry);
   }
 
   absl::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> module;
@@ -213,7 +155,7 @@ int main(int argc, char **argv) {
                                           custom_opdefs.end());
     module = tensorflow::ImportSavedModel(
         input_file_name, saved_model_version, tags, extra_opdefs,
-        exported_names, specs, /*enable_variable_lifting=*/true, &context,
+        exported_names, specs, /*enable_variable_lifting=*/true, context.get(),
         &bundle);
   } else if (import_hlo) {
     // HLO import path.
@@ -228,19 +170,22 @@ int main(int argc, char **argv) {
 
     auto content = buffer->getBuffer();
     if (hlo_import_type == HloImportType::hlotxt) {
-      module = xla::HloTextToMlirHloTranslateFunction(content, &context, false);
+      module =
+          xla::HloTextToMlirHloTranslateFunction(content, context.get(), false);
     } else if (hlo_import_type == HloImportType::proto) {
-      module = xla::HloToMlirHloTranslateFunction(content, &context, false);
+      module =
+          xla::HloToMlirHloTranslateFunction(content, context.get(), false);
     } else {
       module = mlir::OwningOpRef<mlir::ModuleOp>(
-          mlir::parseSourceString<mlir::ModuleOp>(content, &context));
+          mlir::parseSourceString<mlir::ModuleOp>(content, context.get()));
     }
   } else {
     // Graphdef import path.
+    llvm::SourceMgr source_mgr;
     module = tensorflow::LoadFromGraphdefOrMlirSource(
         input_file_name, input_mlir, use_splatted_constant, custom_opdefs,
         specs, debug_info_file, input_arrays, input_dtypes, input_shapes,
-        output_arrays, control_output_arrays, &source_mgr, &context);
+        output_arrays, control_output_arrays, &source_mgr, context.get());
   }
 
   // If errors occur, the library call in the above already logged the error
@@ -318,9 +263,11 @@ int main(int argc, char **argv) {
 
   std::string result;
   auto status = tensorflow::ConvertTFExecutorToTFLOrFlatbuffer(
-      module.value().get(), output_mlir, toco_flags, pass_config, tags,
+      std::move(context), std::move(module.value()), toco_flags, pass_config,
+      tags,
       /*saved_model_dir=*/"", std::move(bundle), &result,
-      serialize_stablehlo_ops);
+      serialize_stablehlo_ops, /*output_mlir*/ output_mlir,
+      /*print_function_result_mapping*/ print_function_result_mapping);
   if (!status.ok()) {
     llvm::errs() << status.message() << '\n';
     return kTrFailure;
@@ -335,8 +282,5 @@ int main(int argc, char **argv) {
   output->os() << result;
   output->keep();
 
-  // Print out debugging info related to function mapping.
-  if (print_function_result_mapping)
-    return PrintFunctionResultMapping(result, module.value().get());
   return kTrSuccess;
 }

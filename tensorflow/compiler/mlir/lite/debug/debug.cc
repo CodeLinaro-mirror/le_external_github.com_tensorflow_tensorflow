@@ -19,6 +19,7 @@ limitations under the License.
 #include <stdint.h>
 
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -32,23 +33,36 @@ limitations under the License.
 #include "absl/time/time.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
+#include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
+#include "mlir/IR/BuiltinOps.h"  // from @llvm-project
+#include "mlir/IR/Location.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "mlir/IR/Operation.h"  // from @llvm-project
 #include "mlir/Pass/Pass.h"  // from @llvm-project
 #include "mlir/Pass/PassInstrumentation.h"  // from @llvm-project
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
+#include "mlir/Support/FileUtilities.h"  // from @llvm-project
+#include "mlir/Support/LogicalResult.h"  // from @llvm-project
+#include "mlir/Transforms/ViewOpGraph.h"  // from @llvm-project
 #include "re2/re2.h"  // IWYU pragma: keep
 #include "tensorflow/compiler/mlir/lite/debug/debug_options.pb.h"
+#include "tensorflow/compiler/mlir/lite/metrics/error_collector_inst.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/lite/model_builder.h"
+#include "tensorflow/lite/schema/schema_generated.h"
 #include "tsl/lib/io/buffered_file.h"
 #include "tsl/platform/env.h"
 #include "tsl/platform/file_system.h"
 #include "tsl/platform/path.h"
-#include "tsl/platform/status.h"
 #include "tsl/platform/stringpiece.h"
+
 // IWYU pragma: no_include "util/regexp/re2/re2.h"
+
+using mlir::func::FuncOp;
 
 namespace tensorflow {
 namespace {
@@ -279,6 +293,73 @@ std::function<bool(mlir::Pass*, mlir::Operation*)> CreatePrintIRFun(
 
 }  // namespace
 
+absl::Status PrintFunctionResultMapping(const std::string& result,
+                                        mlir::ModuleOp module) {
+  // Build model from the resultant string to extract the return values from
+  // their source of truth.
+  auto model =
+      tflite::FlatBufferModel::BuildFromBuffer(result.data(), result.size());
+  if (!model) return absl::NotFoundError("Failed to build model from result");
+
+  // Get an unknown location for where we don't have a terminator to get the
+  // location of the return value from.
+  auto unknown_loc = mlir::UnknownLoc::get(module.getContext());
+
+  auto print_buffer = [&](const tflite::SubGraph& subgraph, int id, int buffer,
+                          std::function<mlir::Location(int)> loc) {
+    const auto& output_tensor = (*subgraph.tensors())[buffer];
+    std::cout << "\tname: '"
+              << (output_tensor->name() ? output_tensor->name()->str()
+                                        : "<<unnamed>>")
+              << "' buffer: " << buffer;
+    if (loc) std::cout << llvm::formatv(" {0}", loc(id)).str();
+    std::cout << '\n';
+  };
+
+  // For every subgraph print out the name (if available), each result's output
+  // buffer number and location of the return value (if available).
+  for (auto* subgraph : *(*model)->subgraphs()) {
+    std::string subgraph_name =
+        subgraph->name() ? subgraph->name()->str() : "<<unnamed subgraph>>";
+
+    std::cout << '\'' << subgraph_name << "' inputs:\n";
+    int i = 0;
+    for (auto input : *subgraph->inputs())
+      print_buffer(*subgraph, i++, input, nullptr);
+
+    std::cout << '\'' << subgraph_name << "' outputs:\n";
+    mlir::Operation* terminator = nullptr;
+    if (subgraph->name()) {
+      if (auto fn = module.lookupSymbol<FuncOp>(subgraph->name()->str()))
+        terminator = fn.back().getTerminator();
+    }
+    i = 0;
+    for (auto output : *subgraph->outputs()) {
+      print_buffer(*subgraph, i, output, [&](int i) {
+        return terminator ? terminator->getOperand(i).getLoc() : unknown_loc;
+      });
+    }
+  }
+  return absl::OkStatus();
+}
+
+absl::Status DumpOpGraphToFile(mlir::ModuleOp module,
+                               const std::string& filename) {
+  std::string error_message;
+  auto output = mlir::openOutputFile(filename, &error_message);
+  if (!error_message.empty()) {
+    return absl::InternalError(
+        absl::StrCat("Failed to open file in ", filename));
+  }
+  mlir::PassManager pm(module.getContext());
+  pm.addPass(mlir::createPrintOpGraphPass(output->os()));
+  if (failed(pm.run(module))) {
+    return absl::InternalError("Failed to dump Op Graph from MLIR module.");
+  }
+  output->keep();
+  return absl::OkStatus();
+}
+
 void InitPassManager(mlir::PassManager& pm,
                      const converter::DebugOptions& options,
                      llvm::raw_ostream& out) {
@@ -342,6 +423,10 @@ void InitPassManager(mlir::PassManager& pm,
   if (options.enable_timing()) {
     pm.enableTiming();
   }
+
+  pm.addInstrumentation(
+      std::make_unique<mlir::TFL::ErrorCollectorInstrumentation>(
+          pm.getContext()));
 }
 
 }  // namespace tensorflow

@@ -328,37 +328,14 @@ absl::Status PopulateQuantizationSpecs(
   return absl::OkStatus();
 }
 
-// Dumps the op graph of the `module` to `filename` in DOT format.
-absl::Status DumpOpGraphToFile(mlir::ModuleOp module,
-                               const std::string& filename) {
-  std::string error_message;
-  auto output = mlir::openOutputFile(filename, &error_message);
-  if (!error_message.empty()) {
-    return errors::InvalidArgument("Failed to open file in ", filename);
-  }
-  mlir::PassManager pm(module.getContext());
-  pm.addPass(mlir::createPrintOpGraphPass(output->os()));
-  if (failed(pm.run(module))) {
-    return errors::Unknown("Failed to dump Op Graph from MLIR module.");
-  }
-  output->keep();
-  return absl::OkStatus();
-}
-
 absl::Status ConvertMLIRToTFLiteFlatBuffer(
     const toco::ModelFlags& model_flags, toco::TocoFlags& toco_flags,
+    std::unique_ptr<mlir::MLIRContext>&& context,
     mlir::OwningOpRef<mlir::ModuleOp> module,
     const mlir::TFL::PassConfig& pass_config,
     const std::unordered_set<std::string>& saved_model_tags,
-    std::string* result, std::unique_ptr<SavedModelBundle> saved_model_bundle,
+    std::string* result, std::unique_ptr<SavedModelBundle>&& saved_model_bundle,
     const PyFunctionLibrary* quantization_py_function_lib) {
-  if (toco_flags.has_dump_graphviz_dir()) {
-    TF_RETURN_IF_ERROR(DumpOpGraphToFile(
-        module.get(),
-        // rename once we enable the new converter feature flag.
-        absl::StrCat(toco_flags.dump_graphviz_dir(), "/toco_AT_IMPORT.dot")));
-  }
-
   mlir::TFL::PassConfig pass_config_copy = pass_config;
   pass_config_copy.outline_tf_while = true;
 
@@ -374,16 +351,11 @@ absl::Status ConvertMLIRToTFLiteFlatBuffer(
   });
 
   auto status = ConvertTFExecutorToTFLOrFlatbuffer(
-      module.get(), /*export_to_mlir=*/false, toco_flags, pass_config_copy,
+      std::move(context), std::move(module), toco_flags, pass_config_copy,
       saved_model_tags, model_flags.saved_model_dir(),
-      std::move(saved_model_bundle), result, /*serialize_stablehlo_ops=*/false,
-      quantization_py_function_lib);
-  if (toco_flags.has_dump_graphviz_dir()) {
-    TF_RETURN_IF_ERROR(DumpOpGraphToFile(
-        // rename once we enable the new converter feature flag.
-        module.get(), absl::StrCat(toco_flags.dump_graphviz_dir(),
-                                   "/toco_AFTER_TRANSFORMATIONS.dot")));
-  }
+      std::move(saved_model_bundle), result,
+      /*serialize_stablehlo_ops=*/false, /*export_to_mlir=*/false,
+      /*print_function_result_mapping=*/false, quantization_py_function_lib);
 
   return status;
 }
