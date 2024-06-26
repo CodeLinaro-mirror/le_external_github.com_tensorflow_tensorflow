@@ -24,6 +24,8 @@ limitations under the License.
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
@@ -497,6 +499,24 @@ bool IsTritonSupportedElementwise(HloOpcode opcode,
 }
 
 }  // namespace
+
+absl::Status EnsureTritonSupportsComputeCapability(
+    const se::GpuComputeCapability& gpu_compute_capability) {
+  auto cuda_compute_capability =
+      std::get_if<se::CudaComputeCapability>(&gpu_compute_capability);
+  if (!cuda_compute_capability) {
+    return absl::FailedPreconditionError(
+        "Triton support is only enabled for CUDA GPUs.");
+  } else if (!cuda_compute_capability->IsAtLeastAmpere()) {
+    return absl::FailedPreconditionError(
+        absl::StrCat("Triton support is only enabled for Ampere GPUs (compute ",
+                     "capability 8.0) and up, but got compute capability ",
+                     cuda_compute_capability->major, ".",
+                     cuda_compute_capability->minor, "."));
+  }
+
+  return absl::OkStatus();
+}
 
 CodegenDecision IsTritonSupportedInstruction(
     const HloInstruction& instr, const se::GpuComputeCapability& gpu_version) {
