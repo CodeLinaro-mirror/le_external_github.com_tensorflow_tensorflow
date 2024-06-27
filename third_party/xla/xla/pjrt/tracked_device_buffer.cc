@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "xla/pjrt/event_pool.h"
+#include "xla/pjrt/pjrt_client.h"
 #include "xla/service/executable.h"
 #include "xla/service/maybe_owning_device_memory.h"
 #include "xla/service/shaped_buffer.h"
@@ -158,8 +159,8 @@ void BufferSequencingEvent::ExecuteFutureTasks() {
 /* static */ std::shared_ptr<TrackedDeviceBuffer>
 TrackedDeviceBuffer::FromScopedShapedBuffer(
     ScopedShapedBuffer* shaped_buffer,
-    absl::Span<const std::shared_ptr<BufferSequencingEvent>>
-        definition_events) {
+    absl::Span<const std::shared_ptr<BufferSequencingEvent>> definition_events,
+    PjRtDevice* device) {
   ShapeTree<se::DeviceMemoryBase>::iterator iterator =
       shaped_buffer->buffers().begin();
   std::vector<se::DeviceMemoryBase> buffers;
@@ -175,13 +176,14 @@ TrackedDeviceBuffer::FromScopedShapedBuffer(
   CHECK(iterator == shaped_buffer->buffers().end());
   return std::make_shared<TrackedDeviceBuffer>(
       shaped_buffer->memory_allocator(), shaped_buffer->device_ordinal(),
-      absl::Span<se::DeviceMemoryBase>(buffers), definition_events,
+      device, absl::Span<se::DeviceMemoryBase>(buffers), definition_events,
       /*on_delete_callback=*/nullptr);
 }
 
 ShapedBuffer TrackedDeviceBuffer::AsShapedBuffer(
     const Shape& on_device_shape) const {
-  ShapedBuffer shaped_buffer(on_device_shape, device_ordinal_);
+  ShapedBuffer shaped_buffer(on_device_shape, device_ordinal_,
+                             physical_device_ordinal());
   ShapeTree<se::DeviceMemoryBase>::iterator iterator =
       shaped_buffer.buffers().begin();
   for (const se::DeviceMemoryBase& buf : device_memory_) {
@@ -224,11 +226,12 @@ void TrackedDeviceBuffer::AddToInputAsDonated(
 
 TrackedDeviceBuffer::TrackedDeviceBuffer(
     se::DeviceMemoryAllocator* allocator, int device_ordinal,
-    absl::Span<se::DeviceMemoryBase const> device_memory,
+    PjRtDevice* device, absl::Span<se::DeviceMemoryBase const> device_memory,
     absl::Span<const std::shared_ptr<BufferSequencingEvent>> definition_events,
     absl::AnyInvocable<void() &&> on_delete_callback)
     : allocator_(allocator),
       device_ordinal_(device_ordinal),
+      device_(device),
       device_memory_(device_memory.begin(), device_memory.end()),
       definition_events_(std::make_move_iterator(definition_events.begin()),
                          std::make_move_iterator(definition_events.end())),

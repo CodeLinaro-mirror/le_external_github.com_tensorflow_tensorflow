@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
 #include "xla/pjrt/event_pool.h"
+#include "xla/pjrt/pjrt_client.h"
 #include "xla/service/executable.h"
 #include "xla/service/maybe_owning_device_memory.h"
 #include "xla/service/shaped_buffer.h"
@@ -207,7 +208,8 @@ class TrackedDeviceBuffer {
   static std::shared_ptr<TrackedDeviceBuffer> FromScopedShapedBuffer(
       ScopedShapedBuffer* shaped_buffer,
       absl::Span<const std::shared_ptr<BufferSequencingEvent>>
-          definition_events);
+          definition_events,
+      PjRtDevice* device);
 
   // Builds a ShapedBuffer view onto the buffers of 'tree'.
   ShapedBuffer AsShapedBuffer(const Shape& on_device_shape) const;
@@ -237,6 +239,9 @@ class TrackedDeviceBuffer {
 
   se::DeviceMemoryAllocator* allocator() const { return allocator_; }
   int device_ordinal() const { return device_ordinal_; }
+  int physical_device_ordinal() const {
+    return device_->local_hardware_id().value();
+  }
   absl::InlinedVector<se::DeviceMemoryBase, 1>& device_memory() {
     return device_memory_;
   }
@@ -277,6 +282,7 @@ class TrackedDeviceBuffer {
 
   TrackedDeviceBuffer() : in_use_(true) {}
   TrackedDeviceBuffer(se::DeviceMemoryAllocator* allocator, int device_ordinal,
+                      PjRtDevice* device,
                       absl::Span<se::DeviceMemoryBase const> device_memory,
                       absl::Span<const std::shared_ptr<BufferSequencingEvent>>
                           definition_events,
@@ -288,6 +294,8 @@ class TrackedDeviceBuffer {
   // ordinal? May be nullptr, indicating the buffers are not owned.
   se::DeviceMemoryAllocator* allocator_;
   int device_ordinal_;
+
+  PjRtDevice* device_;
 
   // Each host-side buffer may have several buffers on-device.
   absl::InlinedVector<se::DeviceMemoryBase, 1> device_memory_;
