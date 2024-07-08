@@ -974,9 +974,6 @@ absl::StatusOr<Value> EmitScope(
       TF_ASSIGN_OR_RETURN(
           result, EmitBroadcast(b, analysis, scope, tiled_dimensions, *hlo,
                                 values[hlo->operand(0)]));
-    } else if (hlo->opcode() == HloOpcode::kReduce) {
-      TF_ASSIGN_OR_RETURN(result, EmitReduce(b, libdevice_path, device_info,
-                                             *hlo, values[hlo->operand(0)]));
     } else if (HloInstruction::IsOpElementwise(hlo->opcode())) {
       std::vector<Value> operands;
       operands.reserve(hlo->operands().size());
