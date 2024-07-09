@@ -119,6 +119,7 @@ absl::Status CreateTritonPipeline(
   // ModuleAxisInfoAnalysis inside convert-triton-gpu-to-llvm.
   pm.addPass(createSparseDotOpToLLVMPass());
   pm.addPass(mt::createConvertNVGPUToLLVMPass());
+  pm.addPass(createSparseWGMMAOpToLLVMPass());
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());

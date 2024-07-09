@@ -613,6 +613,7 @@ cc_library(
         "@triton//:TritonGPUToLLVM",
         "@triton//:TritonGPUTransforms",
         "@triton//third_party/nvidia:NVGPUDialect",
+        "@triton//third_party/nvidia:NVGPUToLLVM",
         "@triton//third_party/nvidia:TritonNVIDIAGPUToLLVM",
     ],
 )
