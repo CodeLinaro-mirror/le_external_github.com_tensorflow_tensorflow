@@ -302,6 +302,7 @@ cc_library(
         "//tensorflow/lite/kernels/internal:strided_slice_logic",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],
 )
