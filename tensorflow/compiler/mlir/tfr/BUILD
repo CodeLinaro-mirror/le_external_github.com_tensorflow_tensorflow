@@ -368,7 +368,6 @@ tf_python_pybind_extension(
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:SCFDialect",
         "@llvm-project//mlir:ShapeDialect",
-        "@llvm-project//mlir:Support",
         "@pybind11",
     ],
 )
