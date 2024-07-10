@@ -40,6 +40,7 @@ limitations under the License.
 #include "absl/strings/str_join.h"
 #include "absl/types/span.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "mlir/IR/AffineExpr.h"  // from @llvm-project
 #include "mlir/IR/AffineMap.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
@@ -442,9 +443,9 @@ SymbolicTileAnalysis::ComputeTiledHloInstructions(
 
   for (const std::unique_ptr<SymbolicTiledHloInstruction>& symbolic_tiled_hlo :
        symbolic_tiled_hlo_instructions_) {
-    std::vector<int64_t> tile_sizes =
+    llvm::SmallVector<int64_t> tile_sizes =
         symbolic_tiled_hlo->TileSizes(tile_parameters);
-    std::vector<int64_t> tile_strides =
+    llvm::SmallVector<int64_t> tile_strides =
         symbolic_tiled_hlo->TileStrides(tile_parameters);
 
     TF_ASSIGN_OR_RETURN(
