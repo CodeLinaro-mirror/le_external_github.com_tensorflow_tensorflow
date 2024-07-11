@@ -15,10 +15,12 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_TOOLS_OPTIMIZE_QUANTIZATION_UTILS_H_
 #define TENSORFLOW_LITE_TOOLS_OPTIMIZE_QUANTIZATION_UTILS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
-#include "tensorflow/lite/context.h"
+#include "tensorflow/compiler/mlir/tools/optimize/quantization_utils.h"  // IWYU pragma: keep
+#include "tensorflow/lite/c/c_api_types.h"
 #include "tensorflow/lite/core/api/error_reporter.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 
@@ -67,14 +69,6 @@ TfLiteStatus SymmetricPerChannelQuantization(TensorT* tensor,
                                              std::vector<int8_t>* output_value,
                                              ErrorReporter* error_reporter);
 
-// Quantize the values given an array of scales.
-void SymmetricPerChannelQuantizeValues(const float* const input,
-                                       const std::vector<float>& scales_inv,
-                                       const std::vector<int32_t>& dimension,
-                                       int32_t channel_dim_index,
-                                       std::vector<int8_t>* output_value,
-                                       TfLiteType type = kTfLiteNoType);
-
 // Quantizes tensor using symmetric quantization with the min and max elements
 // of the tensor.
 TfLiteStatus SymmetricQuantizeTensor(ModelT* model, TensorT* tensor);
@@ -114,10 +108,6 @@ TfLiteStatus SymmetricQuantizeFloatsToInt16(ModelT* model, TensorT* tensor,
                                             float scaling_factor,
                                             ErrorReporter* error_reporter);
 
-std::vector<int16_t> SymmetricQuantizeFloatsToInt16(const float* data,
-                                                    uint64_t num_elements,
-                                                    float scaling_factor);
-
 // Symmetrically quantizes the bias for per-layer ops (i.e. FullyConnected).
 template <typename BiasType>
 TfLiteStatus SymmetricPerLayerBiasQuantize(ModelT* model, TensorT* tensor,
@@ -132,11 +122,6 @@ TfLiteStatus SymmetricPerChannelBiasQuantize(ModelT* model, TensorT* tensor,
                                              const float* weight_scales,
                                              int number_of_dimension,
                                              ErrorReporter* error_reporter);
-
-template <typename BiasType>
-std::vector<BiasType> SymmetricBiasQuantize(const float* data,
-                                            uint64_t num_elements,
-                                            const std::vector<float>& scales);
 
 // Quantize weight with or without per channel.
 TfLiteStatus QuantizeWeight(ModelT* model, TensorT* tensor, bool per_channel,

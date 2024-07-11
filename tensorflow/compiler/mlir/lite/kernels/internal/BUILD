@@ -133,3 +133,14 @@ cc_library(
     ],
 )
 # LINT.ThenChange(//tensorflow/lite/kernels/internal/BUILD)
+
+cc_library(
+    name = "quantization_util",
+    hdrs = ["quantization_util.h"],
+    compatible_with = get_compatible_with_portable(),
+    copts = tflite_copts(),
+    linkopts = select({
+        "//tensorflow:windows": [],
+        "//conditions:default": ["-lm"],
+    }),
+)

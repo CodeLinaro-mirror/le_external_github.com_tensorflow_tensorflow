@@ -50,8 +50,8 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/quantization/common/ir/FakeQuantSupport.h"
 #include "tensorflow/compiler/mlir/quantization/common/ir/UniformSupport.h"
 #include "tensorflow/compiler/mlir/quantization/common/quantization_lib/quantization_traits.h"
+#include "tensorflow/compiler/mlir/tools/optimize/quantization_utils.h"
 #include "tensorflow/lite/kernels/internal/portable_tensor_utils.h"
-#include "tensorflow/lite/tools/optimize/quantization_utils.h"
 
 namespace mlir {
 

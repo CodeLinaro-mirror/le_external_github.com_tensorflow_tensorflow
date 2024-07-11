@@ -463,7 +463,7 @@ class SingleOpModel {
           }
           optimize::utils::SymmetricPerChannelQuantizeValues(
               dense_data.data(), scales_inv, t.shape, t.channel_index,
-              &temp_data, kTfLiteInt8);
+              &temp_data);
 
           tflite::internal::sparsity::FormatConverter<int8_t> quant_converter(
               t.shape, t.traversal_order, t.format, t.block_size, t.block_map);
@@ -571,8 +571,7 @@ class SingleOpModel {
     }
 
     optimize::utils::SymmetricPerChannelQuantizeValues(
-        input_data.data(), scales_inv, shape, channel_index, &quantized_output,
-        t->type);
+        input_data.data(), scales_inv, shape, channel_index, &quantized_output);
 
     if (t->type == kTfLiteInt4) {
       PopulateTensor4bit(index, /*offset=*/0, quantized_output.data(),
