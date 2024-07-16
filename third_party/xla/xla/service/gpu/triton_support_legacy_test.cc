@@ -315,7 +315,8 @@ ENTRY e {
                     mlir_context_),
       tsl::testing::StatusIs(
           absl::StatusCode::kInternal,
-          ::testing::HasSubstr("Failed to create Triton module for fusion")));
+          ::testing::HasSubstr(
+              "Failed to verify Triton module before optimizations")));
 }
 
 TEST_F(TritonSupportTestBase,
