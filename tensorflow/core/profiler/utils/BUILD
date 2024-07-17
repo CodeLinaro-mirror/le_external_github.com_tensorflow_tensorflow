@@ -218,6 +218,7 @@ cc_library(
     hdrs = ["host_offload_utils.h"],
     copts = tf_profiler_copts(),
     deps = [
+        ":trace_utils",
         ":xplane_builder",
         ":xplane_schema",
         ":xplane_visitor",
