@@ -852,3 +852,15 @@ cc_library(
     srcs = ["cudnn_frontend_helpers.cc"],
     hdrs = ["cudnn_frontend_helpers.h"],
 )
+
+cc_library(
+    name = "ptx_compilation_method",
+    hdrs = ["ptx_compilation_method.h"],
+    deps = ["@com_google_absl//absl/strings"],
+)
+
+cc_library(
+    name = "ptx_linking_method",
+    hdrs = ["ptx_linking_method.h"],
+    deps = ["@com_google_absl//absl/strings"],
+)

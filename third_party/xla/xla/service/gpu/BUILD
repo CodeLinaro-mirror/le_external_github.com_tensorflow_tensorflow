@@ -3885,8 +3885,10 @@ cc_library(
         "//xla/stream_executor/cuda:cuda_asm_compiler",
         "//xla/stream_executor/cuda:cuda_diagnostics",
         "//xla/stream_executor/cuda:cuda_platform_id",
+        "//xla/stream_executor/cuda:ptx_compilation_method",
         "//xla/stream_executor/cuda:ptx_compiler",
         "//xla/stream_executor/cuda:ptx_compiler_support",
+        "//xla/stream_executor/cuda:ptx_linking_method",
         "//xla/stream_executor/gpu:gpu_asm_opts",
         "//xla/stream_executor/gpu:gpu_driver_header",
         "//xla/stream_executor/gpu:gpu_executor_header",
@@ -3905,6 +3907,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/types:span",
         "@llvm-project//llvm:IRReader",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:ir_headers",
@@ -3956,6 +3959,41 @@ xla_test(
         "@local_tsl//tsl/lib/core:status_test_util",
         "@local_tsl//tsl/platform:errors",
         "@local_tsl//tsl/platform:statusor",
+    ],
+)
+
+xla_test(
+    name = "ptx_compilation_test",
+    srcs = [
+        "ptx_compilation_test.cc",
+    ],
+    backends = [
+        "gpu_v100",
+    ],
+    tags = [
+        "gpu",
+        "no_rocm",
+        "nomsan",  # Pulls in precompiled NVIDIA libraries which cause false positives in msan.
+    ],
+    deps = [
+        ":gpu_executable",
+        ":nvptx_compiler_impl",
+        "//xla:xla_proto_cc",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:executable",
+        "//xla/service:hlo_module_config",
+        "//xla/stream_executor/cuda:ptx_compilation_method",
+        "//xla/stream_executor/cuda:ptx_compiler_support",
+        "//xla/stream_executor/cuda:ptx_linking_method",
+        "//xla/tests:hlo_test_base",
+        "//xla/tests:xla_internal_test_main",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_googletest//:gtest",
+        "@local_tsl//tsl/platform:env",
+        "@local_tsl//tsl/platform:status_matchers",
+        "@local_tsl//tsl/platform:test",
     ],
 )
 
