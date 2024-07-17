@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/service/gpu/triton_support.h"
+#include "xla/service/gpu/fusions/triton/triton_support.h"
 
 #include <cstdint>
 #include <iterator>
@@ -312,21 +312,7 @@ CodegenDecision CanTritonHandleReduce(
   if (reduce.dimensions().size() == 1 &&
       reduce.dimensions().front() == reduce.operand(0)->shape().rank() - 1 &&
       reduce.operand_count() == 2) {
-    const HloInstruction* operand = reduce.operand(1);
-    // We assume that the reduction init value was input as a constant, or in
-    // the case of a data type affected by float normalization, a convert of a
-    // constant.
-    if (operand->opcode() == HloOpcode::kConvert) {
-      if (operand->operand(0)->opcode() == HloOpcode::kConstant &&
-          operand->operand(0)->shape().element_type() == BF16 &&
-          operand->shape().element_type() == F32) {
-        return CodegenDecision{};
-      }
-    } else if (operand->opcode() == HloOpcode::kConstant) {
-      return CodegenDecision{};
-    }
-    return "Reduction init value should be a constant or a convert of a "
-           "constant.";
+    return CodegenDecision{};
   }
   return "Reduction is not a row-reduction of a single operand.";
 }
@@ -433,7 +419,6 @@ bool IsTritonSupportedDataType(PrimitiveType type,
     case S16:
     case S32:
     case S64:
-    case U16:
     case F16:
     case F32:
     case F64:
@@ -570,6 +555,14 @@ bool IsTritonSupportedElementwise(HloOpcode opcode, PrimitiveType element_type,
 
 CodegenDecision IsTritonSupportedInstructionImpl(
     const HloInstruction& instr, const se::GpuComputeCapability& gpu_version) {
+  // Special handling for the kCompare instruction, which codegens correctly
+  // with a U16 data type despite the fact that it is not supported by Triton
+  // itself.
+  if (instr.opcode() == HloOpcode::kCompare &&
+      instr.operand(0)->shape().element_type() == PrimitiveType::U16) {
+    return true;
+  }
+
   bool output_type_is_supported =
       IsTritonSupportedDataType(instr.shape().element_type(), gpu_version);
 
@@ -612,6 +605,8 @@ CodegenDecision IsTritonSupportedInstructionImpl(
     case HloOpcode::kSlice:
     case HloOpcode::kParameter:
     case HloOpcode::kBroadcast:
+    case HloOpcode::kBitcast:
+    case HloOpcode::kReshape:
       return CodegenDecision{};
     default:
       VLOG(2) << "Unsupported instruction: " << instr.ToString();
