@@ -39,9 +39,11 @@ limitations under the License.
 #include "xla/python/ifrt/memory.h"
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/ifrt/sharding.h"
+#include "xla/shape.h"
 #include "xla/shape_util.h"
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
+#include "tsl/platform/errors.h"
 #include "tsl/platform/statusor.h"
 
 namespace xla {
@@ -159,12 +161,28 @@ absl::StatusOr<std::unique_ptr<Sharding>> HloSharding::WithDeviceAssignment(
 
 absl::StatusOr<std::vector<std::pair<Shape, std::shared_ptr<const Sharding>>>>
 HloSharding::Disassemble(const Shape& shape) const {
-  TF_ASSIGN_OR_RETURN(auto index_domains, IndexDomains(shape));
+  if (xla_hlo_sharding_.IsTiled() &&
+      xla_hlo_sharding_.TotalNumTiles() != devices_.size()) {
+    return absl::InvalidArgumentError(
+        absl::StrFormat("sharding's tile count and device count does not "
+                        "match: %d vs. %d; shape=%s, sharding=%s",
+                        xla_hlo_sharding_.TotalNumTiles(), devices_.size(),
+                        shape.DebugString(), xla_hlo_sharding_.ToString()));
+  }
+
+  // The primitive type is arbitrarily chosen as it's not significant.
+  auto xla_shape =
+      xla::ShapeUtil::MakeShape(xla::PrimitiveType::S8, shape.dims());
+  TF_RETURN_IF_ERROR(xla_hlo_sharding_.Validate(xla_shape));
+
   std::vector<std::pair<Shape, std::shared_ptr<const Sharding>>> result;
-  result.reserve(index_domains.size());
-  for (int i = 0; i < index_domains.size(); ++i) {
-    result.push_back({index_domains[i].shape(),
-                      SingleDeviceSharding::Create(devices_[i], memory_kind_)});
+  result.reserve(devices_.size());
+  for (int i = 0; i < devices_.size(); ++i) {
+    const xla::Shape xla_tile_shape = xla_hlo_sharding_.TileShape(xla_shape, i);
+    result.push_back({
+        xla::ifrt::Shape(xla_tile_shape.dimensions()),
+        SingleDeviceSharding::Create(devices_[i], memory_kind_),
+    });
   }
   return result;
 }
@@ -180,13 +198,13 @@ HloSharding::Disassemble(const DynamicShape& dynamic_shape) const {
 
 absl::StatusOr<std::vector<IndexDomain>> HloSharding::IndexDomains(
     const Shape& shape) const {
-  auto format_shape = [&] {
-    return absl::StrCat("[", absl::StrJoin(shape.dims(), ","), "]");
-  };
-
   std::vector<IndexDomain> result;
   const int num_devices = devices_.size();
 
+  if (xla_hlo_sharding_.IsManual()) {
+    return absl::InvalidArgumentError(
+        "Manual sharding does not support IndexDomains");
+  }
   if (xla_hlo_sharding_.IsReplicated() || xla_hlo_sharding_.IsTileMaximal()) {
     // Fast path for a fully replicated or maximal sharding.
     IndexDomain element(shape);
@@ -207,14 +225,14 @@ absl::StatusOr<std::vector<IndexDomain>> HloSharding::IndexDomains(
         "sharding's tile_assignment_devices and device count does not "
         "match: %d vs. %d; shape=%s, sharding=%s",
         xla_hlo_sharding_.tile_assignment().num_elements(), num_devices,
-        format_shape(), DebugString()));
+        shape.DebugString(), DebugString()));
   }
   if (xla_hlo_sharding_.TotalNumTiles() != num_devices) {
     return absl::InvalidArgumentError(
         absl::StrFormat("sharding's tile count and device count does not "
                         "match: %d vs. %d; shape=%s, sharding=%s",
                         xla_hlo_sharding_.TotalNumTiles(), num_devices,
-                        format_shape(), xla_hlo_sharding_.ToString()));
+                        shape.DebugString(), xla_hlo_sharding_.ToString()));
   }
 
   const int64_t tiled_data_rank = xla_hlo_sharding_.TiledDataRank();
@@ -222,8 +240,8 @@ absl::StatusOr<std::vector<IndexDomain>> HloSharding::IndexDomains(
     return absl::InvalidArgumentError(
         absl::StrFormat("shape must have %d dimensions, but has %d dimensions: "
                         "shape=%s, sharding=%s",
-                        tiled_data_rank, shape.dims().size(), format_shape(),
-                        xla_hlo_sharding_.ToString()));
+                        tiled_data_rank, shape.dims().size(),
+                        shape.DebugString(), xla_hlo_sharding_.ToString()));
   }
 
   // Get the tile shape. This shape represents the shape of all per-shard
