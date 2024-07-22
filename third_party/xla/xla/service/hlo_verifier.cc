@@ -2077,6 +2077,28 @@ std::string ComputationsToString(
                        });
 }
 
+absl::Status VerifyInstructionNameUnchanged(const HloModule& module,
+                                            const HloVerifierOpts& opts) {
+  if (!opts.verify_instruction_name_unchanged) {
+    return absl::OkStatus();
+  }
+  for (auto* comp : module.computations()) {
+    for (auto* inst : comp->instructions()) {
+      if (!inst->metadata().has_scheduling_name()) {
+        continue;
+      }
+      if (inst->metadata().scheduling_name() != inst->name() &&
+          (!absl::StrContains(inst->name(), ".remat") &&
+           !absl::StrContains(inst->name(), ".clone"))) {
+        return absl::FailedPreconditionError(absl::StrCat(
+            "Expected instruction name to remain the same. Was '",
+            inst->metadata().scheduling_name(), "' is '", inst->name(), "'."));
+      }
+    }
+  }
+  return absl::OkStatus();
+}
+
 // Verifies various invariants about the structure of the HLO:
 //
 // (1) each instruction is non-null and has a non-null parent() set to the
@@ -3001,6 +3023,8 @@ absl::StatusOr<bool> HloVerifier::Run(
     TF_RETURN_IF_ERROR(VerifyHloStructure(module));
     TF_RETURN_IF_ERROR(VerifyAsynchronousInstructionPairs(*module));
     TF_RETURN_IF_ERROR(VerifyChannels(*module));
+    TF_RETURN_IF_ERROR(VerifyInstructionNameUnchanged(
+        *module, target_metadata_->GetVerifierOpts()));
 
     std::unique_ptr<ShapeVerifier> shape_verifier =
         target_metadata_->GetVerifier();
