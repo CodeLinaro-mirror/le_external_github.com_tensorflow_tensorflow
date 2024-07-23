@@ -2092,6 +2092,24 @@ xla_test(
 )
 
 xla_test(
+    name = "dynamic_reshape_test",
+    srcs = ["dynamic_reshape_test.cc"],
+    disabled_backends = [
+        "interpreter",
+        "gpu",
+    ],
+    tags = ["test_xla_cpu_thunks"],
+    deps = [
+        ":hlo_test_base",
+        ":xla_internal_test_main",  # fixdeps: keep
+        "//xla:literal",
+        "//xla:literal_util",
+        "//xla:test",
+        "@local_tsl//tsl/platform:statusor",
+    ],
+)
+
+xla_test(
     name = "reverse_test",
     srcs = ["reverse_test.cc"],
     tags = ["test_xla_cpu_thunks"],
@@ -3212,6 +3230,22 @@ xla_test(
         "@local_tsl//tsl/platform:status",
         "@local_tsl//tsl/platform:statusor",
         "@local_tsl//tsl/platform:test",
+    ],
+)
+
+xla_test(
+    name = "batch_norm_grad_test",
+    srcs = ["batch_norm_grad_test.cc"],
+    tags = ["test_xla_cpu_thunks"],
+    deps = [
+        ":hlo_test_base",
+        ":xla_internal_test_main",  # fixdeps: keep
+        "//xla:literal",
+        "//xla:literal_util",
+        "//xla:test",
+        "//xla/hlo/ir:hlo",
+        "@com_google_absl//absl/status",
+        "@local_tsl//tsl/platform:statusor",
     ],
 )
 
