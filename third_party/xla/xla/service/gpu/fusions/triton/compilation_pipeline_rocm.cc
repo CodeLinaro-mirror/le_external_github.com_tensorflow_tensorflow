@@ -106,6 +106,10 @@ absl::Status CreateTritonPipeline(
   // @triton//:third_party/amd/backend/compiler.py
   pm.addPass(mlir::triton::AMD::createDecomposeUnsupportedConversionsPass(
       ccRocm.gfx_version()));
+  const int custom_lds_size = 0;
+  // TODO: Figure out "arch" string
+  pm.addPass(mlir::triton::AMD::createOptimizeLdsUsagePass(ccRocm.gfx_version(),
+                                                           custom_lds_size));
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createConvertIndexToLLVMPass());
   pm.addPass(mt::gpu::createAllocateSharedMemoryPass());
