@@ -1,0 +1,8 @@
+# This text file is used to define the wheel tags for the `tensorflow-cpu` or
+# `tf-nightly-cpu` builds.
+
+# Windows installer wheels
+cp39-cp39-win_amd64
+cp310-cp310-win_amd64
+cp311-cp311-win_amd64
+cp312-cp312-win_amd64
