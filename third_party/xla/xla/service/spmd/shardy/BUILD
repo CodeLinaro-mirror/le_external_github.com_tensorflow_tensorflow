@@ -37,7 +37,7 @@ cc_library(
 xla_cc_test(
     name = "shardy_call_inliner_test",
     srcs = ["shardy_call_inliner_test.cc"],
-    env = {"XLA_FLAGS": "--xla_use_shardy=true"},
+    args = ["--use_shardy_partitioner=true"],
     deps = [
         ":shardy_call_inliner",
         "//xla/hlo/ir:hlo",
