@@ -20,7 +20,6 @@ limitations under the License.
 #include <memory>
 #include <string>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/match.h"
 #include "tensorflow/core/util/stat_summarizer_options.h"
@@ -31,6 +30,131 @@ namespace tflite {
 namespace profiling {
 
 namespace {
+
+bool CompareOpProfilingStat(const OpProfilingStat& op_profiling_stat_1,
+                            const OpProfilingStat& op_profiling_stat_2) {
+  if (op_profiling_stat_1.first() != op_profiling_stat_2.first()) {
+    return false;
+  }
+  if (op_profiling_stat_1.last() != op_profiling_stat_2.last()) {
+    return false;
+  }
+  if (op_profiling_stat_1.avg() != op_profiling_stat_2.avg()) {
+    return false;
+  }
+  if (op_profiling_stat_1.stddev() != op_profiling_stat_2.stddev()) {
+    return false;
+  }
+  if (op_profiling_stat_1.variance() != op_profiling_stat_2.variance()) {
+    return false;
+  }
+  if (op_profiling_stat_1.min() != op_profiling_stat_2.min()) {
+    return false;
+  }
+  if (op_profiling_stat_1.max() != op_profiling_stat_2.max()) {
+    return false;
+  }
+  if (op_profiling_stat_1.sum() != op_profiling_stat_2.sum()) {
+    return false;
+  }
+  if (op_profiling_stat_1.count() != op_profiling_stat_2.count()) {
+    return false;
+  }
+  return true;
+}
+
+bool CompareOpProfileData(const OpProfileData& op_profile_data_1,
+                          const OpProfileData& op_profile_data_2) {
+  if (op_profile_data_1.node_type() != op_profile_data_2.node_type()) {
+    return false;
+  }
+  if (op_profile_data_1.times_called() != op_profile_data_2.times_called()) {
+    return false;
+  }
+  if (op_profile_data_1.name() != op_profile_data_2.name()) {
+    return false;
+  }
+  if (op_profile_data_1.run_order() != op_profile_data_2.run_order()) {
+    return false;
+  }
+  if (!CompareOpProfilingStat(op_profile_data_1.inference_microseconds(),
+                              op_profile_data_2.inference_microseconds())) {
+    return false;
+  }
+  if (!CompareOpProfilingStat(op_profile_data_1.mem_kb(),
+                              op_profile_data_2.mem_kb())) {
+    return false;
+  }
+  return true;
+}
+
+bool CompareSubGraphProfilingData(
+    const SubGraphProfilingData& subgraph_profiling_data_1,
+    const SubGraphProfilingData& subgraph_profiling_data_2) {
+  if (subgraph_profiling_data_1.subgraph_name() !=
+      subgraph_profiling_data_2.subgraph_name()) {
+    return false;
+  }
+  if (subgraph_profiling_data_1.per_op_profiles().size() !=
+      subgraph_profiling_data_2.per_op_profiles().size()) {
+    return false;
+  }
+  for (int i = 0; i < subgraph_profiling_data_1.per_op_profiles().size(); ++i) {
+    if (!CompareOpProfileData(subgraph_profiling_data_1.per_op_profiles(i),
+                              subgraph_profiling_data_2.per_op_profiles(i))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool CompareDelegateProfilingData(
+    const DelegateProfilingData& delegate_profiling_data_1,
+    const DelegateProfilingData& delegate_profiling_data_2) {
+  if (delegate_profiling_data_1.delegate_name() !=
+      delegate_profiling_data_2.delegate_name()) {
+    return false;
+  }
+  if (delegate_profiling_data_1.per_op_profiles().size() !=
+      delegate_profiling_data_2.per_op_profiles().size()) {
+    return false;
+  }
+  for (int i = 0; i < delegate_profiling_data_1.per_op_profiles().size(); ++i) {
+    if (!CompareOpProfileData(delegate_profiling_data_1.per_op_profiles(i),
+                              delegate_profiling_data_2.per_op_profiles(i))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool CompareModelProfilingData(
+    const ModelProfilingData& model_profiling_data_1,
+    const ModelProfilingData& model_profiling_data_2) {
+  if (model_profiling_data_1.subgraph_profiles().size() !=
+      model_profiling_data_2.subgraph_profiles().size()) {
+    return false;
+  }
+  for (int i = 0; i < model_profiling_data_1.subgraph_profiles().size(); ++i) {
+    if (!CompareSubGraphProfilingData(
+            model_profiling_data_1.subgraph_profiles(i),
+            model_profiling_data_2.subgraph_profiles(i))) {
+      return false;
+    }
+  }
+  if (model_profiling_data_1.delegate_profiles().size() !=
+      model_profiling_data_2.delegate_profiles().size()) {
+    return false;
+  }
+  for (int i = 0; i < model_profiling_data_1.delegate_profiles().size(); ++i) {
+    if (!CompareDelegateProfilingData(
+            model_profiling_data_1.delegate_profiles(i),
+            model_profiling_data_2.delegate_profiles(i))) {
+      return false;
+    }
+  }
+  return true;
+}
 
 TEST(SummaryWriterTest, SummaryOptionStdOut) {
   ProfileSummaryDefaultFormatter writer;
@@ -182,8 +306,9 @@ TEST(SummaryWriterTest, MultiSubgraphOutputStringForProto) {
   op_profile_data_1.set_name(kernel_name_1);
   op_profile_data_1.set_run_order(1);
   op_profile_data_1.set_times_called(2);
-  EXPECT_THAT(model_profiling_data.subgraph_profiles(0).per_op_profiles(0),
-              testing::EqualsProto(op_profile_data_1));
+  EXPECT_TRUE(CompareOpProfileData(
+      model_profiling_data.subgraph_profiles(0).per_op_profiles(0),
+      op_profile_data_1));
 
   OpProfileData op_profile_data_2;
   op_profile_data_2.set_node_type(op_name_2);
@@ -212,8 +337,9 @@ TEST(SummaryWriterTest, MultiSubgraphOutputStringForProto) {
   op_profile_data_2.set_name(kernel_name_2);
   op_profile_data_2.set_run_order(2);
 
-  EXPECT_THAT(model_profiling_data.subgraph_profiles(0).per_op_profiles(1),
-              testing::EqualsProto(op_profile_data_2));
+  EXPECT_TRUE(CompareOpProfileData(
+      model_profiling_data.subgraph_profiles(0).per_op_profiles(1),
+      op_profile_data_2));
 
   ASSERT_EQ(model_profiling_data.subgraph_profiles(1).subgraph_name(),
             "Subgraph 1");
@@ -246,8 +372,9 @@ TEST(SummaryWriterTest, MultiSubgraphOutputStringForProto) {
   op_profile_data_3.set_times_called(1);
   op_profile_data_3.set_name(kernel_name_3);
   op_profile_data_3.set_run_order(3);
-  EXPECT_THAT(model_profiling_data.subgraph_profiles(1).per_op_profiles(0),
-              testing::EqualsProto(op_profile_data_3));
+  EXPECT_TRUE(CompareOpProfileData(
+      model_profiling_data.subgraph_profiles(1).per_op_profiles(0),
+      op_profile_data_3));
 }
 
 TEST(SummaryWriterTest, MultiSubgraphHandleOutputForProto) {
@@ -351,10 +478,10 @@ TEST(SummaryWriterTest, MultiSubgraphHandleOutputForProto) {
   file.close();
 
   ASSERT_TRUE(benchmark_profiling_data.model_name().empty());
-  EXPECT_THAT(benchmark_profiling_data.init_profile(),
-              testing::EqualsProto(model_profiling_data_init));
-  EXPECT_THAT(benchmark_profiling_data.runtime_profile(),
-              testing::EqualsProto(model_profiling_data_run));
+  EXPECT_TRUE(CompareModelProfilingData(benchmark_profiling_data.init_profile(),
+                                        model_profiling_data_init));
+  EXPECT_TRUE(CompareModelProfilingData(
+      benchmark_profiling_data.runtime_profile(), model_profiling_data_run));
 }
 
 TEST(SummaryWriterTest, MultiSubgraphShortSummary) {
