@@ -1582,3 +1582,23 @@ func.func @gather_scalar_dynamic_indices(%arg0: tensor<256000xf32>, %arg1: tenso
 }
 
 // CHECK: %0 = "tfl.gather_nd"(%arg0, %arg1) : (tensor<256000xf32>, tensor<?x?x1xi32>) -> tensor<?x?xf32>
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// mhlo.slice
+//===----------------------------------------------------------------------===//
+
+// CHECK-LABEL: slice_to_strided_slice
+func.func @slice_to_strided_slice(%arg0: tensor<1x4672xf32>) -> tensor<1x519xf32> {
+  %0 = "mhlo.slice"(%arg0) <{limit_indices = dense<[1, 4672]> : tensor<2xi64>, start_indices = dense<[0, 4153]> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>}> : (tensor<1x4672xf32>) -> tensor<1x519xf32>
+  func.return %0 : tensor<1x519xf32>
+}
+
+// CHECK: %cst = arith.constant dense<[0, 4153]> : tensor<2xi64>
+// CHECK: %cst_0 = arith.constant dense<[1, 4672]> : tensor<2xi64>
+// CHECK: %cst_1 = arith.constant dense<1> : tensor<2xi64>
+// CHECK: %0 = "tfl.cast"(%cst) : (tensor<2xi64>) -> tensor<2xi32>
+// CHECK: %1 = "tfl.cast"(%cst_0) : (tensor<2xi64>) -> tensor<2xi32>
+// CHECK: %2 = "tfl.cast"(%cst_1) : (tensor<2xi64>) -> tensor<2xi32>
+// CHECK: %3 = "tfl.strided_slice"(%arg0, %0, %1, %2) <{begin_mask = 0 : i32, ellipsis_mask = 0 : i32, end_mask = 0 : i32, new_axis_mask = 0 : i32, offset = false, shrink_axis_mask = 0 : i32}> : (tensor<1x4672xf32>, tensor<2xi32>, tensor<2xi32>, tensor<2xi32>) -> tensor<1x519xf32>
