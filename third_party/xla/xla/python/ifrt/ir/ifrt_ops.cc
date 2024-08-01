@@ -17,11 +17,13 @@ limitations under the License.
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <tuple>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -43,9 +45,11 @@ limitations under the License.
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "xla/mlir/utils/type_util.h"
 #include "xla/python/ifrt/ir/constants.h"
 #include "xla/python/ifrt/ir/ifrt_dialect.h"
 #include "xla/python/ifrt/ir/ifrt_interfaces.h"
+#include "xla/shape_util.h"
 
 // Generated definitions.
 #define GET_OP_CLASSES
@@ -198,11 +202,50 @@ mlir::LogicalResult VerifyIoAlias(mlir::Operation* op, IoAlias io_alias,
            << " outputs";
   }
   if (inputs[io_alias.input_index] != outputs[io_alias.output_index]) {
-    return op->emitOpError()
-           << "can't alias input #" << io_alias.input_index << " to output #"
-           << io_alias.output_index
-           << " with different types: " << inputs[io_alias.input_index]
-           << " vs " << outputs[io_alias.output_index];
+    // Compute the byte size only if the arrays are not of the same type.
+    absl::StatusOr<llvm::SmallVector<int64_t>> in_per_shard_shape =
+        inputs[io_alias.input_index]
+            .getShardingAttr()
+            .LocalShapeFromGlobalShape(
+                inputs[io_alias.input_index].getShape().getShape());
+    if (!in_per_shard_shape.ok()) {
+      return op->emitOpError()
+             << "unable to get per-shard shape of aliased input #"
+             << io_alias.input_index << ": "
+             << in_per_shard_shape.status().message();
+    }
+    absl::StatusOr<llvm::SmallVector<int64_t>> out_per_shard_shape =
+        outputs[io_alias.output_index]
+            .getShardingAttr()
+            .LocalShapeFromGlobalShape(
+                outputs[io_alias.output_index].getShape().getShape());
+    if (!out_per_shard_shape.ok()) {
+      return op->emitOpError()
+             << "unable to get per-shard shape of aliased output #"
+             << io_alias.output_index << ": "
+             << out_per_shard_shape.status().message();
+    }
+    int64_t in_num_elements = absl::c_accumulate(in_per_shard_shape.value(), 1,
+                                                 std::multiplies<int64_t>());
+    int64_t in_byte_size =
+        in_num_elements *
+        xla::ShapeUtil::ByteSizeOfPrimitiveType(
+            xla::ConvertMlirTypeToPrimitiveType(
+                inputs[io_alias.input_index].getShape().getElementType()));
+    int64_t out_num_elements = absl::c_accumulate(
+        out_per_shard_shape.value(), 1, std::multiplies<int64_t>());
+    int64_t out_byte_size =
+        out_num_elements *
+        xla::ShapeUtil::ByteSizeOfPrimitiveType(
+            xla::ConvertMlirTypeToPrimitiveType(
+                outputs[io_alias.output_index].getShape().getElementType()));
+    if (in_byte_size != out_byte_size) {
+      return op->emitOpError()
+             << "can't alias input #" << io_alias.input_index << " to output #"
+             << io_alias.output_index
+             << " with different byte sizes: " << inputs[io_alias.input_index]
+             << " vs " << outputs[io_alias.output_index];
+    }
   }
   return mlir::success();
 }
