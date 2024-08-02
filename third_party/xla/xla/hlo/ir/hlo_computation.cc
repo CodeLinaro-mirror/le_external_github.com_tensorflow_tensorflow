@@ -1373,8 +1373,11 @@ absl::StatusOr<bool> HloComputation::ReplaceInstruction(
     bool remove_unused_operands) {
   TF_RET_CHECK(
       ShapeUtil::Compatible(old_instruction->shape(), new_instruction->shape()))
-      << ShapeUtil::HumanString(old_instruction->shape()) << " vs "
-      << ShapeUtil::HumanString(new_instruction->shape());
+      << absl::StreamFormat("\"%s\" (%s) vs \"%s\" (%s)",
+                            old_instruction->name(),
+                            ShapeUtil::HumanString(old_instruction->shape()),
+                            new_instruction->name(),
+                            ShapeUtil::HumanString(new_instruction->shape()));
   return ReplaceInstructionWithDifferentShape(
       old_instruction, new_instruction, preserve_sharding,
       relay_control_dependency, remove_unused_operands);
