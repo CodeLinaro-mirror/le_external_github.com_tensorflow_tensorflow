@@ -135,6 +135,7 @@ cc_library(
         "//tensorflow/core/tfrt/graph_executor",
         "//tensorflow/core/tfrt/graph_executor:export_mlir",
         "//tensorflow/core/tfrt/graph_executor:graph_execution_options",
+        "//tensorflow/core/tfrt/ifrt:checkpoint_loader",
         "//tensorflow/core/tfrt/mlrt/bytecode",
         "//tensorflow/core/tfrt/mlrt/bytecode:executable",
         "//tensorflow/core/tfrt/mlrt/interpreter:context",

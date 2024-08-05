@@ -649,6 +649,7 @@ cc_library(
         "//tensorflow/core/platform:resource_loader",
         "//tensorflow/core/runtime_fallback/runtime:runtime_fallback_alwayslink",
         "//tensorflow/core/tfrt:ifrt_program_ops_op_lib",
+        "//tensorflow/core/tfrt/ifrt:checkpoint_loader",
         "//tensorflow/core/tfrt/ifrt:ifrt_model_context",
         "//tensorflow/core/tfrt/ifrt:ifrt_serving_core_selector",
         "//tensorflow/core/tfrt/mlrt/kernel:ifrt_ops_kernel",

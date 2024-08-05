@@ -44,6 +44,7 @@ limitations under the License.
 #include "tensorflow/core/runtime_fallback/kernel/kernel_fallback_compat_request_state.h"
 #include "tensorflow/core/tfrt/fallback/fallback_state.h"
 #include "tensorflow/core/tfrt/fallback/op_kernel_runner.h"
+#include "tensorflow/core/tfrt/ifrt/checkpoint_loader.h"
 #include "tensorflow/core/tfrt/ifrt/ifrt_config.pb.h"
 #include "tensorflow/core/tfrt/ifrt/ifrt_model_context.h"
 #include "tensorflow/core/tfrt/ifrt/ifrt_restore_tensor_registry.h"
@@ -402,6 +403,12 @@ class KernelTest : public ::testing::Test {
                 "IfrtModelContext")
             .value();
     ifrt_model_context_->set_checkpoint_loader_queue(restore_work_queue_.get());
+
+    resource_context_
+        .CreateResource<tensorflow::ifrt_serving::CheckpointLoader>(
+            ifrt_serving::kIfrtCheckpointLoaderName,
+            &ifrt_model_context_->GetRestoreTensorRegistry(),
+            ifrt_model_context_->checkpoint_loader_queue());
 
     serving_device_selector_ =
         std::make_unique<tsl::test_util::MockServingDeviceSelector>();
