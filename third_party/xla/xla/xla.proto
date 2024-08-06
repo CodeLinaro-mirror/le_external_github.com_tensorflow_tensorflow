@@ -883,7 +883,11 @@ message DebugOptions {
   // If enabled, uses the libnvjitlink library for PTX compilation and linking
   bool xla_gpu_enable_libnvjitlink = 319;
 
-  // Next id: 320
+  // If true, XLA will wrap `dot` operations into async computations in an
+  // effort to parallelize matrix operations.
+  bool xla_gpu_async_dot = 320;
+
+  // Next id: 321
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.

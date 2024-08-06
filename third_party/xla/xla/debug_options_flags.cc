@@ -1842,6 +1842,12 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_cudnn_gemm_max_plans(),
       "Limit for the number of kernel configurations (plans) to use during "
       "autotuning of cuDNN GEMM fusions."));
+  flag_list->push_back(
+      tsl::Flag("xla_gpu_async_dot",
+                bool_setter_for(&DebugOptions::set_xla_gpu_async_dot),
+                debug_options->xla_gpu_async_dot(),
+                "Wrap `dot` operations into async computations in an effort to "
+                "parallelize matrix operations."));
 }  // NOLINT(readability/fn_size)
 
 // Allocates flag_values and flag_objects; this function must not be called more
