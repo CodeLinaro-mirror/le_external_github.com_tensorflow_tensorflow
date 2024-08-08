@@ -2485,6 +2485,18 @@ Status LiftOutsideCompilationOnlyArgs(Graph* g, FunctionLibraryRuntime* flr,
 
 /*static*/ Status EncapsulateTPUComputationsPass::Encapsulate(
     std::unique_ptr<Graph>* graph, FunctionLibraryDefinition* flib_def) {
+  // If the graph does not contain any TPU computations, there is nothing to do.
+  bool found_tpu_replicate = false;
+  for (const Node* n : (*graph)->nodes()) {
+    if (n->attrs().Find(kTPUReplicateAttr) != nullptr) {
+      found_tpu_replicate = true;
+      break;
+    }
+  }
+  if (!found_tpu_replicate) {
+    return absl::OkStatus();
+  }
+
   // Check for undeclared outputs before Encapsulation, so we can give a better
   // error message.
   // TODO(phawkins): merge this with the encapsulation code to avoid the extra
