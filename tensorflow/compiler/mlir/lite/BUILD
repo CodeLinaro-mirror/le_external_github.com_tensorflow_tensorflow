@@ -31,6 +31,16 @@ package_group(
     ],
 )
 
+filegroup(
+    name = "tflite_internal_cc_3p_api_deps_src",
+    srcs = [
+        "allocation.cc",
+        "allocation.h",
+        "mmap_allocation.cc",
+    ],
+    visibility = ["//tensorflow/lite:__pkg__"],
+)
+
 td_library(
     name = "tensorflow_lite_ops_td_files",
     srcs = [
@@ -1565,7 +1575,10 @@ cc_library(
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts_warnings(),
-    visibility = ["//tensorflow/lite:__pkg__"],
+    visibility = [
+        "//tensorflow/compiler/mlir/lite/core:__pkg__",
+        "//tensorflow/lite:__pkg__",
+    ],
     deps = ["//tensorflow/compiler/mlir/lite/core/api:error_reporter"],
 )
 
