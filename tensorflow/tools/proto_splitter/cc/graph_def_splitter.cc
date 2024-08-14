@@ -25,17 +25,19 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "third_party/protobuf/message_lite.h"
 #include "tensorflow/core/framework/function.pb.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
+#include "tensorflow/tools/proto_splitter/cc/composable_splitter.h"
+#include "tensorflow/tools/proto_splitter/cc/composable_splitter_base.h"
 #include "tensorflow/tools/proto_splitter/cc/large_node_splitter.h"
 #include "tensorflow/tools/proto_splitter/cc/max_size.h"
 #include "tensorflow/tools/proto_splitter/cc/repeated_field_splitter.h"
 #include "tensorflow/tools/proto_splitter/cc/size_splitter.h"
-#include "tensorflow/tools/proto_splitter/cc/split.h"
 #include "tensorflow/tools/proto_splitter/cc/util.h"
 #include "tsl/platform/errors.h"
 #include "tsl/platform/protobuf.h"
@@ -55,7 +57,7 @@ class ConstantSplitter : public SizeSplitter {
  public:
   using SizeSplitter::SizeSplitter;
   absl::StatusOr<int> BuildChunksReturnSize() override {
-    NodeDef* node = tsl::protobuf::DynamicCastToGenerated<NodeDef>(message());
+    NodeDef* node = tsl::protobuf::DynamicCastMessage<NodeDef>(message());
 
     std::vector<FieldType> tensor_field = {"attr"s, "value"s, "tensor"s};
     std::vector<FieldType> content_field = {"attr"s, "value"s, "tensor"s,
@@ -65,7 +67,7 @@ class ConstantSplitter : public SizeSplitter {
     auto tensor_msg =
         ret.parent->GetReflection()->MutableMessage(ret.parent, ret.field);
     TensorProto* tensor_proto =
-        tsl::protobuf::DynamicCastToGenerated<TensorProto>(tensor_msg);
+        tsl::protobuf::DynamicCastMessage<TensorProto>(tensor_msg);
 
     int size_diff;
 
@@ -113,7 +115,7 @@ class ConstantSplitterFactory : public SizeSplitterFactory {
       tsl::protobuf::Message* message, ComposableSplitterBase* parent_splitter,
       std::vector<FieldType>* fields_in_parent, int size) override {
     if (size < GetMaxSize()) return nullptr;
-    NodeDef* node = tsl::protobuf::DynamicCastToGenerated<NodeDef>(message);
+    NodeDef* node = tsl::protobuf::DynamicCastMessage<NodeDef>(message);
     if (node->op() != "Const")
       return absl::UnimplementedError(absl::StrCat(
           "Currently only able to split 'Const' nodes that are larger than the "
@@ -144,7 +146,7 @@ class FunctionDefSplitter : public SizeSplitter {
       LargeNodeSplitterFactory<NodeDef> large_node_splitter_factory;
       std::vector<SizeSplitterFactory*> factories = {
           &constant_splitter_factory, &large_node_splitter_factory};
-      auto ret = RepeatedFieldSplitters<FunctionDef, NodeDef>::Create(
+      auto ret = RepeatedFieldSplitter<FunctionDef, NodeDef>::Create(
           message(), this, &fields, "node_def"s, &factories);
       if (!ret.ok()) return ret.status();
       auto splitter = ret.value();
@@ -172,7 +174,7 @@ class FunctionDefSplitterFactory : public SizeSplitterFactory {
 
 absl::Status GraphDefSplitter::BuildChunks() {
   TF_RETURN_IF_ERROR(SetMessageAsBaseChunk());
-  GraphDef* g = tsl::protobuf::DynamicCastToGenerated<GraphDef>(message());
+  GraphDef* g = tsl::protobuf::DynamicCastMessage<GraphDef>(message());
   uint64_t max_size = GetMaxSize();
   size_t graph_size = GetInitialSize();
 
@@ -184,7 +186,7 @@ absl::Status GraphDefSplitter::BuildChunks() {
   LargeNodeSplitterFactory<NodeDef> large_node_splitter_factory;
   std::vector<SizeSplitterFactory*> factories = {&constant_splitter_factory,
                                                  &large_node_splitter_factory};
-  auto node_splitter_ret = RepeatedFieldSplitters<GraphDef, NodeDef>::Create(
+  auto node_splitter_ret = RepeatedFieldSplitter<GraphDef, NodeDef>::Create(
       g, this, &field_in_parent, "node"s, &factories);
   if (!node_splitter_ret.ok()) return node_splitter_ret.status();
   auto node_splitter = node_splitter_ret.value();
@@ -193,7 +195,7 @@ absl::Status GraphDefSplitter::BuildChunks() {
   std::vector<FieldType> library_field = {"library"s};
   std::vector<SizeSplitterFactory*> fn_factories = {&function_splitter_factory};
   auto library_splitter_ret =
-      RepeatedFieldSplitters<FunctionDefLibrary, FunctionDef>::Create(
+      RepeatedFieldSplitter<FunctionDefLibrary, FunctionDef>::Create(
           g->mutable_library(), this, &library_field, "function"s,
           &fn_factories);
   if (!library_splitter_ret.ok()) return library_splitter_ret.status();
