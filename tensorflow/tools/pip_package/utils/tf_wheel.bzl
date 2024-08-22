@@ -24,8 +24,32 @@ Should be set via --repo_env=WHEEL_NAME=tensorflow_cpu.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("@python_version_repo//:py_version.bzl", "WHEEL_COLLAB", "WHEEL_NAME")
+load(
+    "@local_tsl//third_party/py:python_unpack_wheel.bzl",
+    "unpacked_wheel",
+)
+load(
+    "@python_version_repo//:py_version.bzl",
+    "HERMETIC_PYTHON_VERSION",
+    "MACOSX_DEPLOYMENT_TARGET",
+    "WHEEL_COLLAB",
+    "WHEEL_NAME",
+)
+load("//tensorflow:strict.default.bzl", "py_strict_library")
 load("//tensorflow:tensorflow.bzl", "VERSION")
+
+def _get_full_wheel_name(platform_name, platform_tag):
+    python_version = HERMETIC_PYTHON_VERSION.replace(".", "")
+    macos_platform_version = "{}_".format(MACOSX_DEPLOYMENT_TARGET.replace(".", "_")) if MACOSX_DEPLOYMENT_TARGET else ""
+    tag = "amd64" if (platform_name == "win" and platform_tag == "arm64") else platform_tag
+    return "{wheel_name}-{wheel_version}-cp{python_version}-cp{python_version}-{platform_name}_{platform_version}{platform_tag}.whl".format(
+        wheel_name = WHEEL_NAME,
+        wheel_version = VERSION,
+        python_version = python_version,
+        platform_name = platform_name,
+        platform_tag = tag,
+        platform_version = macos_platform_version,
+    )
 
 def _tf_wheel_impl(ctx):
     include_cuda_libs = ctx.attr.include_cuda_libs[BuildSettingInfo].value
@@ -37,11 +61,20 @@ def _tf_wheel_impl(ctx):
                  " If you absolutely need to add CUDA dependencies, provide `--@local_config_cuda//cuda:override_include_cuda_libs=true`.")
     executable = ctx.executable.wheel_binary
 
-    output = ctx.actions.declare_directory("wheel_house")
+    full_wheel_name = _get_full_wheel_name(
+        platform_name = ctx.attr.platform_name,
+        platform_tag = ctx.attr.platform_tag,
+    )
+    wheel_dir = "wheel_house"
+    output_dir = ctx.actions.declare_directory(wheel_dir)
+    output_file = ctx.actions.declare_file("{wheel_dir}/{wheel_name}".format(
+        wheel_dir = wheel_dir,
+        wheel_name = full_wheel_name,
+    ))
     args = ctx.actions.args()
     args.add("--project-name", WHEEL_NAME)
     args.add("--collab", str(WHEEL_COLLAB))
-    args.add("--output-name", output.path)
+    args.add("--output-name", output_dir.path)
     args.add("--version", VERSION)
 
     headers = ctx.files.headers[:]
@@ -63,10 +96,10 @@ def _tf_wheel_impl(ctx):
     ctx.actions.run(
         arguments = [args],
         inputs = srcs + headers + xla_aot,
-        outputs = [output],
+        outputs = [output_dir, output_file],
         executable = executable,
     )
-    return [DefaultInfo(files = depset(direct = [output]))]
+    return [DefaultInfo(files = depset(direct = [output_file]))]
 
 tf_wheel = rule(
     attrs = {
@@ -80,9 +113,25 @@ tf_wheel = rule(
         ),
         "include_cuda_libs": attr.label(default = Label("@local_config_cuda//cuda:include_cuda_libs")),
         "override_include_cuda_libs": attr.label(default = Label("@local_config_cuda//cuda:override_include_cuda_libs")),
+        "platform_tag": attr.string(mandatory = True),
+        "platform_name": attr.string(mandatory = True),
     },
     implementation = _tf_wheel_impl,
 )
 
 def tf_wheel_dep():
     return ["@pypi_{}//:pkg".format(WHEEL_NAME)]
+
+def tf_wheel_library(name, wheel, deps):
+    unpacked_tf_wheel_name = name + "_unpacked_wheel"
+    unpacked_wheel(
+        name = unpacked_tf_wheel_name,
+        wheel = wheel,
+    )
+    py_strict_library(
+        name = name,
+        data = [":" + unpacked_tf_wheel_name],
+        imports = [unpacked_tf_wheel_name],
+        deps = deps,
+        visibility = ["//visibility:public"],
+    )

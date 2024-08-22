@@ -8,7 +8,12 @@ load("//tensorflow:tensorflow.bzl", "if_wheel_dependency", "if_with_tpu_support"
 load("//tensorflow/core/platform:build_config_root.bzl", "tf_additional_license_deps")
 load("//tensorflow/tools/pip_package/utils:data_deps.bzl", "collect_data_files")
 load("//tensorflow/tools/pip_package/utils:py_deps.bzl", "transitive_py_deps")
-load("//tensorflow/tools/pip_package/utils:tf_wheel.bzl", "tf_wheel", "tf_wheel_dep")
+load(
+    "//tensorflow/tools/pip_package/utils:tf_wheel.bzl",
+    "tf_wheel",
+    "tf_wheel_dep",
+    "tf_wheel_library",
+)
 
 package(default_visibility = ["//visibility:public"])
 
@@ -270,6 +275,17 @@ tf_wheel(
         ":licenses",
         "//tensorflow/core:protos_all_proto_srcs",
     ],
+    platform_name = select({
+        "@platforms//os:osx": "macosx",
+        "@platforms//os:macos": "macosx",
+        "@platforms//os:windows": "win",
+        "@platforms//os:linux": "linux",
+    }),
+    platform_tag = select({
+        "@platforms//cpu:aarch64": "arm64",
+        "@platforms//cpu:arm64": "arm64",
+        "@platforms//cpu:x86_64": "x86_64",
+    }),
     source_files = [
         "MANIFEST.in",
         "//tensorflow/tools/pip_package:THIRD_PARTY_NOTICES.txt",
@@ -300,7 +316,7 @@ genrule(
 )
 
 py_test(
-    name = "import_api_packages_test_cpu",
+    name = "prebuilt_wheel_import_api_packages_test",
     srcs = if_wheel_dependency(
         ["import_api_packages_test.py"],
         [":empty_test"],
@@ -308,19 +324,43 @@ py_test(
     main = if_wheel_dependency("import_api_packages_test.py", "empty_test.py"),
     tags = [
         "cpu",
+        "gpu",
+        "windows_excluded",
     ],
     deps = if_wheel_dependency(tf_wheel_dep()),
 )
 
 py_test(
-    name = "import_api_packages_test_gpu",
-    srcs = if_wheel_dependency(
-        ["import_api_packages_test.py"],
-        [":empty_test"],
-    ),
-    main = if_wheel_dependency("import_api_packages_test.py", "empty_test.py"),
+    name = "import_api_packages_test",
+    srcs = ["import_api_packages_test.py"],
+    main = "import_api_packages_test.py",
     tags = [
+        "cpu",
         "gpu",
+        "windows_excluded",
     ],
-    deps = if_wheel_dependency(tf_wheel_dep()),
+    deps = [
+        ":tf_wheel_library",
+    ],
+)
+
+tf_wheel_library(
+    name = "tf_wheel_library",
+    wheel = ":wheel",
+    deps = [
+        "//third_party/py/numpy",
+        "@absl_py//absl:app",
+        "@absl_py//absl/testing:parameterized",
+        "@com_google_protobuf//:protobuf_python",
+        "@flatbuffers//:runtime_py",
+        "@ml_dtypes",
+        "@pypi_astunparse//:pkg",
+        "@pypi_gast//:pkg",
+        "@pypi_opt_einsum//:pkg",
+        "@pypi_packaging//:pkg",
+        "@pypi_requests//:pkg",
+        "@pypi_termcolor//:pkg",
+        "@pypi_typing_extensions//:pkg",
+        "@pypi_wrapt//:pkg",
+    ],
 )
