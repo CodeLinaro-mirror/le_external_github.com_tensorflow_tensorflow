@@ -271,13 +271,15 @@ absl::StatusOr<std::vector<InstructionAndIndex>> WalkDownMemoryOffload(
     return absl::OkStatus();
   };
   if (current_value.instruction->user_count() == 0) {
-    if (current_value.instruction->parent()->root_instruction() ==
-        current_value.instruction) {
+    if (current_value.instruction->IsRoot() &&
+        !current_value.instruction->parent()->IsEntryComputation()) {
       std::vector<HloInstruction*> callers =
           call_graph.GetComputationCallers(current_value.instruction->parent());
       if (callers.size() != 1 || callers[0]->opcode() != HloOpcode::kWhile) {
-        return absl::InvalidArgumentError(
-            "Expected to be called only by one caller and caller be a While");
+        return absl::InvalidArgumentError(absl::StrFormat(
+            "Expected to be called only by one caller and caller be a While "
+            "%s ",
+            current_value.instruction->ToString()));
       }
       TF_RETURN_IF_ERROR(add_gte_for_idx(callers[0], current_value.index));
       return results;
@@ -692,14 +694,16 @@ absl::StatusOr<bool> ProcessAnnotationForCopyMovement(
           HloInstruction* root_instruction =
               annotation->parent()->root_instruction();
           if (root_instruction == user &&
-              root_instruction->opcode() == HloOpcode::kTuple) {
+              root_instruction->opcode() == HloOpcode::kTuple &&
+              !root_instruction->parent()->IsEntryComputation()) {
             std::vector<HloInstruction*> callers =
                 call_graph->GetComputationCallers(annotation->parent());
             if (callers.size() != 1 ||
                 callers[0]->opcode() != HloOpcode::kWhile) {
-              return absl::InvalidArgumentError(
+              return absl::InvalidArgumentError(absl::StrFormat(
                   "Expected to be called only by one caller and caller be a "
-                  "While");
+                  "While %s",
+                  root_instruction->ToString()));
             }
             for (int i = 0; i < user->operands().size(); i++) {
               if (user->operands()[i] == annotation &&
