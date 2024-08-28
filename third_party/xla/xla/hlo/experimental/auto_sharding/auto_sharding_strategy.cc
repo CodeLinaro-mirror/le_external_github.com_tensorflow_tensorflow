@@ -62,6 +62,28 @@ limitations under the License.
 namespace xla {
 namespace spmd {
 
+void StrategyGroup::ForEachLeafStrategyGroup(
+    absl::FunctionRef<void(const StrategyGroup&)> fn) const {
+  if (is_tuple) {
+    for (const std::unique_ptr<StrategyGroup>& child : childs) {
+      fn(*child);
+    }
+  } else {
+    fn(*this);
+  }
+}
+
+void StrategyGroup::ForEachLeafStrategyGroup(
+    absl::FunctionRef<void(StrategyGroup&)> fn) {
+  if (is_tuple) {
+    for (std::unique_ptr<StrategyGroup>& child : childs) {
+      fn(*child);
+    }
+  } else {
+    fn(*this);
+  }
+}
+
 bool LeafVectorsAreConsistent(const std::vector<ShardingStrategy>& one,
                               const std::vector<ShardingStrategy>& two) {
   return one.size() == two.size();

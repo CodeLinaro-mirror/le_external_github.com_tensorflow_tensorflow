@@ -233,6 +233,11 @@ struct StrategyGroup {
     }
     return result;
   }
+
+  void ForEachLeafStrategyGroup(
+      absl::FunctionRef<void(const StrategyGroup&)> f) const;
+
+  void ForEachLeafStrategyGroup(absl::FunctionRef<void(StrategyGroup&)> f);
 };
 
 // Type aliases.
