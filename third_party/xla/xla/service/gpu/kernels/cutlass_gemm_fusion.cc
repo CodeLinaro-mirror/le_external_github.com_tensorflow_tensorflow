@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -261,13 +262,63 @@ CutlassGemmWithDynamicUpdateSlicePattern::TryMatch(
 }
 
 namespace {
-bool IsSupportedKernel(PrimitiveType lhs, PrimitiveType rhs,
-                       PrimitiveType dot) {
-  // List of supported kernels using {lhs_type, rhs_type, dot_type}.
-  constexpr std::array<std::array<PrimitiveType, 3>, 4> kSupportedKernels = {
-      {{BF16, BF16, F32}, {BF16, F32, F32}, {F32, BF16, F32}, {BF16, S8, F32}}};
-  return absl::c_linear_search(kSupportedKernels,
-                               std::array<PrimitiveType, 3>{lhs, rhs, dot});
+
+struct MatrixLayout {
+  enum Order { RowMajor, ColumnMajor };
+
+  PrimitiveType type;
+  Order order;
+};
+
+bool operator==(const MatrixLayout& lhs, const MatrixLayout& rhs) {
+  return lhs.type == rhs.type && lhs.order == rhs.order;
+}
+
+std::ostream& operator<<(std::ostream& os, const MatrixLayout& layout) {
+  os << PrimitiveType_Name(layout.type);
+
+  switch (layout.order) {
+    case MatrixLayout::RowMajor:
+      os << "RM";
+      break;
+    case MatrixLayout::ColumnMajor:
+      os << "CM";
+      break;
+  }
+
+  return os;
+}
+
+constexpr MatrixLayout::Order RM = MatrixLayout::Order::RowMajor;
+constexpr MatrixLayout::Order CM = MatrixLayout::Order::ColumnMajor;
+
+MatrixLayout GetMatrixLayout(const HloInstruction* instr) {
+  MatrixLayout layout = {instr->shape().element_type(), RM};
+  if (instr->shape().layout().minor_to_major(0) == 1) {
+    layout.order = RM;
+  } else {
+    layout.order = CM;
+  }
+  return layout;
+}
+
+bool IsSupportedKernel(const HloInstruction* lhs, const HloInstruction* rhs,
+                       const HloInstruction* dot) {
+  MatrixLayout lhs_layout = GetMatrixLayout(lhs);
+  MatrixLayout rhs_layout = GetMatrixLayout(rhs);
+  MatrixLayout dot_layout = GetMatrixLayout(dot);
+
+  // List of supported kernels. Each element contains the type and memory
+  // layout (i.e. row- or column-major).
+  constexpr std::array<std::array<MatrixLayout, 3>, 4> kSupportedKernels = {{
+      {{{BF16, RM}, {BF16, RM}, {F32, RM}}},
+      {{{BF16, RM}, {F32, RM}, {F32, RM}}},
+      {{{F32, RM}, {BF16, RM}, {F32, RM}}},
+      {{{BF16, RM}, {S8, RM}, {F32, RM}}},
+  }};
+  return absl::c_linear_search(
+      kSupportedKernels,
+      std::array<MatrixLayout, 3>{lhs_layout, rhs_layout, dot_layout});
 }
 }  // namespace
 
@@ -286,18 +337,14 @@ CutlassGemmWithUpcastPattern::TryMatch(const se::DeviceDescription& device,
 
   HloInstruction* lhs = matched->lhs_upcast;
   HloInstruction* rhs = matched->rhs_upcast;
-  PrimitiveType dot_type = dot->shape().element_type();
-  PrimitiveType lhs_type = lhs != nullptr
-                               ? lhs->operand(0)->shape().element_type()
-                               : dot->operand(0)->shape().element_type();
-  PrimitiveType rhs_type = rhs != nullptr
-                               ? rhs->operand(0)->shape().element_type()
-                               : dot->operand(1)->shape().element_type();
-  if (!IsSupportedKernel(lhs_type, rhs_type, dot_type)) {
+  const HloInstruction* lhs_operand =
+      lhs != nullptr ? lhs->operand(0) : dot->operand(0);
+  const HloInstruction* rhs_operand =
+      rhs != nullptr ? rhs->operand(0) : dot->operand(1);
+  if (!IsSupportedKernel(lhs_operand, rhs_operand, dot)) {
     VLOG(3) << "No match due to unsupported kernel input types: "
-            << PrimitiveType_Name(lhs_type) << "x"
-            << PrimitiveType_Name(rhs_type) << "To"
-            << PrimitiveType_Name(dot_type);
+            << GetMatrixLayout(lhs_operand) << "x"
+            << GetMatrixLayout(rhs_operand) << "To" << GetMatrixLayout(dot);
     return std::nullopt;
   }
 
