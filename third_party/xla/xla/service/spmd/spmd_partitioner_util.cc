@@ -248,6 +248,10 @@ namespace {
 SPMDCollectiveOpsCreator GetPerGroupCollectiveOpsCreator(
     const SPMDCollectiveOpsCreator& creator,
     const std::vector<std::vector<int64_t>>& device_groups) {
+  if (device_groups.size() == 1) {
+    return creator;
+  }
+
   SPMDCollectiveOpsCreator result;
   auto device_groups_ptr =
       std::make_shared<const std::vector<std::vector<int64_t>>>(device_groups);
