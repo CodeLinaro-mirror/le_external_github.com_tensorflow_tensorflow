@@ -57,15 +57,15 @@ limitations under the License.
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/device_memory_allocator.h"
 #include "xla/stream_executor/dnn.h"
+#include "xla/stream_executor/gpu/gpu_runtime.h"
 #include "xla/stream_executor/rocm/rocm_platform_id.h"
+#include "xla/stream_executor/rocm/rocm_version_parser.h"
+#include "xla/stream_executor/semantic_version.h"
+#include "xla/stream_executor/stream_executor.h"
 #include "xla/util.h"
 #include "tsl/platform/errors.h"
 #include "tsl/platform/statusor.h"
 #include "tsl/platform/threadpool.h"
-
-#if TENSORFLOW_USE_ROCM
-#include "rocm/rocm_config.h"
-#endif
 
 namespace xla {
 namespace gpu {
@@ -99,11 +99,10 @@ class ConvBfloat16Support : public FloatSupport {
 
 }  // namespace
 
-int32_t AMDGPUCompiler::GetToolkitVersion() const {
-#if TENSORFLOW_USE_ROCM
-  return TF_ROCM_VERSION;
-#endif
-  LOG(FATAL) << "Failed to get ROCm version.";
+se::SemanticVersion AMDGPUCompiler::GetToolkitVersion() const {
+  return stream_executor::ParseRocmVersion(
+             stream_executor::gpu::GpuRuntime::GetRuntimeVersion().value())
+      .value();
 }
 
 absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
