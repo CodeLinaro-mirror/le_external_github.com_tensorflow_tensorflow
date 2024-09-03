@@ -69,6 +69,13 @@ void ReplaceCalledComputation(HloInstruction* instruction,
       }
       break;
     }
+    case HloOpcode::kAsyncStart: {
+      computation->RemoveAsyncStart();
+      instruction->ReplaceCalledComputations(
+          [&](HloComputation*) { return new_computation; });
+      new_computation->AddAsyncStart(instruction);
+      break;
+    }
     default:
       LOG(FATAL) << "unexpected opcode: " << instruction->opcode();
   }
@@ -93,9 +100,6 @@ absl::Status FlattenNode(const CallGraphNode& node) {
       continue;
     }
 
-    if (computation->IsAsyncComputation()) {
-      continue;
-    }
     // Clone computation for the remaining sequential context call sites.
     HloComputation* clone =
         module->AddEmbeddedComputation(computation->Clone());
