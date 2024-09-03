@@ -691,8 +691,11 @@ DimOrderMapOrError GetPropagatedDimOrdersForDimAlteringOp(
         // PadDotOperandsIfNeededForSplitK, which sets only edge_padding_high.
         const int padding =
             pad->padding_config().dimensions(i).edge_padding_high();
-        CHECK_EQ(pad->padding_config().dimensions(i).edge_padding_low(), 0);
-        CHECK_EQ(pad->padding_config().dimensions(i).interior_padding(), 0);
+        if (pad->padding_config().dimensions(i).edge_padding_low() != 0 ||
+            pad->padding_config().dimensions(i).interior_padding() != 0) {
+          return FusionDecision(
+              "Padding: edge_padding_low and interior_padding should be 0.");
+        }
         if (padding == 0) {
           dst_logical[i] = src_logical[i];
         } else {
@@ -703,20 +706,30 @@ DimOrderMapOrError GetPropagatedDimOrdersForDimAlteringOp(
 
           // We must have 2 non-trivial fragments at this point. We may have
           // more than 2 fragments if there are trivial fragments with count 1.
-          CHECK_GE(fragments.size(), 2);
+          if (fragments.size() < 2) {
+            return FusionDecision(
+                "Padding: Fragments count should be more than 1");
+          }
           // The dst_dim_numbers must be the same for all fragments of the
           // contracting dimension after applying split-k.
-          CHECK(absl::c_all_of(fragments, [&](const Fragment* fragment) {
-            return fragment->dst_dim_number() ==
-                   fragments.front()->dst_dim_number();
-          }));
+          if (!absl::c_all_of(fragments, [&](const Fragment* fragment) {
+                return fragment->dst_dim_number() ==
+                       fragments.front()->dst_dim_number();
+              })) {
+            return FusionDecision(
+                "Padding: dst_dim_numbers should be the same for all "
+                "fragments");
+          }
 
           std::vector<Fragment*> non_trivial_fragments;
           absl::c_copy_if(fragments, std::back_inserter(non_trivial_fragments),
                           [](const Fragment* fragment) {
                             return fragment->full_count() > 1;
                           });
-          CHECK_EQ(non_trivial_fragments.size(), 2);
+          if (non_trivial_fragments.size() != 2) {
+            return FusionDecision(
+                "Padding: Non trivial fragments count should be equal to 2");
+          }
           new_fragments.emplace_back(
               non_trivial_fragments[0]->dst_dim_number(),
               non_trivial_fragments[0]->full_count() *
