@@ -6463,6 +6463,7 @@ cc_library(
         ":host_memory_offload_annotations_hdr",
         ":host_offload_utils",
         ":pattern_matcher",
+        "//third_party/cppitertools",
         "//xla:literal_util",
         "//xla:shape_util",
         "//xla:status_macros",

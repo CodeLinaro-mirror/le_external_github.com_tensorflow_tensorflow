@@ -36,6 +36,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
+#include "third_party/cppitertools/reversed.hpp"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
@@ -1018,7 +1019,7 @@ absl::StatusOr<bool> HostOffloader::Run(
   do {
     changed_in_loop = false;
     for (HloComputation* computation :
-         module->MakeComputationPostOrder(execution_threads)) {
+         iter::reversed(module->MakeComputationPostOrder(execution_threads))) {
       for (HloInstruction* instruction :
            computation->MakeInstructionPostOrder()) {
         if (instruction->IsCustomCall(

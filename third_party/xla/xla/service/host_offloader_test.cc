@@ -3751,6 +3751,56 @@ ENTRY %main {
   VLOG(1) << "module after: " << module->ToString();
 }
 
+TEST_F(HostOffloaderTest, MoveToHostFoundOutsideAndInsideOfWhileLoop) {
+  const std::string& hlo_string = R"(
+    HloModule MoveToHostFoundOutsideAndInsideOfWhileLoop, entry_computation_layout={(s32[],f32[1,128,128])->(f32[8,1,128,128]{3,2,1,0:T(8,128)S(5)}, f32[1,128,128]{2,1,0:T(8,128)S(5)}, s32[], s32[])} 
+    
+    while_condition {
+      condition_param = (f32[8,1,128,128]{3,2,1,0:T(8,128)},f32[8,1,128,128]{3,2,1,0:T(8,128)}, f32[1,128,128], s32[], s32[]) parameter(0)
+      condition_current_iteration_index = s32[] get-tuple-element(condition_param), index=4
+      condition_iteration_count = s32[] constant(16)
+      ROOT condition_result = pred[] compare(condition_current_iteration_index, condition_iteration_count), direction=LT
+    }
+
+    while_body {
+      input_tuple.0 = (f32[8,1,128,128]{3,2,1,0:T(8,128)},f32[8,1,128,128]{3,2,1,0:T(8,128)}, f32[1,128,128], s32[], s32[]) parameter(0)
+      get-tuple-element.3229 = f32[1,128,128]{2,1,0:T(8,128)} get-tuple-element(input_tuple.0), index=2
+      %custom-call.708 = f32[1,128,128]{2,1,0:T(8,128)} custom-call(f32[1,128,128]{2,1,0:T(8,128)} %get-tuple-element.3229), custom_call_target="MoveToHost"
+      bitcast.71 = f32[1,1,128,128]{3,2,1,0:T(8,128)} bitcast(f32[1,128,128]{2,1,0:T(8,128)} %custom-call.708)
+      get-tuple-element.3175 = f32[8,1,128,128]{3,2,1,0:T(8,128)} get-tuple-element(input_tuple.0), index=0
+      get-tuple-element.3176 = f32[8,1,128,128]{3,2,1,0:T(8,128)} get-tuple-element(input_tuple.0), index=1
+      offset_dus = s32[] get-tuple-element(input_tuple.0), index=3
+      constant.1037 = s32[] constant(0)
+      dynamic-update-slice.362 = f32[8,1,128,128]{3,2,1,0:T(8,128)} dynamic-update-slice(f32[8,1,128,128]{3,2,1,0:T(8,128)} %get-tuple-element.3175, f32[1,1,128,128]{3,2,1,0:T(8,128)} %bitcast.71, s32[]{:T(128)} %offset_dus, s32[]{:T(128)} %constant.1037, s32[]{:T(128)} %constant.1037, /*index=5*/s32[]{:T(128)} %constant.1037)
+      num_iter = s32[] get-tuple-element(input_tuple.0), index=4
+      ROOT tuple.55 = tuple(get-tuple-element.3176, dynamic-update-slice.362, %custom-call.708, offset_dus, num_iter)
+    }
+
+    ENTRY main {
+      offset = s32[] parameter(0)
+      update = f32[1,128,128] parameter(1)
+      constant = f32[] constant(1.0)
+      broadcast = f32[8,1,128,128] broadcast(constant)
+      custom-call.458 = f32[8,1,128,128]{3,2,1,0:T(8,128)} custom-call(broadcast), custom_call_target="MoveToHost"
+      tuple_for_while = (f32[8,1,128,128]{3,2,1,0:T(8,128)},f32[8,1,128,128]{3,2,1,0:T(8,128)}, f32[1,128,128], s32[], s32[]) tuple(custom-call.458, custom-call.458, update, offset, offset)
+      while = (f32[8,1,128,128]{3,2,1,0:T(8,128)},f32[8,1,128,128]{3,2,1,0:T(8,128)}, f32[1,128,128], s32[], s32[]) while(tuple_for_while), condition=while_condition, body=while_body
+      activations = f32[8,1,128,128]{3,2,1,0:T(8,128)} get-tuple-element(while), index=0
+      w1 = f32[1,128,128] get-tuple-element(while), index=2
+      bitcast = f32[1,1,128,128]{3,2,1,0:T(8,128)} bitcast(w1)
+      dynamic-update-slice.309 = f32[8,1,128,128]{3,2,1,0:T(8,128)} dynamic-update-slice(activations, bitcast, offset, offset, offset, /*index=5*/offset)
+      dynamic-update-slice.310 = f32[8,1,128,128]{3,2,1,0:T(8,128)} dynamic-update-slice(activations, bitcast, offset, offset, offset, /*index=5*/offset)
+
+      w2 = s32[] get-tuple-element(while), index=3
+      w3 = s32[] get-tuple-element(while), index=4
+      mth = f32[8,1,128,128] custom-call(dynamic-update-slice.310), custom_call_target="MoveToHost"
+      ROOT tuple = tuple(mth, w1, w2, w3)
+    })";
+
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                          ParseAndReturnVerifiedModule(hlo_string));
+  TF_ASSERT_OK_AND_ASSIGN(bool changed, RunHostOffloader(module.get()));
+  EXPECT_TRUE(changed);
+}
 }  // namespace
 
 }  // namespace xla
