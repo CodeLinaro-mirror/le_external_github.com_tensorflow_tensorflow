@@ -1366,43 +1366,39 @@ void GpuDriver::UnloadModule(Context* context, CUmodule module) {
   }
 }
 
-bool GpuDriver::CreateStream(Context* context, CUstream* stream, int priority) {
-  ScopedActivateContext activated{context};
-  absl::Status status;
+absl::StatusOr<GpuStreamHandle> GpuDriver::CreateStream(Context* context,
+                                                        int priority) {
+  ScopedActivateContext activated(context);
+  GpuStreamHandle stream;
   // If the priority is 0, then use the previous api to create the stream with
   // the default priority for backward compatibility. Probably there is no
   // difference in using the new api call but leaving it as is for now.
   if (priority == 0) {
-    status = cuda::ToStatus(cuStreamCreate(stream, CU_STREAM_NON_BLOCKING));
+    TF_RETURN_IF_ERROR(
+        cuda::ToStatus(cuStreamCreate(&stream, CU_STREAM_NON_BLOCKING)));
   } else {
-    status = cuda::ToStatus(
-        cuStreamCreateWithPriority(stream, CU_STREAM_NON_BLOCKING, priority));
-  }
-  if (!status.ok()) {
-    LOG(ERROR) << "could not allocate CUDA stream for context " << context
-               << ": " << status;
-    return false;
+    TF_RETURN_IF_ERROR(cuda::ToStatus(
+        cuStreamCreateWithPriority(&stream, CU_STREAM_NON_BLOCKING, priority)));
   }
 
-  VLOG(2) << "successfully created stream " << *stream << " for context "
+  VLOG(2) << "successfully created stream " << stream << " for context "
           << context << " on thread";
-  return true;
+  return stream;
 }
 
-void GpuDriver::DestroyStream(Context* context, CUstream* stream) {
-  if (*stream == nullptr) {
+void GpuDriver::DestroyStream(Context* context, GpuStreamHandle stream) {
+  if (stream == nullptr) {
     return;
   }
 
   ScopedActivateContext activated{context};
-  auto status = cuda::ToStatus(cuStreamDestroy(*stream));
+  auto status = cuda::ToStatus(cuStreamDestroy(stream));
   if (!status.ok()) {
     LOG(ERROR) << "failed to destroy CUDA stream for context " << context
                << ": " << status;
   } else {
-    VLOG(2) << "successfully destroyed stream " << *stream << " for context "
+    VLOG(2) << "successfully destroyed stream " << stream << " for context "
             << context;
-    *stream = nullptr;
   }
 }
 
@@ -1685,20 +1681,6 @@ bool GpuDriver::AsynchronousMemcpyD2D(Context* context, CUdeviceptr gpu_dst,
         GetContextMap()->GetAnyContext(absl::bit_cast<void*>(gpu_dst));
     CUcontext src_context =
         GetContextMap()->GetAnyContext(absl::bit_cast<void*>(gpu_src));
-
-    if (static_cast<void*>(dst_context) == nullptr) {
-      absl::StatusOr<GpuContext*> tmp_context = GetPointerContext(gpu_dst);
-      if (tmp_context.ok()) {
-        dst_context = tmp_context.value()->context();
-      }
-    }
-
-    if (static_cast<void*>(src_context) == nullptr) {
-      absl::StatusOr<GpuContext*> tmp_context = GetPointerContext(gpu_src);
-      if (tmp_context.ok()) {
-        src_context = tmp_context.value()->context();
-      }
-    }
 
     if (dst_context == src_context) {
       // Since the CUDA context is the same, the src and dst are within the same
