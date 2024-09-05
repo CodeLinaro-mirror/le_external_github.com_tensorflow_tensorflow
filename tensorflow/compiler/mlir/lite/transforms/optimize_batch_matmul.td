@@ -52,7 +52,7 @@ def FuseTransposeFCLhsToBatchMatmul : Pat<
 // Fuses TFL_FullyConnectedOp and TFL_TransposeOp Rhs to TFL_BatchMatMulOp
 def FuseTransposeFCRhsToBatchMatmul : Pat<
   (TFL_FullyConnectedOp
-    2DTensorOf<[F32]>:$lhs,
+    TensorOf<[F32]>:$lhs,
     (TFL_TransposeOp TensorOf<[F32]>:$rhs, (Arith_ConstantOp:$perm_value $p0)),
     $bias, $TFL_AF_None, $TFL_FCWO_Default,
     $keep_num_dims, $asymmetric_quantize_inputs
