@@ -424,6 +424,7 @@ class FlopsPerElementTest : public GpuIndexingPerformanceModelTest {
     GpuHloCostAnalysis cost_analysis(
         GpuHloCostAnalysis::Options{ShapeSizeBytesFunction(),
                                     /*per_second_rates=*/{},
+                                    /*min_latency_seconds=*/{},
                                     /*count_multiple_input_accesses=*/true},
         device_info_);
 

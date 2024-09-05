@@ -44,8 +44,10 @@ namespace xla {
 
 HloCostAnalysis::HloCostAnalysis(const Options& options) : options_(options) {}
 HloCostAnalysis::HloCostAnalysis(ShapeSizeFunction shape_size,
-                                 const Properties& per_second_rates)
-    : HloCostAnalysis(Options{shape_size, per_second_rates}) {}
+                                 const Properties& per_second_rates,
+                                 const Properties& min_latency_seconds)
+    : HloCostAnalysis(
+          Options{shape_size, per_second_rates, min_latency_seconds}) {}
 
 absl::Status HloCostAnalysis::Preprocess(const HloInstruction* hlo) {
   // Set current instruction cost values to reasonable default values. Each
