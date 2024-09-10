@@ -250,6 +250,10 @@ HloSharding convertToHloSharding(
   SmallVector<OpSharding::Type> types;
   int64_t shardedPos = 0;
 
+  if (mesh.getAxes().size() == manualAxes.size()) {
+    return HloSharding::Manual();
+  }
+
   // Iterate the dim shardings.
   for (auto [index, dimSharding] :
        llvm::enumerate(sdySharding.getDimShardings())) {
@@ -320,9 +324,8 @@ StringAttr convertToHloShardingAttr(
     ArrayRef<AxisRefAttr> manualAxes) {
   assert(shardings.size() == op->getNumResults());
   if (op->getNumResults() == 1) {
-    TensorShardingAttr sdySharding = shardings.front();
     return getStringAttr(
-        convertToHloSharding(sdySharding, getMeshAttr, manualAxes));
+        convertToHloSharding(shardings.front(), getMeshAttr, manualAxes));
   }
 
   SmallVector<HloSharding> newShardings;
