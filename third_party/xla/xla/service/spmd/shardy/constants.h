@@ -72,6 +72,21 @@ inline constexpr llvm::StringRef kPythonIntegrationComplete =
 // XLA pipeline, so no HLO<->MLIR round-tripping.
 inline constexpr llvm::StringRef kUseTupleArgs = "xla.sdy.use_tuple_args";
 
+// Attribute name for the in shardings of a `ManualComputationOp`.
+inline constexpr llvm::StringRef kInShardings = "xla.sdy.in_shardings";
+
+// Attribute name for the out shardings of a `ManualComputationOp`.
+inline constexpr llvm::StringRef kOutShardings = "xla.sdy.out_shardings";
+
+// Attribute name for the manual axes of a `ManualComputationOp`.
+inline constexpr llvm::StringRef kManualAxes = "xla.sdy.manual_axes";
+
+// The target name of the custom call that will store the various attrs of a
+// `ManualComputationOp` and a reference to a `FuncOp` that is the body of the
+// original `ManualComputationOp`.
+inline constexpr llvm::StringRef kManualComputationCustomCallTargetName =
+    "ManualComputation";
+
 // The name of the global mesh.
 inline constexpr llvm::StringRef kGlobalMeshName = "mesh";
 
