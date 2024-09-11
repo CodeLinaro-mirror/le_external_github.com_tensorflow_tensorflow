@@ -74,9 +74,11 @@ void CleanUpHloModuleForGraphviz(HloModule* hlo_module) {
   }
 }
 
-// This follows ModelExplorer's logic to get id of a layer.
+// This follows ModelExplorer's logic to get id of a layer:
+// 1. for fusion instruction:
+// <parent_computation_name>/<instruction_name>___group___.
+// 2. for computation: <computation_name>___group___.
 std::string GetLayerId(absl::string_view namespace_name) {
-  // TODO(b/361833306): support nested namespace.
   return absl::StrCat(namespace_name, "___group___");
 }
 
@@ -85,6 +87,7 @@ void AddCenterNodeMetadata(nlohmann::json& graph_json, std::string id,
                            absl::string_view name, absl::string_view opcode) {
   nlohmann::json centerGroupNodeAttributes;
   centerGroupNodeAttributes["name"] = name;
+  // id is used by client to match the center node.
   centerGroupNodeAttributes["id"] = id;
   if (!opcode.empty()) {
     centerGroupNodeAttributes["opcode"] = opcode;
@@ -99,9 +102,10 @@ void AddGraphMetadata(std::string& graph_json_str,
                       const HloInstruction& instr) {
 #ifdef PLATFORM_GOOGLE
   nlohmann::json graph_json = nlohmann::json::parse(graph_json_str);
-  auto id = instr.opcode() == xla::HloOpcode::kFusion
-                ? GetLayerId(instr.name())
-                : absl::StrCat(instr.unique_id());
+  auto id =
+      instr.opcode() == xla::HloOpcode::kFusion
+          ? GetLayerId(absl::StrCat(instr.parent()->name(), "/", instr.name()))
+          : absl::StrCat(instr.unique_id());
   AddCenterNodeMetadata(graph_json, id, instr.name(),
                         HloOpcodeString(instr.opcode()));
   graph_json_str = graph_json.dump();
