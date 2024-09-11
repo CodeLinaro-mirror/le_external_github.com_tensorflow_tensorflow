@@ -97,6 +97,7 @@ bool strip_debug_info;
 bool use_buffer_offset;
 bool emit_stablehlo_ops;
 bool disable_vhlo_to_stablehlo;
+bool serialize_debug_metadata;
 
 // NOLINTNEXTLINE
 static opt<bool, true> emit_builtin_tflite_ops_flag(
@@ -150,6 +151,12 @@ static opt<bool, true> disable_vhlo_to_stablehlo_flag(
     llvm::cl::desc("Wether to deserialize to stablehlo ops or not"),
     llvm::cl::location(disable_vhlo_to_stablehlo), llvm::cl::init(false));
 
+// NOLINTNEXTLINE
+static opt<bool, true> serialize_debug_metadata_flag(
+    "serialize-debug-metadata",
+    llvm::cl::desc("Wether to serialize debug metadata or not"),
+    llvm::cl::location(serialize_debug_metadata), llvm::cl::init(false));
+
 namespace mlir {
 namespace {
 static OwningOpRef<mlir::ModuleOp> FlatBufferFileToMlirTrans(
@@ -201,7 +208,8 @@ static LogicalResult MlirToFlatBufferFileTranslateFunction(
   options.toco_flags.set_use_buffer_offset(use_buffer_offset);
   options.op_or_arg_name_mapper = op_or_arg_name_mapper.get();
   if (!tflite::MlirToFlatBufferTranslateFunction(
-          module, options, &serialized_flatbuffer, emit_stablehlo_ops))
+          module, options, &serialized_flatbuffer, emit_stablehlo_ops,
+          serialize_debug_metadata))
     return mlir::failure();
 
   output << serialized_flatbuffer;
