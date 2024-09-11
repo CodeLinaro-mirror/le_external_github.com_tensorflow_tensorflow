@@ -93,7 +93,6 @@ cuda_only_cc_library(
     visibility = ["//visibility:public"],
     deps =
         [
-            ":cuda_activation",
             ":cuda_collectives",
             ":cuda_driver",
             ":cuda_executor",
@@ -322,7 +321,6 @@ cuda_only_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":cuda_activation",
         ":cuda_blas_utils",
         ":cuda_executor",
         ":cuda_helpers",
@@ -422,7 +420,6 @@ cc_library(
     name = "cuda_dnn_headers",
     textual_hdrs = ["cuda_dnn.h"],
     deps = if_cuda_is_configured([
-        ":cuda_activation_header",
         "//xla/stream_executor:dnn",
         "//xla/stream_executor:plugin_registry",
     ]) + [
@@ -463,7 +460,6 @@ cuda_only_cc_library(
     copts = tf_additional_cudnn_plugin_copts(),
     visibility = ["//visibility:public"],
     deps = [
-        ":cuda_activation",
         ":cuda_diagnostics",
         ":cuda_driver",
         ":cuda_executor",
