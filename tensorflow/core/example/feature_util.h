@@ -222,9 +222,14 @@ struct NoneSuch {};
 
 // True if the Feature map in a tf.Example supports heterogenous lookup.
 // See https://abseil.io/tips/144.
+// TODO(b/365531379): this cannot be replaced by a lambda because it exposes a
+// Clang bug when used in modules.
+struct CheckFindFunc {
+  template <class Container>
+  auto operator()(Container&& c) -> decltype(c.find(NoneSuch{})) {}
+};
 inline constexpr bool kFeatureMapHasHeterogeneousLookup =
-    Requires<decltype(Features::default_instance().feature())>(
-        [](auto&& c) -> decltype(c.find(NoneSuch{})) {});
+    Requires<decltype(Features::default_instance().feature())>(CheckFindFunc());
 
 // Converts an `absl::string_view` into a string-type compatible for use in the
 // protobuf library (e.g. as lookup keys in `proto2::Map` or as elements addable
