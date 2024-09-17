@@ -1071,5 +1071,52 @@ TEST_F(CommandBufferSchedulingTest, AsyncFusion) {
                             });
 }
 
+TEST_F(CommandBufferSchedulingTest, ReturnFalseWhenNoChange) {
+  const char* hlo = R"(
+    HloModule module, is_scheduled=true
+    ENTRY main {
+      a = s32[8,8] parameter(0)
+      b = s32[8,8] parameter(1)
+      ROOT call = s32[8,8] custom-call(a,b), custom_call_target="__cublas$gemm"
+    }
+  )";
+
+  HloModuleConfig config;
+  DebugOptions options = GetDebugOptionsForTest();
+  options.clear_xla_gpu_enable_command_buffer();
+  options.add_xla_gpu_enable_command_buffer(DebugOptions::COLLECTIVES);
+  config.set_debug_options(options);
+  TF_ASSIGN_OR_RETURN(auto m, ParseAndReturnVerifiedModule(hlo, config));
+  RunAndFilecheckHloRewrite(hlo, CommandBufferScheduling(device_desc()),
+                            std::nullopt);
+}
+
+TEST_F(CommandBufferSchedulingTest, ReturnTrueWhenOnlyParamMoved) {
+  const char* hlo = R"(
+    HloModule module, is_scheduled=true
+    ENTRY main {
+      a = s32[8,8] parameter(0)
+      b = s32[8,8] parameter(1)
+      call = s32[8,8] custom-call(a,b), custom_call_target="__cublas$gemm"
+      c = s32[8,8] parameter(2)
+      ROOT call2 = s32[8,8] custom-call(call, c), custom_call_target="__cublas$gemm"
+    }
+  )";
+
+  HloModuleConfig config;
+  DebugOptions options = GetDebugOptionsForTest();
+  options.clear_xla_gpu_enable_command_buffer();
+  options.add_xla_gpu_enable_command_buffer(DebugOptions::COLLECTIVES);
+  config.set_debug_options(options);
+  TF_ASSIGN_OR_RETURN(auto m, ParseAndReturnVerifiedModule(hlo, config));
+  RunAndFilecheckHloRewrite(hlo, CommandBufferScheduling(device_desc()), R"(
+    // CHECK: %{{.+}} = {{.+}} parameter(0)
+    // CHECK: %{{.+}} = {{.+}} parameter(1)
+    // CHECK: %{{.+}} = {{.+}} parameter(2)
+    // CHECK: %{{.+}} = {{.+}} custom-call
+    // CHECK: %{{.+}} = {{.+}} custom-call
+  )");
+}
+
 }  // namespace
 }  // namespace xla::gpu

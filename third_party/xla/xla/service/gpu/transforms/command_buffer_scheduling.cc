@@ -433,7 +433,9 @@ CommandBufferScheduling::CollectCommandBufferSequences(
 // the beginning of the computation. This simplifies the construction of command
 // buffer computations because we don't need to deal with parameters and
 // constants that have users outside of a command buffer.
-absl::Status CommandBufferScheduling::MoveParametersAndConstantsToFront(
+// Returns true if there is a change in the order of instructions, false
+// otherwise.
+absl::StatusOr<bool> CommandBufferScheduling::MoveParametersAndConstantsToFront(
     HloComputation* computation) {
   HloInstructionSequence new_sequence;
   HloSchedule& schedule = computation->parent()->schedule();
@@ -463,7 +465,11 @@ absl::Status CommandBufferScheduling::MoveParametersAndConstantsToFront(
   }
 
   schedule.set_sequence(computation, new_sequence);
-  return absl::OkStatus();
+  for (auto [old_i, new_i] :
+       llvm::zip(sequence.instructions(), new_sequence.instructions())) {
+    if (old_i != new_i) return true;
+  }
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
@@ -777,6 +783,7 @@ absl::StatusOr<bool> CommandBufferScheduling::Run(
   std::reverse(order.begin(), order.end());
   absl::flat_hash_set<HloComputation*> processed_command_buffers;
 
+  auto changed = false;
   for (HloComputation* comp : order) {
     // Skip special computations that do not have lowering to thunks.
     if (comp->IsFusionComputation() || comp->IsAsyncComputation() ||
@@ -786,7 +793,8 @@ absl::StatusOr<bool> CommandBufferScheduling::Run(
     // Skip computations that already part of command buffers.
     if (processed_command_buffers.contains(comp)) continue;
 
-    TF_RETURN_IF_ERROR(MoveParametersAndConstantsToFront(comp));
+    TF_ASSIGN_OR_RETURN(bool changed_, MoveParametersAndConstantsToFront(comp));
+    changed |= changed_;
 
     std::vector<HloInstructionSequence> sequences =
         CollectCommandBufferSequences(
@@ -799,6 +807,7 @@ absl::StatusOr<bool> CommandBufferScheduling::Run(
       TF_ASSIGN_OR_RETURN(
           HloComputation * command_buffer_computation,
           RewriteCommandBuffer(comp, seq, std::move(command_buffer)));
+      changed = true;
 
       // All computations reachable from a command buffer computation are nested
       // command buffers (i.e. body computations attached to a while operation).
@@ -810,7 +819,7 @@ absl::StatusOr<bool> CommandBufferScheduling::Run(
   }
   TF_RETURN_IF_ERROR(module->schedule().Update());
 
-  return true;
+  return changed;
 }
 
 }  // namespace xla::gpu
