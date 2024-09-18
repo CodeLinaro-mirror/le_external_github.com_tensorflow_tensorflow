@@ -1533,7 +1533,7 @@ std::optional<HloSharding> GatherOperandShardingFromOutputParallelDimensions(
     auto output_parallel_dims =
         GetGatherParallelOutputDims(gather, *parallel_dims);
     auto output_aligned_operand_parallel_dims =
-        IndexAlignedOperandParallelDims(*parallel_dims);
+        parallel_dims->operand_parallel_dims;
     const Shape gather_shape = gather.shape();
     CHECK_EQ(output_parallel_dims.size(),
              output_aligned_operand_parallel_dims.size());
@@ -1769,7 +1769,7 @@ std::optional<HloSharding> ScatterUpdateShardingFromOutputParallelDimensions(
     auto update_parallel_dims =
         GetScatterParallelUpdateDims(scatter, *parallel_dims);
     auto index_aligned_operand_parallel_dims =
-        IndexAlignedOperandParallelDims(*parallel_dims);
+        parallel_dims->operand_parallel_dims;
     auto operand_parallel_dims_sorted = index_aligned_operand_parallel_dims;
     absl::c_sort(operand_parallel_dims_sorted);
     auto operand_aligned_update_parallel_dims = AlignSmallContainers(
@@ -2247,8 +2247,7 @@ std::optional<GatherScatterParallelDims> GetGatherScatterBatchParallelDims(
   //   %indices = concatenate(..., %iota.1, ...)
   //   ... = gather(..., %indices)
   // is common for tf.reverse_sequence and would match this case.
-  const int num_indices = index_map.size();
-  std::vector<int64_t> index_parallel_in_dim(num_indices, -1);
+  std::vector<int64_t> index_parallel_in_dim(index_map.size(), -1);
 
   // looks through any copies to find the concatenate.
   auto findConcatenate = [&](const HloInstruction* indices) {
@@ -2320,8 +2319,8 @@ std::optional<GatherScatterParallelDims> GetGatherScatterBatchParallelDims(
     }
   }
   if (!indices_parallel_dims.empty()) {
-    return GatherScatterParallelDims{
-        indices_parallel_dims, operand_parallel_dims, index_parallel_in_dim};
+    return GatherScatterParallelDims{indices_parallel_dims,
+                                     operand_parallel_dims};
   }
   return std::nullopt;
 }
@@ -2535,23 +2534,6 @@ HloSharding InferGatherScatterParallelShardingFromOperandSharding(
                    output_tile_assignment,
                    replicate_non_parallel_dims.subgroup_types(),
                    replicate_non_parallel_dims.metadata());
-}
-
-absl::InlinedVector<int64_t, 1> IndexAlignedOperandParallelDims(
-    const GatherScatterParallelDims& parallel_dims) {
-  CHECK_EQ(parallel_dims.indices_parallel_dims.size(),
-           parallel_dims.operand_parallel_dims.size());
-  std::vector<int64_t> index_parallel_in_dim =
-      parallel_dims.index_parallel_in_dim;
-  // Remove all -1s in `index_parallel_in_dim`.
-  index_parallel_in_dim.erase(std::remove(index_parallel_in_dim.begin(),
-                                          index_parallel_in_dim.end(), -1),
-                              index_parallel_in_dim.end());
-  // Populate the operand parallel dimensions based on the order of the index
-  // batch dims (which is the same order as the output).
-  return AlignSmallContainers(parallel_dims.operand_parallel_dims,
-                              index_parallel_in_dim,
-                              parallel_dims.indices_parallel_dims);
 }
 
 std::string GroupedSharding::ToString() const {
