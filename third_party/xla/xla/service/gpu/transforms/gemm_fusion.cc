@@ -635,14 +635,14 @@ class Decision {
   // Returns true if it's profitable to fuse.
   bool WantToFuse() const { return fusing_decision_.CanFuse(); }
 
-  static Decision Accept() { return {FusionDecision(), true}; };
+  static Decision Accept() { return {FusionDecision::Allow(), true}; };
 
   static Decision Decline(std::string_view value) {
-    return {FusionDecision(value), false};
+    return {FusionDecision::Deny(value), false};
   }
 
   static Decision NotProfitable(std::string_view value) {
-    return {FusionDecision(value), true};
+    return {FusionDecision::Deny(value), true};
   }
 
  private:

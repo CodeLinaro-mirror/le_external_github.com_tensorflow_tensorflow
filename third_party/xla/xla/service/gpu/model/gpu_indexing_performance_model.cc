@@ -543,7 +543,7 @@ GpuPerformanceModelWithIndexingAnalysis::TryFindBestTilingForFusion(
   }
 
   if (!best_tiled_run_time_data.has_value()) {
-    return FusionDecision("No valid tilings found.");
+    return FusionDecision::Deny("No valid tilings found.");
   }
   return *best_tiled_run_time_data;
 }

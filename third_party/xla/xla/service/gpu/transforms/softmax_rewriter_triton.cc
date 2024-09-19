@@ -514,8 +514,8 @@ DecideIfShouldFuseAndMaybeSetBlockLevelParameters(
 
   if (const auto* fusion_decision =
           std::get_if<FusionDecision>(&tiled_runtime_data_or)) {
-    return FusionDecision{absl::StrCat("SymbolicTileAnalysis failed: ",
-                                       fusion_decision->Explain())};
+    return FusionDecision::Deny(absl::StrCat("SymbolicTileAnalysis failed: ",
+                                             fusion_decision->Explain()));
   }
 
   TiledRunTimeData tiled_runtime_data =
@@ -534,8 +534,9 @@ DecideIfShouldFuseAndMaybeSetBlockLevelParameters(
 
     if (run_time_without_softmax_rewriter <
         tiled_runtime_data.runtime_data.exec_time) {
-      return "Run time estimate for without applying the custom normalization "
-             "rewrite is faster.";
+      return FusionDecision::Deny(
+          "Run time estimate for without applying the custom normalization "
+          "rewrite is faster.");
     }
   }
 
@@ -547,7 +548,7 @@ DecideIfShouldFuseAndMaybeSetBlockLevelParameters(
   TF_RETURN_IF_ERROR(softmax_fusion->set_backend_config(backend_config));
   VLOG(5) << "Fusing with backend config: " << backend_config.DebugString();
 
-  return FusionDecision{};
+  return FusionDecision::Allow();
 }
 
 absl::StatusOr<bool> MaybeFuseDiamondChainImpl(
@@ -615,12 +616,12 @@ FusionDecision ShouldFuseReduction(const HloInstruction& reduce,
                                    const se::GpuComputeCapability& cc) {
   if (CodegenDecision is_supported = IsTritonSupportedInstruction(reduce, cc);
       !is_supported) {
-    return FusionDecision(is_supported.Explain());
+    return FusionDecision::Deny(is_supported.Explain());
   }
 
   if (reduce.dimensions().size() != 1 ||
       reduce.dimensions(0) != reduce.operand(0)->shape().rank() - 1) {
-    return FusionDecision(
+    return FusionDecision::Deny(
         "The reductions in the diamond must reduce 1 dimension and that "
         "dimension must be the last dimension of the operand.");
   }
@@ -634,21 +635,23 @@ FusionDecision ShouldFuseReduction(const HloInstruction& reduce,
        identity->operand(0)->opcode() == HloOpcode::kConstant &&
        IsTritonSupportedInstruction(*identity, cc));
   if (!should_fuse_identity) {
-    return "Reduction identity is not a constant or a supported convert of a "
-           "constant.";
+    return FusionDecision::Deny(
+        "Reduction identity is not a constant or a supported convert of a "
+        "constant.");
   }
 
-  return {};
+  return FusionDecision::Allow();
 }
 
 DiamondMatchingDecision MatchesTritonCompatibleClosedReductionDiamondImpl(
     HloInstruction* instr, const se::GpuComputeCapability& cc) {
   if (!instr->IsElementwiseBinary()) {
-    return "Root is not elementwise binary.";
+    return FusionDecision::Deny("Root is not elementwise binary.");
   }
 
   if (!IsTritonSupportedInstruction(*instr, cc)) {
-    return "Root is not supported for Triton instruction.";
+    return FusionDecision::Deny(
+        "Root is not supported for Triton instruction.");
   }
 
   HloInstruction* producer;
@@ -657,18 +660,21 @@ DiamondMatchingDecision MatchesTritonCompatibleClosedReductionDiamondImpl(
 
   if (!TrivialEdge(&broadcast, instr->mutable_operand(1), HloOpcode::kBroadcast,
                    cc)) {
-    return "Could not find a trivial connection from root to a broadcast.";
+    return FusionDecision::Deny(
+        "Could not find a trivial connection from root to a broadcast.");
   }
 
   if (!TrivialEdge(&reduce, broadcast->mutable_operand(0), HloOpcode::kReduce,
                    cc)) {
-    return "Could not find a trivial connection from matched broadcast to a "
-           "reduction.";
+    return FusionDecision::Deny(
+        "Could not find a trivial connection from matched broadcast to a "
+        "reduction.");
   }
 
   if (!(HasDefaultLayout(broadcast->shape()) &&
         HasDefaultLayout(reduce->shape()))) {
-    return "Broadcast or reduce have non-default layouts.";
+    return FusionDecision::Deny(
+        "Broadcast or reduce have non-default layouts.");
   }
 
   if (FusionDecision should_fuse_reduction = ShouldFuseReduction(*reduce, cc);
@@ -686,19 +692,21 @@ DiamondMatchingDecision MatchesTritonCompatibleClosedReductionDiamondImpl(
        identity->operand(0)->opcode() == HloOpcode::kConstant &&
        IsTritonSupportedInstruction(*identity, cc));
   if (!should_fuse_identity) {
-    return "Reduction identity is not a constant or a supported convert of a "
-           "constant.";
+    return FusionDecision::Deny(
+        "Reduction identity is not a constant or a supported convert of a "
+        "constant.");
   }
 
   if (!HasOneUse(broadcast) || !HasOneUse(reduce)) {
-    return "More than one use of broadcast or reduce.";
+    return FusionDecision::Deny("More than one use of broadcast or reduce.");
   }
 
   producer = reduce->mutable_operand(0);
 
   if (absl::c_linear_search(broadcast->dimensions(),
                             broadcast->shape().rank() - 1)) {
-    return "Broadcast is not along the reduction dimension.";
+    return FusionDecision::Deny(
+        "Broadcast is not along the reduction dimension.");
   }
 
   while (IsTriviallyFusible(producer, cc)) {
@@ -706,16 +714,16 @@ DiamondMatchingDecision MatchesTritonCompatibleClosedReductionDiamondImpl(
   }
 
   if (!HasDefaultLayout(producer->shape())) {
-    return "Producer has non-default layout.";
+    return FusionDecision::Deny("Producer has non-default layout.");
   }
 
   if (!IsTriviallyConnectedProducerOf(producer, instr->mutable_operand(0),
                                       cc)) {
-    return "Producer is not trivially connected.";
+    return FusionDecision::Deny("Producer is not trivially connected.");
   }
 
   if (producer != instr->operand(0) && instr->operand(0)->user_count() != 1) {
-    return "Unsupported root-producer connection.";
+    return FusionDecision::Deny("Unsupported root-producer connection.");
   }
 
   VLOG(5) << "Matched Softmax diamond with: ";
