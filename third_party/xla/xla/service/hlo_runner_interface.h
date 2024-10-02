@@ -16,6 +16,8 @@ limitations under the License.
 #ifndef XLA_SERVICE_HLO_RUNNER_INTERFACE_H_
 #define XLA_SERVICE_HLO_RUNNER_INTERFACE_H_
 
+#include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -23,12 +25,16 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/log/log.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_module.h"
+#include "xla/literal.h"
 #include "xla/service/computation_placer.h"
 #include "xla/service/executable.h"
+#include "xla/shape.h"
 #include "xla/status_macros.h"
 #include "xla/types.h"
 #include "xla/util.h"
@@ -84,14 +90,16 @@ class HloRunnerInterface {
     bool use_threads = false;
   };
 
-  HloRunnerInterface() = default;
+  using DeviceShapeRepresentationFn = std::function<Shape(const Shape&)>;
+  using DeviceShapeSizeFn = std::function<int64_t(const Shape&)>;
 
+  HloRunnerInterface() = default;
   virtual ~HloRunnerInterface() = default;
 
   // Converts an HloModule from the given hlo textual IR string (in
   // HloModule::ToString format).
   static absl::StatusOr<std::unique_ptr<HloModule>> CreateModuleFromString(
-      const absl::string_view hlo_string, const DebugOptions& debug_options);
+      absl::string_view hlo_string, const DebugOptions& debug_options);
 
   // Reads the proto file in xla.HloProto format, creates and returns the
   // HloModule.
@@ -215,7 +223,13 @@ class HloRunnerInterface {
   // Returns the name of this runner.
   virtual absl::string_view Name() const = 0;
 
-  typedef std::function<Shape(const Shape&)> DeviceShapeRepresentationFn;
+  // Return the device shape representation of 'host_shape'.
+  virtual DeviceShapeRepresentationFn device_shape_representation_fn()
+      const = 0;
+  // Return the device shape size of 'host_shape'.
+  // This function is used e.g. to create a VerifiedHloModule. It returns an
+  // integer representing the size of the shape in bytes as opposed to a Shape.
+  virtual DeviceShapeSizeFn device_shape_size_fn() const = 0;
 };
 
 }  // namespace xla
