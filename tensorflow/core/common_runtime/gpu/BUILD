@@ -230,7 +230,9 @@ tf_cuda_library(
         }) + if_cuda_or_rocm([
             "@local_xla//xla/service:gpu_plugin_impl",  # for registering cuda compiler.
         ]),
-    ),
+    ) + if_cuda_or_rocm([
+        "@local_xla//xla/stream_executor/platform:dso_loader",
+    ]),
     alwayslink = 1,
 )
 
