@@ -1,13 +1,17 @@
 load("@local_tsl//tsl/platform:build_config.bzl", "tf_proto_library")
 load("@local_tsl//tsl/platform:rules_cc.bzl", "cc_library")
 load("//xla:xla.bzl", "xla_cc_test")
+load("//xla/pjrt/cpu:package_groups.bzl", "xla_cpu_internal_packages")
 load("//xla/tsl:tsl.bzl", "if_oss", "internal_visibility")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
-    default_visibility = ["//xla:internal"],
+    default_visibility = ["//visibility:private"],
     licenses = ["notice"],
 )
+
+# Required to load package group definitions.
+xla_cpu_internal_packages()
 
 xla_cc_test(
     name = "pjrt_client_test_cpu",
@@ -23,6 +27,9 @@ cc_library(
     name = "tracked_tfrt_cpu_device_buffer",
     srcs = ["tracked_tfrt_cpu_device_buffer.cc"],
     hdrs = ["tracked_tfrt_cpu_device_buffer.h"],
+    visibility = [
+        "//xla:friends",
+    ],
     deps = [
         "//xla:cpu_function_runtime",
         "//xla:shape_util",
@@ -111,6 +118,7 @@ cc_library(
     name = "cpu_topology",
     srcs = ["cpu_topology.cc"],
     hdrs = ["cpu_topology.h"],
+    visibility = internal_visibility(["//platforms/xla/megascale/runtime/executor:__pkg__"]),
     deps = [
         ":cpu_topology_proto_cc",
         "//xla/pjrt:pjrt_common",
@@ -134,7 +142,7 @@ cc_library(
     name = "cpu_client",
     srcs = ["cpu_client.cc"],
     hdrs = ["cpu_client.h"],
-    visibility = internal_visibility(["//xla:friends"]),
+    visibility = internal_visibility(["//xla/pjrt/cpu:legacy_cpu_client_users"]),
     deps = [
         ":abstract_tfrt_cpu_buffer",
         ":cpu_topology",
@@ -266,6 +274,9 @@ cc_library(
         "-fno-strict-aliasing",
     ],
     features = ["-use_header_modules"],
+    visibility = [
+        "//xla/python:__pkg__",
+    ],
     deps = [
         "//xla/pjrt:status_casters",
         "//xla/pjrt/distributed:key_value_store_interface",
@@ -283,6 +294,9 @@ cc_library(
         "-fno-strict-aliasing",
     ],
     features = ["-use_header_modules"],
+    visibility = [
+        "//xla/python:__pkg__",
+    ],
     deps = [
         "//xla:shape_util",
         "//xla:status_macros",
@@ -349,6 +363,9 @@ cc_library(
         "-fno-strict-aliasing",
     ],
     features = ["-use_header_modules"],
+    visibility = [
+        "//xla:friends",
+    ],
     deps = if_oss([
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
