@@ -28,13 +28,14 @@ limitations under the License.
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
+#include "absl/functional/function_ref.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "absl/types/variant.h"
@@ -109,9 +110,10 @@ class TransposePlan {
   // arrays must not overlap.
   // Currently there are no alignment requirements on either `a` or `b`. However
   // performance may be better if either or both are aligned.
-  void Execute(const void* a, void* b,
-               const std::function<void(std::function<void(void)>)>&
-                   schedule_work = {}) const;
+  void Execute(
+      const void* a, void* b,
+      std::optional<absl::FunctionRef<void(absl::FunctionRef<void(void)>)>>
+          schedule_work = std::nullopt) const;
 
   // Returns a human-readable description of the plan.
   std::string ToString() const;
