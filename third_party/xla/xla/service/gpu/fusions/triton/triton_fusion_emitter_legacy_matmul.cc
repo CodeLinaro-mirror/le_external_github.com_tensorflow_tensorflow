@@ -23,6 +23,7 @@ limitations under the License.
 #include <limits>
 #include <optional>
 #include <queue>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -35,6 +36,7 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -109,6 +111,16 @@ using ::mlir::ValueRange;
 
 namespace {
 
+mlir::NameLoc NameLoc(ImplicitLocOpBuilder& b, absl::string_view file,
+                      int line) {
+  std::vector<std::string> parts = absl::StrSplit(file, '/');
+  return mlir::NameLoc::get(
+      b.getStringAttr(absl::StrCat(parts.back(), ":", line)));
+}
+
+#define B(t, args...) \
+  ImplicitLocOpBuilder(NameLoc(b, __FILE__, __LINE__), b).create<t>(args)
+
 absl::StatusOr<Type> TritonType(mlir::OpBuilder b, PrimitiveType t) {
   switch (t) {
     case F64:
@@ -156,11 +168,11 @@ template <typename T>
 mlir::arith::ConstantOp CreateConst(mlir::ImplicitLocOpBuilder b,
                                     mlir::Type type, T value) {
   if (mlir::isa<mlir::IntegerType>(type)) {
-    return b.create<mlir::arith::ConstantOp>(b.getIntegerAttr(type, value));
+    return B(mlir::arith::ConstantOp, b.getIntegerAttr(type, value));
   }
   if (mlir::isa<mlir::FloatType>(type)) {
-    return b.create<mlir::arith::ConstantOp>(
-        b.getFloatAttr(type, static_cast<double>(value)));
+    return B(mlir::arith::ConstantOp,
+             b.getFloatAttr(type, static_cast<double>(value)));
   }
   LOG(FATAL) << "Constant type not supported: " << llvm_ir::DumpToString(type);
 }
@@ -172,12 +184,16 @@ mlir::arith::ConstantOp CreateConst(mlir::ImplicitLocOpBuilder& b,
                                     llvm::ArrayRef<int64_t> shape) {
   auto tensor_type = mlir::RankedTensorType::get(shape, type);
   if (auto int_type = mlir::dyn_cast<mlir::IntegerType>(type)) {
-    return b.create<mlir::arith::ConstantOp>(mlir::DenseElementsAttr::get(
-        tensor_type, mlir::APInt(int_type.getIntOrFloatBitWidth(), value)));
+    return B(
+        mlir::arith::ConstantOp,
+        mlir::DenseElementsAttr::get(
+            tensor_type, mlir::APInt(int_type.getIntOrFloatBitWidth(), value)));
   }
   if (auto float_type = mlir::dyn_cast<mlir::FloatType>(type)) {
-    return b.create<mlir::arith::ConstantOp>(mlir::DenseElementsAttr::get(
-        tensor_type, b.getFloatAttr(type, static_cast<double>(value))));
+    return B(
+        mlir::arith::ConstantOp,
+        mlir::DenseElementsAttr::get(
+            tensor_type, b.getFloatAttr(type, static_cast<double>(value))));
   }
   LOG(FATAL) << "Constant type not supported: " << llvm_ir::DumpToString(type);
 }
@@ -219,12 +235,12 @@ Value Cast(ImplicitLocOpBuilder& b, Value value, Type dst_element_ty) {
 
   // All operations on bf16 are done through f32.
   if (src_element_ty.isBF16()) {
-    return Cast(b, b.create<ma::ExtFOp>(fp32_ty, value), dst_element_ty);
+    return Cast(b, B(ma::ExtFOp, fp32_ty, value), dst_element_ty);
   }
   if (dst_element_ty.isBF16()) {
     // S8 -> BF16 is directly supported and doesn't need to go through f32.
     if (!src_element_ty.isInteger(8)) {
-      return b.create<ma::TruncFOp>(dst_ty, Cast(b, value, b.getF32Type()));
+      return B(ma::TruncFOp, dst_ty, Cast(b, value, b.getF32Type()));
     }
   }
 
@@ -237,19 +253,19 @@ Value Cast(ImplicitLocOpBuilder& b, Value value, Type dst_element_ty) {
     // TODO(b/266862493): Add end-to-end test once FP8 support lands in XLA as
     // we can't test the code below without patching the feature.
     if (IsFp8Type(src_element_ty)) {
-      return b.create<mt::FpToFpOp>(dst_ty, value);
+      return B(mt::FpToFpOp, dst_ty, value);
     }
     if (IsFp8Type(dst_element_ty)) {
-      return b.create<mt::FpToFpOp>(
-          dst_ty, value,
+      return B(
+          mt::FpToFpOp, dst_ty, value,
           mt::RoundingModeAttr::get(b.getContext(), mt::RoundingMode::RTNE));
     }
 
     if (src_fp_element_ty.getFPMantissaWidth() >
         dst_fp_element_ty.getFPMantissaWidth()) {
-      return b.create<ma::TruncFOp>(dst_ty, value);
+      return B(ma::TruncFOp, dst_ty, value);
     } else {
-      return b.create<ma::ExtFOp>(dst_ty, value);
+      return B(ma::ExtFOp, dst_ty, value);
     }
   }
   // int => int
@@ -258,25 +274,24 @@ Value Cast(ImplicitLocOpBuilder& b, Value value, Type dst_element_ty) {
     if (src_element_ty.getIntOrFloatBitWidth() <
         dst_element_ty.getIntOrFloatBitWidth()) {
       if (src_element_ty.isInteger(1)) {
-        return b.create<ma::ExtUIOp>(dst_ty, value);
+        return B(ma::ExtUIOp, dst_ty, value);
       }
-      return b.create<ma::ExtSIOp>(dst_ty, value);
+      return B(ma::ExtSIOp, dst_ty, value);
     }
-    return b.create<ma::TruncIOp>(dst_ty, value);
+    return B(ma::TruncIOp, dst_ty, value);
   }
   // int => float
   if (mlir::isa<mlir::IntegerType>(src_element_ty) && dst_fp_element_ty) {
     // TODO(b/266862493): Support unsigned integer types.
     if (src_element_ty.isInteger(1)) {
-      return b.create<ma::UIToFPOp>(dst_ty, value);
+      return B(ma::UIToFPOp, dst_ty, value);
     }
-    return b.create<ma::SIToFPOp>(dst_ty, value);
+    return B(ma::SIToFPOp, dst_ty, value);
   }
   // float => int
   if (src_fp_element_ty && mlir::isa<mlir::IntegerType>(dst_element_ty)) {
     if (dst_element_ty.isInteger(1)) {
-      return b.create<ma::CmpFOp>(ma::CmpFPredicate::UNE, value,
-                                  ZerosLike(b, value));
+      return B(ma::CmpFOp, ma::CmpFPredicate::UNE, value, ZerosLike(b, value));
     }
     // TODO(b/266862493): Support unsigned integer types.
     // The current logic handles signed integer types only. Additional handling
@@ -295,24 +310,24 @@ Value Cast(ImplicitLocOpBuilder& b, Value value, Type dst_element_ty) {
         return CreateConst(b, src_fp_element_ty, x);
       }
     };
-    auto fptosi = b.create<ma::FPToSIOp>(dst_ty, value);
+    auto fptosi = B(ma::FPToSIOp, dst_ty, value);
     int64_t min = llvm::minIntN(dst_element_ty.getIntOrFloatBitWidth());
     int64_t max = llvm::maxIntN(dst_element_ty.getIntOrFloatBitWidth());
 
     // value <= static_cast<float>(INT_MIN) ? INT_MIN : ...
-    auto clamped = b.create<mlir::arith::SelectOp>(
-        b.create<mlir::arith::CmpFOp>(mlir::arith::CmpFPredicate::OLE, value,
-                                      cst_float(min)),
-        cst_int(min), fptosi);
+    auto clamped = B(mlir::arith::SelectOp,
+                     B(mlir::arith::CmpFOp, mlir::arith::CmpFPredicate::OLE,
+                       value, cst_float(min)),
+                     cst_int(min), fptosi);
     // value >= static_cast<float>(INT_MAX) ? INT_MAX : ...
-    clamped = b.create<mlir::arith::SelectOp>(
-        b.create<mlir::arith::CmpFOp>(mlir::arith::CmpFPredicate::OGE, value,
-                                      cst_float(max)),
-        cst_int(max), clamped);
+    clamped = B(mlir::arith::SelectOp,
+                B(mlir::arith::CmpFOp, mlir::arith::CmpFPredicate::OGE, value,
+                  cst_float(max)),
+                cst_int(max), clamped);
     // isnan(value) ? 0 : ...
-    return b.create<mlir::arith::SelectOp>(
-        b.create<mlir::arith::CmpFOp>(mlir::arith::CmpFPredicate::UNO, value,
-                                      value),
+    return B(
+        mlir::arith::SelectOp,
+        B(mlir::arith::CmpFOp, mlir::arith::CmpFPredicate::UNO, value, value),
         cst_int(0), clamped);
   }
 
@@ -323,9 +338,9 @@ Value Cast(ImplicitLocOpBuilder& b, Value value, Type dst_element_ty) {
 
 Value Subtract(ImplicitLocOpBuilder& b, ValueRange values) {
   if (mlir::isa<mlir::IntegerType>(mlir::getElementTypeOrSelf(values[0]))) {
-    return b.create<ma::SubIOp>(values[0], values[1]);
+    return B(ma::SubIOp, values[0], values[1]);
   } else {
-    return b.create<ma::SubFOp>(values[0], values[1]);
+    return B(ma::SubFOp, values[0], values[1]);
   }
 }
 
@@ -333,14 +348,15 @@ Value Compare(ImplicitLocOpBuilder& b, ValueRange values,
               mlir::mhlo::ComparisonDirection direction) {
   const Type type = mlir::getElementTypeOrSelf(values[0]);
   if (mlir::isa<mlir::IntegerType>(type)) {
-    return b.create<ma::CmpIOp>(
-        mlir::mhlo::impl::getCmpPredicate<ma::CmpIPredicate>(
-            direction,
-            /*isSigned=*/!type.isInteger(1))
-            .value(),
-        values[0], values[1]);
+    return B(ma::CmpIOp,
+             mlir::mhlo::impl::getCmpPredicate<ma::CmpIPredicate>(
+                 direction,
+                 /*isSigned=*/!type.isInteger(1))
+                 .value(),
+             values[0], values[1]);
   }
-  return b.create<ma::CmpFOp>(
+  return B(
+      ma::CmpFOp,
       mlir::mhlo::impl::getCmpPredicate<ma::CmpFPredicate>(direction,
                                                            /*isSigned=*/true)
           .value(),
@@ -350,7 +366,7 @@ Value Compare(ImplicitLocOpBuilder& b, ValueRange values,
 Value Maximum(ImplicitLocOpBuilder& b, const se::DeviceDescription& device_info,
               ValueRange values) {
   if (mlir::isa<mlir::FloatType>(mlir::getElementTypeOrSelf(values[0]))) {
-    return b.create<ma::MaximumFOp>(values);
+    return B(ma::MaximumFOp, values);
   }
   // logic: isNaN(lhs) || (!isNan(rhs) && lhs >= rhs) ? lhs : rhs
   // See also: IEEE Std 754-2008 5.11.
@@ -362,16 +378,15 @@ Value Maximum(ImplicitLocOpBuilder& b, const se::DeviceDescription& device_info,
   Value rhs_is_not_nan =
       Compare(b, {values[1], values[1]}, mlir::mhlo::ComparisonDirection::EQ);
   Value lhs_is_ge = Compare(b, values, mlir::mhlo::ComparisonDirection::GE);
-  return b.create<ma::SelectOp>(
-      b.create<ma::OrIOp>(lhs_is_nan,
-                          b.create<ma::AndIOp>(rhs_is_not_nan, lhs_is_ge)),
-      values[0], values[1]);
+  return B(ma::SelectOp,
+           B(ma::OrIOp, lhs_is_nan, B(ma::AndIOp, rhs_is_not_nan, lhs_is_ge)),
+           values[0], values[1]);
 }
 
 Value Minimum(ImplicitLocOpBuilder& b, const se::DeviceDescription& device_info,
               ValueRange values) {
   if (mlir::isa<mlir::FloatType>(mlir::getElementTypeOrSelf(values[0]))) {
-    return b.create<ma::MinimumFOp>(values);
+    return B(ma::MinimumFOp, values);
   }
   // logic: isNaN(lhs) || (!isNan(rhs) && lhs <= rhs) ? lhs : rhs
   // See also: IEEE Std 754-2008 5.11.
@@ -384,15 +399,14 @@ Value Minimum(ImplicitLocOpBuilder& b, const se::DeviceDescription& device_info,
   Value rhs_is_not_nan =
       Compare(b, {values[1], values[1]}, mlir::mhlo::ComparisonDirection::EQ);
   Value lhs_is_le = Compare(b, values, mlir::mhlo::ComparisonDirection::LE);
-  return b.create<ma::SelectOp>(
-      b.create<ma::OrIOp>(lhs_is_nan,
-                          b.create<ma::AndIOp>(rhs_is_not_nan, lhs_is_le)),
-      values[0], values[1]);
+  return B(ma::SelectOp,
+           B(ma::OrIOp, lhs_is_nan, B(ma::AndIOp, rhs_is_not_nan, lhs_is_le)),
+           values[0], values[1]);
 }
 
 Value Splat(ImplicitLocOpBuilder& b, Value value, ArrayRef<int64_t> shape) {
   auto type = mlir::RankedTensorType::get(shape, value.getType());
-  return b.create<mt::SplatOp>(type, value);
+  return B(mt::SplatOp, type, value);
 }
 
 absl::StatusOr<Value> EmitElementwise(ImplicitLocOpBuilder& b,
@@ -413,15 +427,15 @@ absl::StatusOr<Value> EmitElementwise(ImplicitLocOpBuilder& b,
       return inputs[0];
     case HloOpcode::kAbs:
       if (is_integer) {
-        return b.create<mm::AbsIOp>(inputs[0]);
+        return B(mm::AbsIOp, inputs[0]);
       }
-      return b.create<mm::AbsFOp>(inputs[0]);
+      return B(mm::AbsFOp, inputs[0]);
     case HloOpcode::kCeil:
-      return b.create<mm::CeilOp>(inputs[0]);
+      return B(mm::CeilOp, inputs[0]);
     case HloOpcode::kFloor:
-      return b.create<mm::FloorOp>(inputs[0]);
+      return B(mm::FloorOp, inputs[0]);
     case HloOpcode::kNot:
-      return b.create<ma::XOrIOp>(inputs[0], OnesLike(b, inputs[0]));
+      return B(ma::XOrIOp, inputs[0], OnesLike(b, inputs[0]));
     case HloOpcode::kNegate:
       // NegFOp is not supported by Triton.
       return Subtract(b, {ZerosLike(b, inputs[0]), inputs[0]});
@@ -432,16 +446,16 @@ absl::StatusOr<Value> EmitElementwise(ImplicitLocOpBuilder& b,
     }
     case HloOpcode::kAdd:
       if (is_integer) {
-        return b.create<ma::AddIOp>(inputs[0], inputs[1]);
+        return B(ma::AddIOp, inputs[0], inputs[1]);
       }
-      return b.create<ma::AddFOp>(inputs[0], inputs[1]);
+      return B(ma::AddFOp, inputs[0], inputs[1]);
     case HloOpcode::kSubtract:
       return Subtract(b, inputs);
     case HloOpcode::kMultiply:
       if (is_integer) {
-        return b.create<ma::MulIOp>(inputs[0], inputs[1]);
+        return B(ma::MulIOp, inputs[0], inputs[1]);
       }
-      return b.create<ma::MulFOp>(inputs[0], inputs[1]);
+      return B(ma::MulFOp, inputs[0], inputs[1]);
     case HloOpcode::kMaximum:
       return Maximum(b, device_info, inputs);
     case HloOpcode::kMinimum:
@@ -451,17 +465,17 @@ absl::StatusOr<Value> EmitElementwise(ImplicitLocOpBuilder& b,
           b, device_info,
           {Minimum(b, device_info, {inputs[1], inputs[2]}), inputs[0]});
     case HloOpcode::kAnd:
-      return b.create<ma::AndIOp>(inputs[0], inputs[1]);
+      return B(ma::AndIOp, inputs[0], inputs[1]);
     case HloOpcode::kOr:
-      return b.create<ma::OrIOp>(inputs[0], inputs[1]);
+      return B(ma::OrIOp, inputs[0], inputs[1]);
     case HloOpcode::kXor:
-      return b.create<ma::XOrIOp>(inputs[0], inputs[1]);
+      return B(ma::XOrIOp, inputs[0], inputs[1]);
     case HloOpcode::kDivide:
       if (is_integer) {
         // Unsigned not supported yet.
-        return b.create<ma::DivSIOp>(inputs[0], inputs[1]);
+        return B(ma::DivSIOp, inputs[0], inputs[1]);
       }
-      return b.create<ma::DivFOp>(inputs[0], inputs[1]);
+      return B(ma::DivFOp, inputs[0], inputs[1]);
     case HloOpcode::kCompare:
       return Compare(
           b, inputs,
@@ -469,10 +483,10 @@ absl::StatusOr<Value> EmitElementwise(ImplicitLocOpBuilder& b,
               ComparisonDirectionToString(hlo.comparison_direction()))
               .value());
     case HloOpcode::kSelect:
-      return b.create<ma::SelectOp>(
-          Compare(b, {inputs[0], ZerosLike(b, inputs[0])},
-                  mlir::mhlo::ComparisonDirection::NE),
-          inputs[1], inputs[2]);
+      return B(ma::SelectOp,
+               Compare(b, {inputs[0], ZerosLike(b, inputs[0])},
+                       mlir::mhlo::ComparisonDirection::NE),
+               inputs[1], inputs[2]);
     case HloOpcode::kReducePrecision:
       return mlir::mhlo::reducePrecision<mt::BitcastOp>(
           b.getLoc(), inputs[0], hlo.exponent_bits(), hlo.mantissa_bits(), &b);
@@ -516,32 +530,32 @@ absl::StatusOr<Value> EmitUnpackInt4(ImplicitLocOpBuilder& b,
   // We use shifts instead the mask because we need to keep the sign bit.
   Value shift4 =
       Splat(b, CreateConst(b, b.getI8Type(), 4), input_type.getShape());
-  Value lo = b.create<ma::ShRSIOp>(b.create<ma::ShLIOp>(value, shift4), shift4);
-  Value hi = b.create<ma::ShRSIOp>(value, shift4);
-  Value result = b.create<mt::JoinOp>(hi, lo);
+  Value lo = B(ma::ShRSIOp, B(ma::ShLIOp, value, shift4), shift4);
+  Value hi = B(ma::ShRSIOp, value, shift4);
+  Value result = B(mt::JoinOp, hi, lo);
   if (unpack_dim_idx == 0) {
-    result = b.create<mt::TransOp>(result, b.getDenseI32ArrayAttr({0, 2, 1}));
+    result = B(mt::TransOp, result, b.getDenseI32ArrayAttr({0, 2, 1}));
   }
   SmallVector<int64_t> result_shape(input_type.getShape());
   result_shape[unpack_dim_idx] *= 2;
   auto type = mlir::RankedTensorType::get(result_shape, b.getI8Type());
-  return b.create<mt::ReshapeOp>(type, result, /*allow_reorder=*/false);
+  return B(mt::ReshapeOp, type, result, /*allow_reorder=*/false);
 }
 
 using TensorValue = mlir::TypedValue<mlir::RankedTensorType>;
 
 Value Broadcast(ImplicitLocOpBuilder& b, TensorValue value,
                 ArrayRef<int64_t> shape) {
-  return b.create<mt::BroadcastOp>(value.getType().clone(shape), value);
+  return B(mt::BroadcastOp, value.getType().clone(shape), value);
 }
 
 Value Range(ImplicitLocOpBuilder& b, int32_t limit) {
   auto type = mlir::RankedTensorType::get(limit, b.getI32Type());
-  return b.create<mt::MakeRangeOp>(type, 0, limit);
+  return B(mt::MakeRangeOp, type, 0, limit);
 }
 
 Value AddPtr(ImplicitLocOpBuilder& b, Value ptr, Value offset) {
-  return b.create<mt::AddPtrOp>(ptr.getType(), ptr, offset);
+  return B(mt::AddPtrOp, ptr.getType(), ptr, offset);
 }
 
 Value EmitParameterLoad(ImplicitLocOpBuilder& b, Value pointer,
@@ -554,10 +568,9 @@ Value EmitParameterLoad(ImplicitLocOpBuilder& b, Value pointer,
   if (auto make_tensor_ptr = pointer.getDefiningOp<mt::MakeTensorPtrOp>()) {
     if (make_tensor_ptr.getOffsets().empty()) {
       return Splat(b,
-                   b.create<mt::LoadOp>(make_tensor_ptr.getBase(),
-                                        mt::CacheModifier::NONE,
-                                        mt::EvictionPolicy::NORMAL,
-                                        /*isVolatile=*/false),
+                   B(mt::LoadOp, make_tensor_ptr.getBase(),
+                     mt::CacheModifier::NONE, mt::EvictionPolicy::NORMAL,
+                     /*isVolatile=*/false),
                    {});
     }
   }
@@ -568,10 +581,9 @@ Value EmitParameterLoad(ImplicitLocOpBuilder& b, Value pointer,
     if (!boundary_checks.empty()) {
       padding = mt::PaddingOption::PAD_ZERO;
     }
-    return b.create<mt::LoadOp>(pointer, boundary_checks, padding,
-                                mt::CacheModifier::NONE,
-                                mt::EvictionPolicy::NORMAL,
-                                /*isVolatile=*/false);
+    return B(mt::LoadOp, pointer, boundary_checks, padding,
+             mt::CacheModifier::NONE, mt::EvictionPolicy::NORMAL,
+             /*isVolatile=*/false);
   }
 
   // Non-tensor pointer.
@@ -579,9 +591,9 @@ Value EmitParameterLoad(ImplicitLocOpBuilder& b, Value pointer,
   // TODO(b/343013366): Remove this after we delete the legacy SoftMax code.
   // It's the only place where this code-path is used.
   return Splat(b,
-               b.create<mt::LoadOp>(pointer, mt::CacheModifier::NONE,
-                                    mt::EvictionPolicy::NORMAL,
-                                    /*isVolatile=*/false),
+               B(mt::LoadOp, pointer, mt::CacheModifier::NONE,
+                 mt::EvictionPolicy::NORMAL,
+                 /*isVolatile=*/false),
                {});
 }
 
@@ -646,7 +658,7 @@ absl::StatusOr<Value> EmitBroadcast(ImplicitLocOpBuilder& b,
       if (analysis->IterSpec(side.scope, broadcast.operand(0), dim.index) ==
           nullptr) {
         // Broadcasted dimension.
-        expanded_input = b.create<mt::ExpandDimsOp>(expanded_input, dim_idx);
+        expanded_input = B(mt::ExpandDimsOp, expanded_input, dim_idx);
       }
       ++dim_idx;
     }
@@ -960,9 +972,9 @@ absl::StatusOr<Value> EmitMultiSelect(ImplicitLocOpBuilder b, Value index,
   TF_RET_CHECK(choices.size() - 1 == limits.size());
   Value result = choices[0];
   for (int i = 0; i < choices.size() - 1; ++i) {
-    result = b.create<ma::SelectOp>(
-        b.create<ma::CmpIOp>(ma::CmpIPredicate::slt, index, limits[i]), result,
-        choices[i + 1]);
+    result =
+        B(ma::SelectOp, B(ma::CmpIOp, ma::CmpIPredicate::slt, index, limits[i]),
+          result, choices[i + 1]);
   }
   return result;
 }
@@ -1501,19 +1513,19 @@ ConstHloInstructionSet ScopeInputs(const TritonFusionAnalysis& analysis,
 Value TruncateToBF16TowardsZero(ImplicitLocOpBuilder& b, Value input) {
   ShapedType input_type = mlir::dyn_cast<ShapedType>(input.getType());
   Type input_type_as_i32 = input_type.clone(b.getI32Type());
-  Value input_as_i32 = b.create<mt::BitcastOp>(input_type_as_i32, input);
+  Value input_as_i32 = B(mt::BitcastOp, input_type_as_i32, input);
   Value mask = CreateConst<uint32_t>(b, b.getI32Type(), 0xFFFF0000u,
                                      input_type.getShape());
-  Value high_bits = b.create<ma::AndIOp>(input_type_as_i32, input_as_i32, mask);
+  Value high_bits = B(ma::AndIOp, input_type_as_i32, input_as_i32, mask);
 
-  return b.create<mt::BitcastOp>(input_type, high_bits);
+  return B(mt::BitcastOp, input_type, high_bits);
 }
 
 // Finds the middle 8 bits of |input|'s mantissa.
 // It is used for Emit6xBfloat16MatMul.
 Value SoftMiddleEight(ImplicitLocOpBuilder& b, Value input) {
   Value high = TruncateToBF16TowardsZero(b, input);
-  return b.create<ma::SubFOp>(input, high);
+  return B(ma::SubFOp, input, high);
 }
 
 // Finds the low 8 bits of |input|'s mantissa.
@@ -1536,8 +1548,8 @@ Value CheckFiniteF32(ImplicitLocOpBuilder& b, Value input) {
   Value positive_inf = CreateConst<float>(
       b, b.getF32Type(), std::numeric_limits<float>::infinity(),
       mlir::cast<ShapedType>(input.getType()).getShape());
-  Value abs_input = b.create<mm::AbsFOp>(input);
-  return b.create<ma::CmpFOp>(ma::CmpFPredicate::OGT, positive_inf, abs_input);
+  Value abs_input = B(mm::AbsFOp, input);
+  return B(ma::CmpFOp, ma::CmpFPredicate::OGT, positive_inf, abs_input);
 }
 
 // Leverages BF16 datatype for F32 matmul computation. It follows the guidance
@@ -1563,9 +1575,9 @@ absl::StatusOr<Value> Emit6xBfloat16MatMul(ImplicitLocOpBuilder& b, Value lhs,
 
   auto bf16_dot = [&](Value lhs_bf16, Value rhs_bf16,
                       Value accumulator) -> Value {
-    return b.create<mt::DotOp>(lhs_bf16, rhs_bf16, accumulator,
-                               /*inputPrecision=*/mt::InputPrecision::IEEE,
-                               /*maxNumImpreciseAcc=*/0);
+    return B(mt::DotOp, lhs_bf16, rhs_bf16, accumulator,
+             /*inputPrecision=*/mt::InputPrecision::IEEE,
+             /*maxNumImpreciseAcc=*/0);
   };
 
   Value local_acc = ZerosLike(b, acc);
@@ -1582,9 +1594,9 @@ absl::StatusOr<Value> Emit6xBfloat16MatMul(ImplicitLocOpBuilder& b, Value lhs,
   // must override any accumulated result if the last partial product is
   // non-finite. See b/115844437.
   Value is_finite = CheckFiniteF32(b, result);
-  result = b.create<ma::SelectOp>(is_finite, result, ZerosLike(b, result));
+  result = B(ma::SelectOp, is_finite, result, ZerosLike(b, result));
   result = bf16_dot(lhs_high, rhs_high, result);
-  result = b.create<ma::AddFOp>(acc, result);
+  result = B(ma::AddFOp, acc, result);
   return result;
 }
 
@@ -1605,18 +1617,18 @@ absl::StatusOr<Value> Emit3xBfloat16MatMul(ImplicitLocOpBuilder& b, Value lhs,
 
   auto bf16_dot = [&](Value lhs_bf16, Value rhs_bf16,
                       Value accumulator) -> Value {
-    return b.create<mt::DotOp>(lhs_bf16, rhs_bf16, accumulator,
-                               /*inputPrecision=*/mt::InputPrecision::IEEE,
-                               /*maxNumImpreciseAcc=*/0);
+    return B(mt::DotOp, lhs_bf16, rhs_bf16, accumulator,
+             /*inputPrecision=*/mt::InputPrecision::IEEE,
+             /*maxNumImpreciseAcc=*/0);
   };
 
   Value local_acc = ZerosLike(b, acc);
   Value result = bf16_dot(lhs_low, rhs_high, local_acc);
   result = bf16_dot(lhs_high, rhs_low, result);
   Value is_finite = CheckFiniteF32(b, result);
-  result = b.create<ma::SelectOp>(is_finite, result, ZerosLike(b, result));
+  result = B(ma::SelectOp, is_finite, result, ZerosLike(b, result));
   result = bf16_dot(lhs_high, rhs_high, result);
-  result = b.create<ma::AddFOp>(acc, result);
+  result = B(ma::AddFOp, acc, result);
   return result;
 }
 
@@ -1751,25 +1763,22 @@ class Scopes {
 
     auto c32 = [&](int64_t v) { return CreateConst(b, b.getI32Type(), v); };
 
-    auto pid_nc = b.create<mt::GetProgramIdOp>(
-        launch_config.noncontracting_program_id_dim);
-    pid_k_ = (config.split_k > 1)
-                 ? b.create<mt::GetProgramIdOp>(mt::ProgramIDDim::Z)
-                 : Value{};
+    auto pid_nc =
+        B(mt::GetProgramIdOp, launch_config.noncontracting_program_id_dim);
+    pid_k_ = (config.split_k > 1) ? B(mt::GetProgramIdOp, mt::ProgramIDDim::Z)
+                                  : Value{};
 
-    auto group_id = b.create<ma::DivSIOp>(pid_nc, c32(width));
+    auto group_id = B(ma::DivSIOp, pid_nc, c32(width));
     ma::ConstantOp group_m_op = c32(group_m);
-    auto first_pid_m = b.create<ma::MulIOp>(group_id, group_m_op);
-    auto sub0 = b.create<ma::SubIOp>(c32(launch_config.grid_m), first_pid_m);
-    auto group_size = b.create<ma::SelectOp>(
-        b.create<ma::CmpIOp>(ma::CmpIPredicate::slt, sub0, group_m_op), sub0,
-        group_m_op);
+    auto first_pid_m = B(ma::MulIOp, group_id, group_m_op);
+    auto sub0 = B(ma::SubIOp, c32(launch_config.grid_m), first_pid_m);
+    auto group_size =
+        B(ma::SelectOp, B(ma::CmpIOp, ma::CmpIPredicate::slt, sub0, group_m_op),
+          sub0, group_m_op);
 
-    pid_m_ = b.create<ma::AddIOp>(first_pid_m,
-                                  b.create<ma::RemSIOp>(pid_nc, group_size));
+    pid_m_ = B(ma::AddIOp, first_pid_m, B(ma::RemSIOp, pid_nc, group_size));
 
-    pid_n_ = b.create<ma::DivSIOp>(b.create<ma::RemSIOp>(pid_nc, c32(width)),
-                                   group_size);
+    pid_n_ = B(ma::DivSIOp, B(ma::RemSIOp, pid_nc, c32(width)), group_size);
 
     int lhs_non_contracting_block_size = config.block_m;
     int lhs_contracting_block_size = config.block_k;
@@ -1897,37 +1906,71 @@ class Scopes {
 enum MaskExpandDimension { kMajor = 0, kMinor = 1 };
 
 Value EmitMaskOnInput(ImplicitLocOpBuilder& b,
-                      MaskExpandDimension expand_dimension, Value input,
-                      int denom, Value k, int64_t dims_k, int64_t block_k,
-                      Value pid_k) {
+                      MaskExpandDimension expand_along_dimension, Value input,
+                      int dim_k_denom, Value k, int64_t dims_k, int64_t block_k,
+                      Value pid_k, int64_t other_dim_block_size) {
   auto c32 = [&](int64_t v) { return CreateConst(b, b.getI32Type(), v); };
-  int size = block_k / denom;
-  auto elements_in_tile = b.create<ma::SubIOp>(c32(dims_k / denom), k);
-  auto cond =
-      b.create<ma::CmpIOp>(ma::CmpIPredicate::slt, elements_in_tile, c32(size));
-  auto if_op = b.create<mlir::scf::IfOp>(
-      cond, /*thenBranch=*/
+  int block_k_size = block_k / dim_k_denom;
+  auto dim_k_elements_to_keep = B(ma::SubIOp, c32(dims_k / dim_k_denom), k);
+  auto dim_k_last_tile_cond = B(ma::CmpIOp, ma::CmpIPredicate::slt,
+                                dim_k_elements_to_keep, c32(block_k_size));
+  auto input_type = mlir::cast<mlir::RankedTensorType>(input.getType());
+  auto input_element_type = input_type.getElementType();
+  auto expanded_input_type = [&](Value input) {
+    if (input_type.getRank() != 0) return input_type;
+    if (expand_along_dimension == kMajor) {
+      return mlir::RankedTensorType::get(
+          ArrayRef<int64_t>{other_dim_block_size, block_k_size},
+          input_element_type);
+    }
+    return mlir::RankedTensorType::get(
+        ArrayRef<int64_t>{block_k_size, other_dim_block_size},
+        input_element_type);
+  }(input);
+  auto if_op = B(
+      mlir::scf::IfOp, dim_k_last_tile_cond, /*thenBranch=*/
       [&](mlir::OpBuilder& builder, mlir::Location loc) {
         ImplicitLocOpBuilder b(loc, builder);
-        auto range_k = Range(b, size);
+        auto range_from_0_to_k = Range(b, block_k_size);
         if (pid_k != nullptr) {
-          range_k = b.create<ma::AddIOp>(
-              range_k, Splat(b, b.create<ma::MulIOp>(pid_k, c32(size)), size));
+          range_from_0_to_k = B(
+              ma::AddIOp, range_from_0_to_k,
+              Splat(b, B(ma::MulIOp, pid_k, c32(block_k_size)), block_k_size));
         }
-        auto ty = mlir::cast<mlir::RankedTensorType>(input.getType());
-        TensorValue range_expanded = mlir::cast<TensorValue>(
-            b.create<mt::ExpandDimsOp>(range_k, expand_dimension).getResult());
-        Value mask = b.create<mt::BroadcastOp>(
-            ty.clone(b.getI1Type()),
-            b.create<ma::CmpIOp>(ma::CmpIPredicate::slt, range_expanded,
-                                 Splat(b, elements_in_tile,
-                                       range_expanded.getType().getShape())));
-        auto result = b.create<ma::SelectOp>(mask, input, ZerosLike(b, input));
-        b.create<mlir::scf::YieldOp>(mlir::ValueRange(result));
+        TensorValue range_from_0_to_k_2d = mlir::cast<TensorValue>(
+            B(mt::ExpandDimsOp, range_from_0_to_k, expand_along_dimension)
+                .getResult());
+        auto dim_k_elements_to_keep_1d =
+            Splat(b, dim_k_elements_to_keep,
+                  range_from_0_to_k_2d.getType().getShape());
+        auto cmp = B(ma::CmpIOp, ma::CmpIPredicate::slt, range_from_0_to_k_2d,
+                     dim_k_elements_to_keep_1d);
+        auto masked_input = input;
+
+        if (input_type.getRank() == 0) {
+          masked_input = B(mt::ExpandDimsOp, masked_input, 0);
+          masked_input = B(mt::ExpandDimsOp, masked_input, 0);
+          masked_input = B(mt::BroadcastOp, expanded_input_type, masked_input);
+        }
+        Value mask =
+            B(mt::BroadcastOp, expanded_input_type.clone(b.getI1Type()), cmp);
+
+        auto zeros = CreateConst(b, input_element_type, 0,
+                                 expanded_input_type.getShape());
+        auto result = B(ma::SelectOp, mask, masked_input, zeros);
+        B(mlir::scf::YieldOp, mlir::ValueRange(result));
       },
       /*elseBranch=*/
-      [&](mlir::OpBuilder& b, mlir::Location loc) {
-        b.create<mlir::scf::YieldOp>(loc, mlir::ValueRange(input));
+      [&](mlir::OpBuilder& builder, mlir::Location loc) {
+        ImplicitLocOpBuilder b(loc, builder);
+        auto expanded_input = input;
+        if (input_type.getRank() == 0) {
+          expanded_input = B(mt::ExpandDimsOp, expanded_input, 0);
+          expanded_input = B(mt::ExpandDimsOp, expanded_input, 0);
+          expanded_input =
+              B(mt::BroadcastOp, expanded_input_type, expanded_input);
+        }
+        B(mlir::scf::YieldOp, mlir::ValueRange(expanded_input));
       });
   return if_op.getResult(0);
 }
@@ -2078,8 +2121,8 @@ absl::Status EmitMatMul(mlir::OpBuilder builder,
       if (increments.empty()) {
         iter_args_next.push_back(iter_args[i]);
       } else {
-        iter_args_next.push_back(b.create<mt::AdvanceOp>(
-            iter_args[i].getType(), iter_args[i], increments));
+        iter_args_next.push_back(
+            B(mt::AdvanceOp, iter_args[i].getType(), iter_args[i], increments));
       }
     }
 
@@ -2098,18 +2141,19 @@ absl::Status EmitMatMul(mlir::OpBuilder builder,
     if (need_masking) {
       dot_input_lhs = EmitMaskOnInput(b, MaskExpandDimension::kMajor,
                                       dot_input_lhs, is_sparse ? 2 : 1, ki,
-                                      dims.k, block_k, scopes.pid_k());
+                                      dims.k, block_k, scopes.pid_k(), block_m);
       dot_input_rhs =
           EmitMaskOnInput(b, MaskExpandDimension::kMinor, dot_input_rhs, 1, ki,
-                          dims.k, block_k, scopes.pid_k());
+                          dims.k, block_k, scopes.pid_k(), block_n);
       // Masking the metadata is not necessary, as the inputs are masked
       // (i.e. zeroed out), so the padded metadata can hold any values.
     }
 
     if (is_sparse) {
-      iter_args_next.push_back(b.create<mt::xla::SparseDotOp>(
-          dot_input_lhs, dot_input_rhs, iter_args.back(), dot_input_meta));
-      b.create<mlir::scf::YieldOp>(iter_args_next);
+      iter_args_next.push_back(B(mt::xla::SparseDotOp, dot_input_lhs,
+                                 dot_input_rhs, iter_args.back(),
+                                 dot_input_meta));
+      B(mlir::scf::YieldOp, iter_args_next);
       return;
     }
 
@@ -2158,13 +2202,13 @@ absl::Status EmitMatMul(mlir::OpBuilder builder,
       int max_num_imprecise_acc =
           IsFp8Matmul(dot_instr) ? std::numeric_limits<int>::max() : 0;
       accumulator_next =
-          b.create<mt::DotOp>(dot_input_lhs, dot_input_rhs, iter_args.back(),
-                              /*inputPrecision=*/dot_precision,
-                              /*maxNumImpreciseAcc=*/max_num_imprecise_acc);
+          B(mt::DotOp, dot_input_lhs, dot_input_rhs, iter_args.back(),
+            /*inputPrecision=*/dot_precision,
+            /*maxNumImpreciseAcc=*/max_num_imprecise_acc);
     }
     iter_args_next.push_back(accumulator_next);
 
-    b.create<mlir::scf::YieldOp>(iter_args_next);
+    B(mlir::scf::YieldOp, iter_args_next);
     return;
   };
 
@@ -2234,8 +2278,8 @@ absl::Status EmitMatMul(mlir::OpBuilder builder,
             producer, scopes.out(),
             {fn.getArgument(i + dot_instr->parent()->num_parameters())},
             scopes.pid_k(), boundary_checks));
-    b.create<mt::StoreOp>(tensor_pointer, values_out[producer], boundary_checks,
-                          mt::CacheModifier::NONE, mt::EvictionPolicy::NORMAL);
+    B(mt::StoreOp, tensor_pointer, values_out[producer], boundary_checks,
+      mt::CacheModifier::NONE, mt::EvictionPolicy::NORMAL);
   }
   return absl::OkStatus();
 }
