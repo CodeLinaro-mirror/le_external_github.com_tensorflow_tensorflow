@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_PROFILING_MEMORY_USAGE_MONITOR_H_
 #define TENSORFLOW_LITE_PROFILING_MEMORY_USAGE_MONITOR_H_
 
+#include <cstdint>
 #include <memory>
 #include <thread>  // NOLINT(build/c++11)
 
@@ -48,7 +49,7 @@ class MemoryUsageMonitor {
     }
   };
 
-  static constexpr float kInvalidMemUsageMB = -1.0f;
+  static constexpr int64_t kInvalidMemUsageMB = -1024 * 1024;
 
   explicit MemoryUsageMonitor(int sampling_interval_ms = 50)
       : MemoryUsageMonitor(sampling_interval_ms, std::make_unique<Sampler>()) {}
@@ -68,7 +69,15 @@ class MemoryUsageMonitor {
     if (!is_supported_ || check_memory_thd_ != nullptr) {
       return kInvalidMemUsageMB;
     }
-    return peak_mem_footprint_kb_ / 1024.0;
+    return BytesToMegabytes(peak_mem_footprint_bytes_);
+  }
+
+  float GetCurrentInUseMemoryInMB() const {
+    return BytesToMegabytes(sampler_->GetMemoryUsage().in_use_allocated_bytes);
+  }
+
+  float GetPeakInUseMemoryInMB() const {
+    return BytesToMegabytes(peak_in_use_mem_bytes_);
   }
 
   MemoryUsageMonitor(MemoryUsageMonitor&) = delete;
@@ -77,6 +86,9 @@ class MemoryUsageMonitor {
   MemoryUsageMonitor& operator=(const MemoryUsageMonitor&&) = delete;
 
  private:
+  inline float BytesToMegabytes(int64_t bytes) const {
+    return bytes / 1024.0 / 1024.0;
+  }
   void StopInternal();
 
   std::unique_ptr<Sampler> sampler_ = nullptr;
@@ -84,8 +96,8 @@ class MemoryUsageMonitor {
   std::unique_ptr<absl::Notification> stop_signal_ = nullptr;
   absl::Duration sampling_interval_;
   std::unique_ptr<std::thread> check_memory_thd_ = nullptr;
-  int64_t peak_mem_footprint_kb_ =
-      static_cast<int64_t>(kInvalidMemUsageMB * 1024);
+  int64_t peak_mem_footprint_bytes_ = kInvalidMemUsageMB;
+  int64_t peak_in_use_mem_bytes_ = kInvalidMemUsageMB;
 };
 
 }  // namespace memory
