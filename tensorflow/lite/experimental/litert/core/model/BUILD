@@ -131,3 +131,24 @@ cc_library(
         "//tensorflow/lite/schema:schema_fbs",
     ],
 )
+
+cc_library(
+    name = "model_buffer",
+    srcs = ["model_buffer.cc"],
+    hdrs = ["model_buffer.h"],
+    deps = [
+        ":model",
+        ":model_load",
+        ":model_serialize",
+        "//tensorflow/lite/experimental/litert/c:litert_common",
+        "//tensorflow/lite/experimental/litert/c:litert_op_code",
+        "//tensorflow/lite/experimental/litert/cc:litert_buffer_ref",
+        "//tensorflow/lite/experimental/litert/cc:litert_expected",
+        "//tensorflow/lite/experimental/litert/cc:litert_model",
+        "//tensorflow/lite/experimental/litert/core:byte_code_util",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
