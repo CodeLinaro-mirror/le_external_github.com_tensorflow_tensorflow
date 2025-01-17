@@ -30,11 +30,11 @@ namespace emitters {
 std::unique_ptr<mlir::Pass> CreateExpandFloatOpsPass();
 std::unique_ptr<mlir::Pass> CreateFlattenTensorsPass();
 std::unique_ptr<mlir::Pass> CreateLowerTensorsPass(
-    const std::string& gpu_device_info = "");
+    const std::string& gpu_device_info = "", bool is_cpu_target_ = false);
 std::unique_ptr<mlir::Pass> CreateLowerTensorsPass(
     const stream_executor::DeviceDescription& device_description);
 std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass(
-    const std::string& gpu_device_info = "");
+    const std::string& gpu_device_info = "", bool is_cpu_target_ = false);
 std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass(
     const stream_executor::DeviceDescription& device_description);
 

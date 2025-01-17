@@ -98,9 +98,20 @@ namespace scf = ::mlir::scf;
 namespace ml = ::mlir::LLVM;
 namespace vector = ::mlir::vector;
 
-bool IsAMD(const se::DeviceDescription& device_description) {
+struct CpuDeviceDescription {};
+using DeviceDescription =
+    std::variant<se::DeviceDescription, CpuDeviceDescription>;
+
+bool IsCpu(const DeviceDescription& device_description) {
+  return std::holds_alternative<CpuDeviceDescription>(device_description);
+}
+
+bool IsAMD(const DeviceDescription& device_description) {
+  if (IsCpu(device_description)) return false;
+  const auto& gpu_device_description =
+      std::get<se::DeviceDescription>(device_description);
   return std::holds_alternative<se::RocmComputeCapability>(
-      device_description.gpu_compute_capability());
+      gpu_device_description.gpu_compute_capability());
 }
 
 Value GetDestinationBuffer(Value dest) {
@@ -755,7 +766,7 @@ Value CreateBitcast(mlir::ImplicitLocOpBuilder& b, mlir::Operation* op,
 class RewriteAtomicRMW : public OpRewritePattern<AtomicRMWOp> {
  public:
   RewriteAtomicRMW(mlir::MLIRContext* context,
-                   const se::DeviceDescription* device_description)
+                   const DeviceDescription& device_description)
       : OpRewritePattern<AtomicRMWOp>(context),
         device_description_(device_description) {}
 
@@ -764,8 +775,10 @@ class RewriteAtomicRMW : public OpRewritePattern<AtomicRMWOp> {
     auto modifier_parameters = GetAtomicModifierParameters(op);
     if (modifier_parameters.has_value()) {
       if (mlir::isa<mlir::VectorType>(modifier_parameters->first.getType()) &&
-          (IsAMD(*device_description_) ||
-           !device_description_->cuda_compute_capability().IsAtLeastHopper())) {
+          (IsCpu(device_description_) || IsAMD(device_description_) ||
+           !std::get<se::DeviceDescription>(device_description_)
+                .cuda_compute_capability()
+                .IsAtLeastHopper())) {
         return rewriter.notifyMatchFailure(
             op,
             "atomic vectorization currently only supported on Hopper or later");
@@ -790,12 +803,14 @@ class RewriteAtomicRMW : public OpRewritePattern<AtomicRMWOp> {
       std::optional<std::pair<mlir::Value, ml::AtomicBinOp>>
           modifier_parameters,
       mlir::PatternRewriter& rewriter) const {
+    CHECK(!IsCpu(device_description_)) << "Unimplemented";
+
     Value modifier_arg = modifier_parameters->first;
     Type element_type = modifier_arg.getType();
     ml::AtomicBinOp atomic_bin_op = modifier_parameters->second;
 
     Location loc = op.getLoc();
-    bool is_amd = IsAMD(*device_description_);
+    bool is_amd = IsAMD(device_description_);
     llvm::StringRef sync_scope = is_amd ? "agent" : "";
     mlir::ImplicitLocOpBuilder b(loc, rewriter);
     Value addr = CreateGep(op.getInput(), op.getIndices(), b);
@@ -821,13 +836,15 @@ class RewriteAtomicRMW : public OpRewritePattern<AtomicRMWOp> {
       }
       case ml::AtomicBinOp::fadd: {
         // TODO(b/336367154): Introduce an atomic_rmw op with the binOp attr.
+        const auto& gpu_device_description =
+            std::get<se::DeviceDescription>(device_description_);
         return is_amd ? emitAMDAtomicFAdd(
                             loc, modifier_arg, addr, sync_scope,
-                            device_description_->rocm_compute_capability(),
+                            gpu_device_description.rocm_compute_capability(),
                             rewriter)
                       : emitNVidiaAtomicFAdd(
                             loc, modifier_arg, addr, sync_scope,
-                            device_description_->cuda_compute_capability(),
+                            gpu_device_description.cuda_compute_capability(),
                             rewriter, op);
       }
       case ml::AtomicBinOp::fmax: {
@@ -1148,7 +1165,7 @@ class RewriteAtomicRMW : public OpRewritePattern<AtomicRMWOp> {
         });
   }
 
-  const se::DeviceDescription* device_description_;
+  const DeviceDescription& device_description_;
 };
 
 class LowerTensorsPass : public impl::LowerTensorsPassBase<LowerTensorsPass> {
@@ -1161,15 +1178,19 @@ class LowerTensorsPass : public impl::LowerTensorsPassBase<LowerTensorsPass> {
 
   void runOnOperation() override {
     if (!gpu_device_info_.empty()) {
+      CHECK(!is_cpu_target_);
       se::GpuDeviceInfoProto device_info;
       CHECK(tsl::protobuf::TextFormat::ParseFromString(gpu_device_info_,
                                                        &device_info));
       device_description_ = se::DeviceDescription(device_info);
+    } else if (is_cpu_target_) {
+      device_description_ = CpuDeviceDescription{};
     }
+
     MLIRContext* mlir_context = &getContext();
     mlir::RewritePatternSet tensor_patterns(mlir_context);
 
-    tensor_patterns.add<RewriteAtomicRMW>(mlir_context, &device_description_);
+    tensor_patterns.add<RewriteAtomicRMW>(mlir_context, device_description_);
     tensor_patterns
         .add<RewriteAllocateShared, RewriteNonScalarConstants,
              RewriteSyncThreads, RewriteTensorExtract, RewriteTransferRead,
@@ -1220,15 +1241,16 @@ class LowerTensorsPass : public impl::LowerTensorsPassBase<LowerTensorsPass> {
       signalPassFailure();
     });
   }
-  se::DeviceDescription device_description_;
+  DeviceDescription device_description_;
 };
 
 }  // namespace
 
 std::unique_ptr<::mlir::Pass> CreateLowerTensorsPass(
-    const std::string& gpu_device_info) {
+    const std::string& gpu_device_info, bool is_cpu_target) {
   LowerTensorsPassOptions options;
   options.gpu_device_info_ = gpu_device_info;
+  options.is_cpu_target_ = is_cpu_target;
   return std::make_unique<LowerTensorsPass>(options);
 }
 
