@@ -1751,6 +1751,15 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
                                  noop_flag_setter<bool>, true,
                                  "[Deprecated, do not use]"));
   flag_list->push_back(tsl::Flag(
+      "xla_gpu_experimental_enable_subchannel_dequantisation_fusion",
+      bool_setter_for(
+          &DebugOptions::
+              set_xla_gpu_experimental_enable_subchannel_dequantisation_fusion),
+      debug_options
+          ->xla_gpu_experimental_enable_subchannel_dequantisation_fusion(),
+      "Enable fusion for the subchannel dequantisation sequences like "
+      "[x,z]param -> [x,y,z]broadcast -> [x*y,z]bitcast -> multiply -> dot."));
+  flag_list->push_back(tsl::Flag(
       "xla_gpu_experimental_enable_triton_heroless_priority_fusion",
       bool_setter_for(
           &DebugOptions::
