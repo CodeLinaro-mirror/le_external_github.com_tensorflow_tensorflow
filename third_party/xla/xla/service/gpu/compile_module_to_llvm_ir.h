@@ -66,7 +66,7 @@ absl::Status LoadCache(IrEmitterContext& ir_emitter_context,
                        absl::string_view cache_file_path);
 
 absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
-    HloModule* hlo_module, llvm::LLVMContext* llvm_context,
+    const HloModule* hlo_module, llvm::LLVMContext* llvm_context,
     const std::string& target_triple, const std::string& data_layout,
     const std::string& platform_name, se::Platform::Id platform_id,
     const se::DeviceDescription& gpu_device_info,
