@@ -163,12 +163,17 @@ absl::StatusOr<std::vector<uint8_t>> CompileAndLinkUsingLibNvJitLink(
   absl::c_transform(cli_args, std::back_inserter(cli_args_ptrs),
                     [](const std::string& s) { return s.c_str(); });
 
-  nvJitLinkHandle link_handle{};
-  RETURN_IF_NVJITLINK_ERROR(nvJitLinkCreate(&link_handle, cli_args_ptrs.size(),
-                                            cli_args_ptrs.data()));
+  nvJitLinkHandle link_handle = nullptr;
+  auto create_status =
+      nvJitLinkCreate(&link_handle, cli_args_ptrs.size(), cli_args_ptrs.data());
+
   absl::Cleanup link_handle_cleaner = [&link_handle] {
-    CHECK_EQ(nvJitLinkDestroy(&link_handle), NVJITLINK_SUCCESS);
+    if (link_handle) {
+      CHECK_EQ(nvJitLinkDestroy(&link_handle), NVJITLINK_SUCCESS);
+    }
   };
+
+  RETURN_IF_NVJITLINK_ERROR(create_status);
 
   for (auto& image : inputs) {
     nvJitLinkInputType input_type = image.type == NvJitLinkInput::Type::kPtx
