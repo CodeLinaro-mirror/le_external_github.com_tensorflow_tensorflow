@@ -86,6 +86,10 @@ absl::Status TritonToLLVM(
 
   constexpr int threadsPerWarp = 32;
 
+  bool is_at_least_ampere = cc >= 80;
+  bool is_at_least_hopper = cc >= 90;
+  bool is_at_least_blackwell = cc >= 100;
+
   mlir::PassManager pm(module.getContext());
   pm.enableVerifier();
 
@@ -96,15 +100,14 @@ absl::Status TritonToLLVM(
   pm.addPass(mlir::triton::createCombineOpsPass());
   pm.addPass(mlir::triton::createReorderBroadcastPass());
   pm.addPass(mlir::createCSEPass());
-  pm.addPass(mlir::createLoopInvariantCodeMotionPass());
   pm.addPass(mlir::createSymbolDCEPass());
   pm.addPass(mlir::triton::createLoopUnrollPass());
 
-  // Based on make_tgir() in triton/third_party/nvidia/backend/compiler.py
+  // Based on make_ttgir() in triton/third_party/nvidia/backend/compiler.py
   pm.addPass(mlir::triton::createConvertTritonToTritonGPUPass(
       absl::StrFormat("cuda:%u", cc), num_warps, threadsPerWarp, num_ctas));
   pm.addPass(mlir::triton::gpu::createTritonGPUCoalesce());
-  if (cc / 10 >= 8) {
+  if (is_at_least_ampere) {
     pm.addPass(mlir::triton::gpu::createTritonGPUF32DotTC());
   }
   pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(out_cluster_info));
@@ -112,25 +115,42 @@ absl::Status TritonToLLVM(
   pm.addPass(mlir::triton::gpu::createTritonGPUOptimizeThreadLocality());
   pm.addPass(mlir::triton::gpu::createTritonGPUAccelerateMatmul());
   pm.addPass(mlir::triton::gpu::createTritonGPURemoveLayoutConversions());
-  pm.addPass(
-      mlir::triton::gpu::createTritonGPUOptimizeDotOperands({cc / 10 >= 8}));
+  pm.addPass(mlir::triton::gpu::createTritonGPUOptimizeDotOperands(
+      {is_at_least_ampere}));
   pm.addPass(mlir::createCSEPass());
-  if (cc / 10 >= 8) {
+  if (is_at_least_blackwell) {
+    pm.addPass(mlir::triton::gpu::createTritonGPUFuseNestedLoops());
+    pm.addPass(mlir::createCanonicalizerPass());
+    pm.addPass(mlir::createLoopInvariantCodeMotionPass());
     pm.addPass(mlir::triton::gpu::createTritonGPUOptimizeAccumulatorInit());
+    pm.addPass(mlir::triton::gpu::createTritonGPULoopScheduling({num_stages}));
+    pm.addPass(mlir::triton::gpu::createTritonGPUPipeline({num_stages}));
+    pm.addPass(mlir::triton::gpu::createTritonGPUCombineTensorSelectAndIf());
+    pm.addPass(mlir::createTritonNvidiaGPUPromoteLHSToTMemPass());
+    pm.addPass(mlir::createTritonNvidiaGPUKeepAccInTMemPass());
+    pm.addPass(mlir::createCanonicalizerPass());
+  } else if (is_at_least_ampere) {
+    pm.addPass(mlir::triton::gpu::createTritonGPUFuseNestedLoops());
+    pm.addPass(mlir::createCanonicalizerPass());
+    pm.addPass(mlir::createLoopInvariantCodeMotionPass());
+    pm.addPass(mlir::triton::gpu::createTritonGPUOptimizeAccumulatorInit());
+    pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(mlir::triton::gpu::createTritonGPUCombineTensorSelectAndIf());
     pm.addPass(mlir::triton::gpu::createTritonGPULoopScheduling({num_stages}));
     pm.addPass(mlir::triton::gpu::createTritonGPUPipeline({num_stages}));
+  } else {
+    pm.addPass(mlir::createLoopInvariantCodeMotionPass());
   }
   pm.addPass(mlir::triton::gpu::createTritonGPUPrefetch());
-  pm.addPass(
-      mlir::triton::gpu::createTritonGPUOptimizeDotOperands({cc / 10 >= 8}));
+  pm.addPass(mlir::triton::gpu::createTritonGPUOptimizeDotOperands(
+      {is_at_least_ampere}));
   pm.addPass(mlir::triton::gpu::createTritonGPUCoalesceAsyncCopy());
   pm.addPass(mlir::triton::gpu::createTritonGPURemoveLayoutConversions());
   pm.addPass(mlir::triton::gpu::createTritonGPUReduceDataDuplication());
   pm.addPass(mlir::triton::gpu::createTritonGPUReorderInstructions());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
-  if (cc / 10 >= 9) {
+  if (is_at_least_hopper) {
     pm.addPass(mlir::createTritonNvidiaGPUFenceInsertionPass(cc));
     pm.addPass(mlir::createTritonNvidiaGPUTMALoweringPass());
   }
@@ -139,12 +159,17 @@ absl::Status TritonToLLVM(
   // Based on make_llir() in triton/third_party/nvidia/backend/compiler.py
   // TODO(slebedev): Uncomment once we upgrade Triton internally.
   // pm.addPass(mlir::triton::NVIDIA::createDecomposeUnsupportedConversionsPass());
+  pm.addPass(mlir::createTritonNvidiaGPUMMALoweringPass());
   pm.addPass(mlir::triton::gpu::createTritonGPUCombineTensorSelectAndIf());
   pm.addPass(mlir::createSCFToControlFlowPass());
   pm.addPass(mlir::createConvertIndexToLLVMPass());
   pm.addPass(mlir::triton::gpu::createAllocateSharedMemoryPass());
   pm.addPass(mlir::triton::gpu::createTritonGPUGlobalScratchAllocationPass());
+  pm.addPass(mlir::createTensorMemoryAllocationPass());
+  pm.addPass(mlir::triton::gpu::createTritonGPUGlobalScratchAllocationPass());
   pm.addPass(mlir::triton::createConvertTritonGPUToLLVMPass(cc));
+  pm.addPass(mlir::createCanonicalizerPass());
+  pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::triton::createConvertNVGPUToLLVMPass());
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createCanonicalizerPass());
