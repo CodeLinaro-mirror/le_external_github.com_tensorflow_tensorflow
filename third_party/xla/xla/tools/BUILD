@@ -762,6 +762,26 @@ cc_library(
     alwayslink = True,
 )
 
+xla_cc_binary(
+    name = "compute_gpu_device_stats",
+    srcs = ["compute_gpu_device_stats.cc"],
+    deps = [
+        "//xla:debug_options_flags",
+        "//xla/tsl/platform:env",
+        "//xla/tsl/platform:errors",
+        "//xla/tsl/platform:status",
+        "//xla/tsl/util:command_line_flags",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@local_tsl//tsl/platform:platform_port",
+        "@local_tsl//tsl/profiler/protobuf:xplane_proto_cc",
+    ],
+)
+
 tsl_pybind_extension(
     name = "collective_perf_table_gen_bindings",
     srcs = ["collective_perf_table_gen_bindings.cc"],
