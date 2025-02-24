@@ -108,15 +108,14 @@ class SharedLibrary {
   }
 
   // Loads the library as the RTLD_NEXT special handle.
-  static Expected<SharedLibrary> Load(RtldFlags::NextTag,
-                                      RtldFlags flags) noexcept {
-    return LoadImpl(HandleKind::kRtldNext, "", flags);
+  static Expected<SharedLibrary> Load(RtldFlags::NextTag) noexcept {
+    return LoadImpl(HandleKind::kRtldNext, "", RtldFlags{});
   }
 
   // Loads the library as the RTLD_DEFAULT special handle.
-  static Expected<SharedLibrary> Load(RtldFlags::DefaultTag,
-                                      RtldFlags flags) noexcept {
-    return LoadImpl(HandleKind::kRtldDefault, "", flags);
+  static Expected<SharedLibrary> Load(RtldFlags::DefaultTag) noexcept {
+    auto l = LoadImpl(HandleKind::kRtldDefault, "", RtldFlags{});
+    return l;
   }
 
   // Gets the last shared library operation error if there was one.
