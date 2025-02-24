@@ -1,4 +1,5 @@
 // RUN: xla-opt %s -split-input-file -triton-xla-extract-insert-to-triton | FileCheck %s
+
 tt.func @lower_tile_extract_insert(%arg0: tensor<512x128xbf16>,
           %arg1: tensor<256x256xbf16>) -> tensor<256x256xbf16> {
   %cst = arith.constant 1 : i32
@@ -22,3 +23,18 @@ tt.func @lower_tile_extract_insert(%arg0: tensor<512x128xbf16>,
 // CHECK:         %[[ADV_1:.*]] = tt.advance %[[PTR_1]]
 // CHECK:         tt.store %[[ADV_1]], %[[LOAD]]
 // CHECK:       tt.return
+
+// -----
+
+tt.func @lower_scalar_extract_insert(%in: tensor<bf16>,
+                                     %out: tensor<bf16>) -> tensor<bf16> {
+  %scalar = tensor.extract %in[] : tensor<bf16>
+  %updated_tensor = tensor.insert %scalar into %out [] : tensor<bf16>
+  tt.return %updated_tensor : tensor<bf16>
+}
+
+// CHECK-LABEL: func @lower_scalar_extract_insert
+// CHECK-SAME:  %[[ARG0:.*]]: !tt.ptr<bf16>, %[[ARG1:.*]]: !tt.ptr<bf16>
+// CHECK:    %[[ELEM:.*]] = tt.load %[[ARG0]] : !tt.ptr<bf16>
+// CHECK:    tt.store %[[ARG1]], %[[ELEM]] : !tt.ptr<bf16>
+// CHECK:    tt.return

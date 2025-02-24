@@ -619,6 +619,7 @@ lit_test_suite(
 #         "//xla/codegen/emitters/transforms:passes",
 #         "@llvm-project//mlir:AllExtensions",
 #         "@llvm-project//mlir:MlirOptLib",
+#         "@llvm-project//mlir:TensorDialect",
 #         "@triton//:AllPassesAndDialects",
 #     ],
 # )
