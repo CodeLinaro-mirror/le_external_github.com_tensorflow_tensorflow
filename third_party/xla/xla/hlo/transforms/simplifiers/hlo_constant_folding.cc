@@ -69,6 +69,47 @@ static bool IsOrContainsIllegalInstr(const HloInstruction* instr) {
   return false;
 }
 
+// Checks if  any of the operands of the instruction are constants.
+// Any tuples are recursively checked.
+bool AnyOperandsConstant(const HloInstruction* instr) {
+  for (const HloInstruction* operand : instr->operands()) {
+    HloOpcode opcode = operand->opcode();
+
+    if (opcode == HloOpcode::kTuple) {
+      if (AnyOperandsConstant(operand)) {
+        return true;
+      }
+    } else if (opcode == HloOpcode::kConstant) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Checks if all of the operands of the instruction are constants or broadcasts
+// of constants (iota is a broadcast of a constant from the standpoint of
+// constant folding).
+// Any tuples are recursively checked.
+bool AllOperandsConstantOrBroadcastConstant(const HloInstruction* instr) {
+  for (const HloInstruction* operand : instr->operands()) {
+    HloOpcode opcode = operand->opcode();
+
+    if (opcode == HloOpcode::kTuple) {
+      if (!AllOperandsConstantOrBroadcastConstant(operand)) {
+        return false;
+      }
+    } else if (opcode != HloOpcode::kConstant &&
+               !(opcode == HloOpcode::kBroadcast &&
+                 operand->operand(0)->opcode() == HloOpcode::kConstant) &&
+               opcode != HloOpcode::kIota) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /*static*/ std::atomic<int64_t> HloConstantFolding::slow_op_counter_{0};
 
 absl::Status RecursivelyRemoveDeadInstructionAndDeadOperands(
@@ -104,7 +145,8 @@ absl::StatusOr<bool> HloConstantFolding::Run(
   // Limit the constant folding to 0 iterations to skip folding loops. This
   // retains the behavior from before while loop support in HloEvaluator and may
   // be revised.
-  auto evaluator = std::make_unique<HloEvaluator>(/*max_loop_iterations=*/0);
+  auto evaluator = std::make_unique<HloEvaluator>(
+      /*max_loop_iterations=*/fold_all_constants_ ? -1 : 0);
   // fast-path lets us e.g. use Eigen for matmuls.
   evaluator->set_use_fast_path(true);
 
@@ -137,14 +179,10 @@ absl::StatusOr<bool> HloConstantFolding::Run(
       //  - So the only remaining case is where some but not all operands are
       //    broadcasts of constants, e.g. op(constant, broadcast(constant)).
       //
-      if (!absl::c_any_of(instruction->operands(),
-                          HloPredicateIsOp<HloOpcode::kConstant>) ||
-          !absl::c_all_of(
-              instruction->operands(), [](const HloInstruction* operand) {
-                return operand->opcode() == HloOpcode::kConstant ||
-                       (operand->opcode() == HloOpcode::kBroadcast &&
-                        operand->operand(0)->opcode() == HloOpcode::kConstant);
-              })) {
+      if (!fold_all_constants_ && !AnyOperandsConstant(instruction)) {
+        continue;
+      }
+      if (!AllOperandsConstantOrBroadcastConstant(instruction)) {
         continue;
       }
 
@@ -204,7 +242,7 @@ absl::StatusOr<bool> HloConstantFolding::Run(
       }
 
       // Don't constant fold unless output and operand sizes are small.
-      if (instruction->shape().IsArray()) {
+      if (!fold_all_constants_ && instruction->shape().IsArray()) {
         int64_t elements_in_operands = 0;
         for (HloInstruction* operand : instruction->operands()) {
           if (operand->shape().IsArray()) {

@@ -31,6 +31,8 @@ namespace xla {
 // computation on constants.
 class HloConstantFolding : public HloModulePass {
  public:
+  explicit HloConstantFolding(bool fold_all_constants = false)
+      : fold_all_constants_(fold_all_constants) {}
   absl::string_view name() const override { return "constant_folding"; }
 
   // Run constant folding operations on the given module. Returns whether the
@@ -44,6 +46,8 @@ class HloConstantFolding : public HloModulePass {
   // Number of slow constant-folds we've encountered.  Used for firing
   // SlowOperationAlarms.
   static std::atomic<int64_t> slow_op_counter_;
+
+  bool fold_all_constants_;
 };
 
 }  // namespace xla
