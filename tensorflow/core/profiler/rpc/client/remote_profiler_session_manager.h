@@ -16,24 +16,30 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_PROFILER_RPC_CLIENT_REMOTE_PROFILER_SESSION_MANAGER_H_
 #define TENSORFLOW_CORE_PROFILER_RPC_CLIENT_REMOTE_PROFILER_SESSION_MANAGER_H_
 
-#include <functional>
-#include <memory>
-#include <vector>
+#include <string>
+#include <string_view>
 
-#include "absl/strings/string_view.h"
+#include "absl/base/macros.h"
 #include "xla/tsl/profiler/rpc/client/remote_profiler_session_manager.h"
-#include "tensorflow/core/platform/macros.h"
-#include "tensorflow/core/platform/mutex.h"
-#include "tensorflow/core/platform/status.h"
-#include "tensorflow/core/platform/thread_annotations.h"
-#include "tensorflow/core/platform/types.h"
-#include "tensorflow/core/profiler/rpc/client/profiler_client.h"
+
+// TODO: b/323943471 - This macro should eventually be provided by Abseil.
+#ifndef ABSL_DEPRECATE_AND_INLINE
+#define ABSL_DEPRECATE_AND_INLINE()
+#endif
 
 namespace tensorflow {
 namespace profiler {
 
-using tsl::profiler::AddressResolver;               // NOLINT
-using tsl::profiler::RemoteProfilerSessionManager;  // NOLINT
+using tsl::profiler::AddressResolver;  // NOLINT
+
+ABSL_DEPRECATE_AND_INLINE()
+inline std::string ResolveAddress(tsl::profiler::AddressResolver resolver,
+                                  std::string_view address) {
+  return resolver(address);
+}
+
+using RemoteProfilerSessionManager ABSL_DEPRECATE_AND_INLINE() =
+    tsl::profiler::RemoteProfilerSessionManager;  // NOLINT
 
 }  // namespace profiler
 }  // namespace tensorflow
