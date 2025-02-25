@@ -21,6 +21,7 @@
 #include "tensorflow/lite/experimental/litert/c/litert_any.h"
 #include "tensorflow/lite/experimental/litert/c/litert_environment.h"
 #include "tensorflow/lite/experimental/litert/cc/litert_any.h"
+#include "tensorflow/lite/experimental/litert/cc/litert_expected.h"
 
 namespace litert::internal {
 namespace {
@@ -34,6 +35,27 @@ TEST(LiteRtEnvironmentT, CreateWithOptions) {
   };
   auto env = LiteRtEnvironmentT::CreateWithOptions(environment_options);
   ASSERT_TRUE(env);
+
+  auto option = (*env)->GetOption(kLiteRtEnvOptionTagCompilerPluginLibraryDir);
+  ASSERT_TRUE(option.has_value());
+  ASSERT_EQ(option->type, kLiteRtAnyTypeString);
+  ASSERT_STREQ(option->str_value, "sample path");
+}
+
+TEST(LiteRtEnvironmentT, CheckStringCopy) {
+  litert::Expected<LiteRtEnvironmentT::Ptr> env;
+
+  // The passed string becomes obsolete after the scope.
+  {
+    const std::array<LiteRtEnvOption, 1> environment_options = {
+        LiteRtEnvOption{
+            kLiteRtEnvOptionTagCompilerPluginLibraryDir,
+            *ToLiteRtAny(std::any("sample path")),
+        },
+    };
+    env = LiteRtEnvironmentT::CreateWithOptions(environment_options);
+    ASSERT_TRUE(env);
+  }
 
   auto option = (*env)->GetOption(kLiteRtEnvOptionTagCompilerPluginLibraryDir);
   ASSERT_TRUE(option.has_value());
