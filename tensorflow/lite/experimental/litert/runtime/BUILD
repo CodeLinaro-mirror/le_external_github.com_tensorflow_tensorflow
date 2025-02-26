@@ -17,7 +17,10 @@ load("//tensorflow/lite/experimental/litert/build_common:special_rule.bzl", "gle
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
-    default_visibility = ["//tensorflow/lite/experimental/litert:__subpackages__"],
+    default_visibility = [
+        "//tensorflow/lite/experimental/litert:__subpackages__",
+        "//third_party/darwinn/tflite:__subpackages__",
+    ],
 )
 
 cc_library(
