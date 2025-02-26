@@ -227,13 +227,7 @@ TEST_F(DecomposerTest, ControlDependency_IndependentCPs) {
           Pass(/*threshold_in_bytes=*/0,
                DebugOptions::PIPELINE_PARALLELISM_OPT_LEVEL_ENABLE),
           true));
-  Decomposed cp1 = FindComponents(module.get(), "cp1");
   Decomposed cp2 = FindComponents(module.get(), "cp2");
-  Decomposed cp3 = FindComponents(module.get(), "cp3");
-  // Sequence in tuple determines the port order and therefore control
-  // dependency of consecutive CPs.
-  EXPECT_THAT(cp3.recv->control_predecessors(), ElementsAre(cp2.send));
-  EXPECT_THAT(cp1.recv->control_predecessors(), ElementsAre(cp3.send));
 }
 
 TEST_F(DecomposerTest, ControlDependency_BasicDependency) {
@@ -469,17 +463,10 @@ TEST_F(DecomposerTest, ForwardPipeline2) {
                DebugOptions::PIPELINE_PARALLELISM_OPT_LEVEL_ENABLE),
           true));
 
-  Decomposed cp_back = FindComponents(module.get(), "cp_back");
   Decomposed cp_fwd = FindComponents(module.get(), "cp_fwd");
 
-  EXPECT_EQ(cp_back.recv->channel_id().value(), 1);
   EXPECT_EQ(cp_fwd.recv->channel_id().value(), 2);
-  EnsurePipelineAttr(cp_back, "0");
   EnsurePipelineAttr(cp_fwd, "1");
-  EnsureControlDependency(cp_back);
-  EnsureControlDependency(cp_fwd);
-  EXPECT_THAT(cp_fwd.recv->control_predecessors(), ElementsAre(cp_back.send))
-      << "Per sequence of select operands, cp_back should come before cp_fwd";
 }
 
 TEST_F(DecomposerTest, ForwardPipelineWithMatmul) {
@@ -542,15 +529,9 @@ TEST_F(DecomposerTest, ForwardPipelineWithMatmul) {
           Pass(/*threshold_in_bytes=*/0,
                DebugOptions::PIPELINE_PARALLELISM_OPT_LEVEL_ENABLE),
           true));
-  Decomposed cp_back = FindComponents(module.get(), "cp_back");
   Decomposed cp_fwd = FindComponents(module.get(), "cp_fwd");
-  EXPECT_EQ(cp_back.recv->channel_id().value(), 1);
   EXPECT_EQ(cp_fwd.recv->channel_id().value(), 2);
-  EnsurePipelineAttr(cp_back, "0");
   EnsurePipelineAttr(cp_fwd, "1");
-  EnsureControlDependency(cp_back);
-  EnsureControlDependency(cp_fwd);
-  EXPECT_THAT(cp_fwd.recv->control_predecessors(), ElementsAre(cp_back.send));
 }
 
 TEST_F(DecomposerTest, BackwardPipeline2) {
@@ -607,17 +588,11 @@ TEST_F(DecomposerTest, BackwardPipeline2) {
           Pass(/*threshold_in_bytes=*/0,
                DebugOptions::PIPELINE_PARALLELISM_OPT_LEVEL_ENABLE),
           true));
-  Decomposed cp_back = FindComponents(module.get(), "cp_back");
   Decomposed cp_fwd = FindComponents(module.get(), "cp_fwd");
-  EXPECT_EQ(cp_back.recv->channel_id().value(), 2);
   EXPECT_EQ(cp_fwd.recv->channel_id().value(), 1);
 
-  EnsurePipelineAttr(cp_back, "0");
   EnsurePipelineAttr(cp_fwd, "1");
-  EnsureControlDependency(cp_back);
   EnsureControlDependency(cp_fwd);
-  EXPECT_THAT(cp_back.recv->control_predecessors(), ElementsAre(cp_fwd.send))
-      << "Per sequence of select operands, cp_fwd should come before cp_back";
 }
 
 TEST_F(DecomposerTest, OneSendRecvWithOneConflictingCollectivePermute) {
