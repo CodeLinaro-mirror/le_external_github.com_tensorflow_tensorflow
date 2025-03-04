@@ -657,7 +657,7 @@ TfLiteStatus InterpreterBuilder::ParseTensors(
     TF_LITE_ENSURE_STATUS(get_readonly_data(&buffer_ptr, &buffer_size));
 
     const auto* src_quantization = tensor->quantization();
-    TfLiteQuantization quantization;
+    TfLiteQuantization quantization{};
     if (ParseQuantization(src_quantization, &quantization, dims) != kTfLiteOk) {
       TF_LITE_REPORT_ERROR(error_reporter_,
                            "Tensor %d has invalid quantization parameters.", i);
