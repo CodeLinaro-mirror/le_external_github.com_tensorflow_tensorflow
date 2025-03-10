@@ -140,17 +140,15 @@ platform_name: "CUDA"
 ```
 More GPU specs are located at `/xla/tools/hlo_opt/gpu_specs`
 
-Note: **Autotuning**\
+#### Autotuning
+
 Sometimes compilation may involve autotuning based on a compilation `--stage`.
-For the deviceless compilation to work, the user either need to\
+For the deviceless compilation to work, the user either need to \
 **disable** autotuning with `--xla_gpu_autotune_level=0`\
 or\
-**load a pre-existing
-autotuning results** with `--xla_gpu_load_autotune_results_from=<filename>`
-(obtained with `--xla_gpu_dump_autotune_results_to=<filename>`).
-
-Deviceless compilation might run into issues if autotuning is required. Luckily,
-we can also provide those on the command line:
+**load a pre-existing autotuning results** with
+`--xla_gpu_load_autotune_results_from=<filename>` (obtained with
+`--xla_gpu_dump_autotune_results_to=<filename>`).
 
 ```
 $ hlo-opt  --platform=CUDA --stage=llvm  --xla_gpu_target_config_filename=gpu_specs/a100_pcie_80.txtpb --xla_gpu_load_autotune_results_from=results.textpb input.hlo
@@ -181,19 +179,19 @@ results {
 ```
 
 The autotuning database can be serialized using
-`XLA_FLAGS=--xla_gpu_dump_autotune_results_t=<myfile.pbtxt>`
+`XLA_FLAGS=--xla_gpu_dump_autotune_results_to=<myfile.pbtxt>`
 
 ## [`hlo-opt`] HLO Pass Development And Debugging
 
 ```
-If you are working with hardware independent passes from the
-`xla/hlo/transforms/` directory, prefer light-weight version
-of the `hlo-opt` tool with fewer dependencies:
+// If you are working with hardware independent passes from the
+// `xla/hlo/transforms/` directory, prefer light-weight version
+// of the `hlo-opt` tool with fewer dependencies:
 
 $ bazel run //xla/hlo/tools:hlo-opt -- [flags] <filename>
 
-Otherwise, for hardware independent and CPU, GPU passes use
-the same binary from "Compile HLO Modules" section above:
+// Otherwise, for hardware independent and CPU, GPU passes use
+// the same binary from "Compile HLO Modules" section above:
 
 $ bazel run //xla/tools:hlo-opt -- [flags] <filename>
 ```
@@ -239,10 +237,14 @@ $ hlo-opt --passes=pass1,pass2,pass3 input.hlo
 
     Based on the pass type, choose one of the following locations for
     registration:\
-    [`opt_lib.cc`](https://github.com/openxla/xla/blob/5d015a2ddfcf4f40934a33891dc63471704f221d/xla/hlo/tools/hlo_opt/opt_lib.cc) Hardware-independent passes.\
-    [`cpu_opt.cc`](https://github.com/openxla/xla/blob/5d015a2ddfcf4f40934a33891dc63471704f221d/xla/tools/hlo_opt/cpu_opt.cc) CPU specific passes.\
-    [`gpu_opt.cc`](https://github.com/openxla/xla/blob/5d015a2ddfcf4f40934a33891dc63471704f221d/xla/tools/hlo_opt/gpu_opt.cc) GPU specific passes.\
-    [`compiled_opt.cc`](https://github.com/openxla/xla/blob/5d015a2ddfcf4f40934a33891dc63471704f221d/xla/tools/hlo_opt/compiled_opt_lib.cc) Passes common to CPU, GPU, XPU.\
+    [`opt_lib.cc`](https://github.com/openxla/xla/blob/5d015a2ddfcf4f40934a33891dc63471704f221d/xla/hlo/tools/hlo_opt/opt_lib.cc)
+    Hardware-independent passes.\
+    [`cpu_opt.cc`](https://github.com/openxla/xla/blob/5d015a2ddfcf4f40934a33891dc63471704f221d/xla/tools/hlo_opt/cpu_opt.cc)
+    CPU specific passes.\
+    [`gpu_opt.cc`](https://github.com/openxla/xla/blob/5d015a2ddfcf4f40934a33891dc63471704f221d/xla/tools/hlo_opt/gpu_opt.cc)
+    GPU specific passes.\
+    [`compiled_opt.cc`](https://github.com/openxla/xla/blob/5d015a2ddfcf4f40934a33891dc63471704f221d/xla/tools/hlo_opt/compiled_opt_lib.cc)
+    Passes common to CPU, GPU, XPU.\
     Don't forget to add build dependency.
 
     Include pass registration as part of your PR([example](https://github.com/openxla/xla/pull/22968/files#diff-e37a0ea999dfc5764d624240cd2edebb8b7ee4e6d91686be89c632dd7203b823)) so that the pass will be
