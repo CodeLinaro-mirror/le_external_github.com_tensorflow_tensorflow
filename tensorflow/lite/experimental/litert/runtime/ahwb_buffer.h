@@ -32,8 +32,7 @@ typedef struct AHardwareBuffer AHardwareBuffer;
 #endif  // __cplusplus
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
-namespace litert {
-namespace internal {
+namespace litert::internal {
 
 struct AhwbBuffer {
   AHardwareBuffer* ahwb;
@@ -47,7 +46,6 @@ struct AhwbBuffer {
   static Expected<void> Unlock(AHardwareBuffer* ahwb);
 };
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal
 
 #endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_AHWB_BUFFER_H_

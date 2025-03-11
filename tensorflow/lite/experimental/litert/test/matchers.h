@@ -26,11 +26,11 @@
 #include "tensorflow/lite/experimental/litert/c/litert_common.h"
 #include "tensorflow/lite/experimental/litert/cc/litert_expected.h"
 
-// Is equivalent to `ASSERT_THAT(expr, testing::litert::IsOk())`
-#define LITERT_ASSERT_OK(EXPR) ASSERT_THAT((EXPR), ::testing::litert::IsOk())
+// Is equivalent to `ASSERT_THAT(expr, litert::testing::IsOk())`
+#define LITERT_ASSERT_OK(EXPR) ASSERT_THAT((EXPR), ::litert::testing::IsOk())
 
-// Is equivalent to `EXPECT_THAT(expr, testing::litert::IsOk())`
-#define LITERT_EXPECT_OK(EXPR) EXPECT_THAT((EXPR), ::testing::litert::IsOk())
+// Is equivalent to `EXPECT_THAT(expr, litert::testing::IsOk())`
+#define LITERT_EXPECT_OK(EXPR) EXPECT_THAT((EXPR), ::litert::testing::IsOk())
 
 // Checks that the result of `EXPR` (a `litert::Expected` object) is not an
 // error and assigns the value it holds to `DECL` as if:
@@ -56,7 +56,7 @@
 #define LITERT_ASSERT_OK_AND_ASSIGN_HELPER2(LINE, DECL, EXPR) \
   LITERT_ASSERT_OK_AND_ASSIGN_HELPER1(LINE, DECL, EXPR)
 
-namespace testing::litert {
+namespace litert::testing {
 
 // Matches `litert::Expected` values that hold a success value and
 // `LiteRtStatusOk`.
@@ -68,7 +68,7 @@ class IsOkMatcher {
   // Matcher object.
   template <class T>
   // NOLINTNEXTLINE(*-explicit-constructor): This needs to be implicit.
-  operator testing::Matcher<T>() const {
+  operator ::testing::Matcher<T>() const {
     return ::testing::Matcher<T>(new Impl<const T&>());
   }
 
@@ -76,22 +76,22 @@ class IsOkMatcher {
   class Impl : public ::testing::MatcherInterface<V> {
     template <class T>
     bool MatchAndExplainImpl(const ::litert::Expected<T>& value,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       return value.HasValue();
     }
 
     bool MatchAndExplainImpl(const ::litert::Unexpected& unexpected,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       return false;
     }
 
     bool MatchAndExplainImpl(const ::litert::Error& e,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       return false;
     }
 
     bool MatchAndExplainImpl(const LiteRtStatus& status,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       if (status != kLiteRtStatusOk) {
         *listener << "status is " << LiteRtGetStatusString(status);
         return false;
@@ -103,7 +103,7 @@ class IsOkMatcher {
     using is_gtest_matcher = void;
 
     bool MatchAndExplain(
-        V value, testing::MatchResultListener* listener) const override {
+        V value, ::testing::MatchResultListener* listener) const override {
       return MatchAndExplainImpl(value, listener);
     }
 
@@ -163,7 +163,7 @@ class IsErrorMatcher {
   // Matcher object.
   template <class T>
   // NOLINTNEXTLINE(*-explicit-constructor): This needs to be implicit.
-  operator testing::Matcher<T>() const {
+  operator ::testing::Matcher<T>() const {
     return ::testing::Matcher<T>(new Impl<const T&>(impl_));
   }
 
@@ -179,7 +179,7 @@ class IsErrorMatcher {
    protected:
     bool MatchAndExplainImpl(const LiteRtStatus status,
                              const absl::string_view msg,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       if (status == kLiteRtStatusOk ||
           (status_.has_value() && status != status_.value())) {
         if (listener) {
@@ -198,7 +198,7 @@ class IsErrorMatcher {
 
     template <class T>
     bool MatchAndExplainImpl(const ::litert::Expected<T>& value,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       if (value.HasValue()) {
         *listener << "expected holds a value (but should hold an error)";
         return false;
@@ -207,18 +207,18 @@ class IsErrorMatcher {
     }
 
     bool MatchAndExplainImpl(const ::litert::Unexpected& e,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       return MatchAndExplainImpl(e.Error().Status(), e.Error().Message(),
                                  listener);
     }
 
     bool MatchAndExplainImpl(const ::litert::Error& e,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       return MatchAndExplainImpl(e.Status(), e.Message(), listener);
     }
 
     bool MatchAndExplainImpl(const LiteRtStatus& status,
-                             testing::MatchResultListener* listener) const {
+                             ::testing::MatchResultListener* listener) const {
       return MatchAndExplainImpl(status, {}, listener);
     }
 
@@ -251,7 +251,7 @@ class IsErrorMatcher {
     explicit Impl(const ImplBase& base) : ImplBase(base) {}
 
     bool MatchAndExplain(
-        V value, testing::MatchResultListener* listener) const override {
+        V value, ::testing::MatchResultListener* listener) const override {
       return MatchAndExplainImpl(value, listener);
     }
 
@@ -324,7 +324,7 @@ inline IsErrorMatcher IsError(LiteRtStatus status, std::string msg) {
   return IsErrorMatcher(status, std::move(msg));
 }
 
-}  // namespace testing::litert
+}  // namespace litert::testing
 
 // GTest doesn't use `AbslStringify` if `GTEST_USE_ABSL` is not defined. This
 // provides a fallback implementation.
@@ -334,7 +334,7 @@ inline IsErrorMatcher IsError(LiteRtStatus status, std::string msg) {
 #if defined(LITERT_DEFINE_GTEST_STATUS_PRINTER) && !defined(GTEST_USE_ABSL)
 #include "absl/strings/str_format.h"
 
-namespace litert {
+namespace litert::testing {
 
 inline void PrintTo(const Error& error, std::ostream* os) {
   *os << absl::StrFormat("%v", error);
@@ -349,7 +349,7 @@ void PrintTo(const Expected<T>& expected, std::ostream* os) {
   *os << absl::StrFormat("%v", expected);
 }
 
-}  // namespace litert
+}  // namespace litert::testing
 
 #endif
 

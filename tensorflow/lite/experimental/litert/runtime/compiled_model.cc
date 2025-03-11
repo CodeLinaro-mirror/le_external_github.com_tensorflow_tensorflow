@@ -134,7 +134,8 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
     model_buffer = reinterpret_cast<const char*>(new_flatbuffer->Data());
     model_buffer_size = new_flatbuffer->Size();
 
-  } else if (auto init_model_buffer = detail::GetTflFlatbuffer(*model).Buf();
+  } else if (auto init_model_buffer =
+                 litert::internal::GetTflFlatbuffer(*model).Buf();
              init_model_buffer.Size() != 0) {
     // Use the saved the original FB pointer when the LiteRtModel was created
     // from a buffer.
@@ -185,7 +186,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
   // Add a new link in the accelerator compilation options that holds some data
   // that is computed during model compilation.
   LITERT_ASSIGN_OR_RETURN(auto model_compilation_data,
-                          litert::ModelCompilationData::Create());
+                          litert::internal::ModelCompilationData::Create());
   model_compilation_data->allocation_base = model_buffer;
   LITERT_RETURN_IF_ERROR(LiteRtAddAcceleratorCompilationOptions(
       compilation_options.get(), model_compilation_data.release()));
