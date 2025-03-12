@@ -99,6 +99,7 @@ cc_library(
         %{comment}"include/math_functions.h",
         %{comment}"include/mma.h",
         %{comment}"include/nvfunctional",
+        %{comment}"include/nvml.h",
         %{comment}"include/sm_20_atomic_functions.h",
         %{comment}"include/sm_20_atomic_functions.hpp",
         %{comment}"include/sm_20_intrinsics.h",
