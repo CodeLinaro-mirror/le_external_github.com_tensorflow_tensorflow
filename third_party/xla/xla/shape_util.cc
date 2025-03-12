@@ -238,36 +238,49 @@ std::ostream& operator<<(std::ostream& out, const ShapeIndex& shape_index) {
   return accum;
 }
 
+// This populates the following fields in the shape:
+// - sets shape->element_type to element_type,
+// - sets shape->dimensions to dimensions,
+// - sets shape->layout.minor_to_major to [ndims - 1, ndims - 2, ..., 0].
 /* static */ bool ShapeUtil::FillNewShape(PrimitiveType element_type,
                                           absl::Span<const int64_t> dimensions,
                                           Shape* shape) {
-  int64_t dense_shape_size = primitive_util::IsArrayType(element_type)
-                                 ? primitive_util::ByteWidth(element_type)
-                                 : -1;
-
-  // Verify that array-based lookup is consistent with public API.
-  DCHECK_EQ(dense_shape_size, ByteSizeOfPrimitiveType(element_type))
-      << element_type;
+  CHECK(shape != nullptr);
+  const bool is_array = primitive_util::IsArrayType(element_type);
+  const bool has_dimensions = !dimensions.empty();
+  CHECK_EQ(is_array, has_dimensions)
+      << "the element_type and dimensions must be consistent.";
 
   shape->set_element_type(element_type);
+  if (!is_array) return true;
+
+  const int64_t elem_bytes = primitive_util::ByteWidth(element_type);
+
+  // Verify that array-based lookup is consistent with public API.
+  CHECK_EQ(elem_bytes, ByteSizeOfPrimitiveType(element_type))
+      << "where element_type = " << element_type;
+
+  // Populate dimensions and layout.minor_to_major for array shapes.
   const int ndims = dimensions.size();
-  auto layout = shape->mutable_layout();
-  auto* minor_to_major = layout->mutable_minor_to_major();
-  int64_t static_extent_product = dense_shape_size;
-  bool any_overflows = false;
+  auto* const layout = shape->mutable_layout();
+  auto* const minor_to_major = layout->mutable_minor_to_major();
+  // Number of bytes used to store the array, ignoring unbounded dynamic
+  // dimensions.
+  int64_t static_extent_bytes = elem_bytes;
+  bool any_overflows = false;  // Is the array too large?
   for (int i = 0; i < ndims; i++) {
     const int64_t d = dimensions[i];
-    if (d != Shape::kUnboundedSize) {
+    if (d != Shape::kUnboundedSize) {  // This dimension has a static extent.
       bool overflow;
-      std::tie(static_extent_product, overflow) =
-          OverflowSafeMultiply(static_extent_product, d);
+      std::tie(static_extent_bytes, overflow) =
+          OverflowSafeMultiply(static_extent_bytes, d);
       any_overflows |= overflow;
     }
 
     shape->add_dimensions(d);
     minor_to_major->push_back(ndims - 1 - i);
   }
-  if (any_overflows) {
+  if (any_overflows) {  // The array is too large.
     return false;
   }
   return true;
@@ -871,6 +884,7 @@ Shape ShapeUtil::PrependMajorDimension(int64_t bound, Shape shape) {
 
 /* static */ int64_t ShapeUtil::ByteSizeOfPrimitiveType(
     PrimitiveType primitive_type) {
+  // This crashes if the primitive type is not an array type.
   return primitive_util::ByteWidth(primitive_type);
 }
 
@@ -969,7 +983,7 @@ absl::Status ValidateShapeSize(const Shape& shape) {
 
   auto [extent_product, extent_overflow] =
       ShapeUtil::ExtentProduct</*kBoundedDynamicOk=*/true>(shape);
-  auto [dense_shape_size, byte_width_overflow] = OverflowSafeMultiply(
+  auto [elem_bytes, byte_width_overflow] = OverflowSafeMultiply(
       extent_product, ShapeUtil::ByteSizeOfPrimitiveType(shape.element_type()));
 
   if (extent_overflow || byte_width_overflow) {

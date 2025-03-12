@@ -51,6 +51,8 @@ class Shape {
   // Construct a shape from a ShapeProto.
   explicit Shape(const ShapeProto& shape_proto);
 
+  // This ctor is unsafe as it allows invalid combinations of arguments.
+  // Use the other ctors or a ShapeUtil::Make*Shape() factory instead.
   Shape(PrimitiveType element_type, absl::Span<const int64_t> dimensions,
         absl::Span<const bool> dynamic_dimensions,
         std::vector<Shape> tuple_shapes)

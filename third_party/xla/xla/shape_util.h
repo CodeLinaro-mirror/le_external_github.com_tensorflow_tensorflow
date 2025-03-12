@@ -169,7 +169,7 @@ class ShapeUtil {
 
   // Returns the number of bytes used to store the primitive_type.
   //
-  // Precondition: shape.IsArray()
+  // Precondition: primitive_type is an array type (otherwise crashes)
   static int64_t ByteSizeOfPrimitiveType(PrimitiveType primitive_type);
 
   // Returns the number of bytes required to store the tuple member pointers for
@@ -1059,8 +1059,9 @@ class ShapeUtil {
  private:
   // Fills *shape ignoring dynamic dimensions. Returns true on success.
   // REQUIRES: *shape is empty.
-  static bool FillNewShape(PrimitiveType element_type,
-                           absl::Span<const int64_t> dimensions, Shape* shape);
+  [[nodiscard]] static bool FillNewShape(PrimitiveType element_type,
+                                         absl::Span<const int64_t> dimensions,
+                                         Shape* shape);
 
   // Helper for ForEachSubshape which visits the subshapes of the given shape in
   // DFS pre-order starting with the index.

@@ -294,7 +294,10 @@ void ToC(const xla::Shape& xla_shape, XLA_Shape* c_shape) {
 
 xla::Shape FromC(const XLA_Shape* c_shape) {
   absl::Span<const int64_t> dims = MakeSpan(c_shape->dimensions);
-  absl::Span<const bool> dynamic_dims = MakeSpan(c_shape->dynamic_dimensions);
+  const absl::Span<const bool> dynamic_dims =
+      MakeSpan(c_shape->dynamic_dimensions);
+  const std::vector<bool> dynamic_dims_vector(dynamic_dims.begin(),
+                                              dynamic_dims.end());
 
   std::vector<xla::Shape> tuple_shapes;
   tuple_shapes.reserve(c_shape->ntuple_shapes);
@@ -302,8 +305,12 @@ xla::Shape FromC(const XLA_Shape* c_shape) {
     tuple_shapes.push_back(FromC(&c_shape->tuple_shapes[i]));
   }
 
-  xla::Shape result(static_cast<xla::PrimitiveType>(c_shape->element_type),
-                    dims, dynamic_dims, std::move(tuple_shapes));
+  xla::Shape result =
+      tuple_shapes.empty()
+          ? xla::ShapeUtil::MakeShape(
+                static_cast<xla::PrimitiveType>(c_shape->element_type), dims,
+                dynamic_dims_vector)
+          : xla::ShapeUtil::MakeTupleShape(std::move(tuple_shapes));
   if (c_shape->has_layout) {
     *result.mutable_layout() = FromC(&c_shape->layout);
   }
