@@ -14,15 +14,16 @@
 # ==============================================================================
 """Tests for tpu_embedding_v3_checkpoint_adapter."""
 
-
 from tensorflow.core.tpu.kernels import sparse_core_layout_pb2
 from tensorflow.python.compat import v2_compat
+from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework.constant_op import constant as tf_constant
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.platform import test
 from tensorflow.python.tpu import tpu_embedding_v3_checkpoint_adapter
+
+tf_constant = constant_op.constant
 
 
 def create_layout(
@@ -287,6 +288,125 @@ class TpuEmbeddingV3CheckpointAdapterTest(test.TestCase):
     self.assertTrue(adapter.is_layouts_same({layout.table_name: layout}))
     layout.num_sparse_cores = 3
     self.assertFalse(adapter.is_layouts_same({layout.table_name: layout}))
+
+  def test_adapt_to_different_sharded_stacked(self):
+
+    source_layouts = {
+        "two": create_layout(
+            tables_name="two",
+            stacked_table_name="one_two",
+            num_sparse_cores=4,
+            num_partitions=2,
+            unsharded_shape=(7, 4),
+            unsharded_padded_shape=(8, 8),
+            row_offset=2,
+            shard_rotation=1,
+            total_rows_per_sparse_core_shard=4,
+        ),
+        "one": create_layout(
+            tables_name="one",
+            stacked_table_name="one_two",
+            num_sparse_cores=4,
+            num_partitions=2,
+            unsharded_shape=(6, 5),
+            unsharded_padded_shape=(8, 8),
+            row_offset=0,
+            shard_rotation=0,
+            total_rows_per_sparse_core_shard=4,
+        ),
+    }
+    src_layouts_pb = sparse_core_layout_pb2.SparseCoreTableLayouts()
+    src_layouts_pb.tables.extend(source_layouts.values())
+
+    sc_to_sc_adapter = (
+        tpu_embedding_v3_checkpoint_adapter.TpuEmbeddingV3CheckpointAdapter(
+            layouts=src_layouts_pb
+        )
+    )
+
+    target_layouts = {
+        "two": create_layout(
+            tables_name="two",
+            stacked_table_name="one_two",
+            num_sparse_cores=8,
+            num_partitions=4,
+            unsharded_shape=(7, 4),
+            unsharded_padded_shape=(8, 8),
+            row_offset=1,
+            shard_rotation=1,
+            total_rows_per_sparse_core_shard=2,
+        ),
+        "one": create_layout(
+            tables_name="one",
+            stacked_table_name="one_two",
+            num_sparse_cores=8,
+            num_partitions=4,
+            unsharded_shape=(6, 5),
+            unsharded_padded_shape=(8, 8),
+            row_offset=0,
+            shard_rotation=0,
+            total_rows_per_sparse_core_shard=2,
+        ),
+    }
+
+    # this take a mapping[str, sparse_core_layout_pb2.SparseCoreTableLayout]
+    sc_to_sc_adapter.initialize_reshard_callbacks(target_layouts)
+    callback = sc_to_sc_adapter.get_reshard_callback("one_two")
+    self.assertEqual(callback.object_name(), "one_two")
+    updated_keys, updated_slices = callback.update_restore_inputs(
+        "path/to/embedding/one_two/in/checkpoint", "16 8 4,16:0,8"
+    )
+    self.assertAllEqual(
+        updated_keys,
+        [
+            "path/to/embedding/one_two/in/checkpoint",
+        ],
+    )
+    self.assertAllEqual(
+        updated_slices,
+        ["16 8 0,16:0,8"],
+    )
+
+    one_two_t = tf_constant([
+        # table one shard 0
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [4, 4, 4, 4, 4, 0, 0, 0],
+        [13, 13, 13, 13, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        # table one shard 1
+        [1, 1, 1, 1, 1, 0, 0, 0],
+        [5, 5, 5, 5, 5, 0, 0, 0],
+        [10, 10, 10, 10, 0, 0, 0, 0],
+        [14, 14, 14, 14, 0, 0, 0, 0],
+        # table one shard 2
+        [2, 2, 2, 2, 2, 0, 0, 0],
+        [6, 6, 6, 6, 6, 0, 0, 0],
+        [11, 11, 11, 11, 0, 0, 0, 0],
+        [15, 15, 15, 15, 0, 0, 0, 0],
+        # table one shard 3
+        [3, 3, 3, 3, 3, 0, 0, 0],
+        [7, 7, 7, 7, 7, 0, 0, 0],
+        [12, 12, 12, 12, 0, 0, 0, 0],
+        [16, 16, 16, 16, 0, 0, 0, 0],
+    ])
+
+    self.assertAllEqual(
+        callback.reshard([one_two_t], "16 8 4,8:0,8"),
+        tf_constant([
+            #  shard 2
+            [2, 2, 2, 2, 2, 0, 0, 0],
+            [11, 11, 11, 11, 0, 0, 0, 0],
+            # shard 3
+            [3, 3, 3, 3, 3, 0, 0, 0],
+            [12, 12, 12, 12, 0, 0, 0, 0],
+            # shard 4
+            [4, 4, 4, 4, 4, 0, 0, 0],
+            [13, 13, 13, 13, 0, 0, 0, 0],
+            # shard 5
+            [5, 5, 5, 5, 5, 0, 0, 0],
+            [14, 14, 14, 14, 0, 0, 0, 0],
+        ]),
+    )
 
 
 if __name__ == "__main__":

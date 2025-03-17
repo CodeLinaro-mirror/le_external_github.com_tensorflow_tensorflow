@@ -15,7 +15,8 @@
 """Logic for restoring checkpointed values for Trackables."""
 
 import collections
-from typing import Optional, Mapping, Any
+import time
+from typing import Any, Mapping, Optional
 
 from tensorflow.python.checkpoint import checkpoint_adapter
 from tensorflow.python.checkpoint import checkpoint_view
@@ -174,12 +175,19 @@ class CheckpointPosition(object):
           for key in checkpoint_keys:
             dtype = self._checkpoint.dtype_map[key]
             dtypes.append(dtype.base_dtype)
+          stime = time.time()
           restored_values = io_ops.restore_v2(
               prefix=self._checkpoint.save_path_tensor,
               tensor_names=checkpoint_keys,
               shape_and_slices=full_shape_and_slices,
               dtypes=dtypes,
               name="%s_checkpoint_read" % (serialized_tensor.name,),
+          )
+          etime = time.time()
+          logging.info(
+              "CheckpointPosition.value_tensors: Restored values[%s] in %f s",
+              checkpoint_keys,
+              etime - stime,
           )
           value = self.callback.reshard(
               restored_values, shape_and_slice
@@ -690,6 +698,8 @@ def _queue_children_for_restoration(checkpoint_position, visit_queue):
     local_object = trackable._lookup_dependency(child.local_name,
                                                 trackable_children)
     child_proto = child_position.object_proto
+    logging.info("local_object: %s", local_object)
+    logging.info("child_position: %s", child_position)
     if local_object is None:
       # We don't yet have a dependency registered with this name. Save it
       # in case we do.
