@@ -254,7 +254,6 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_enable_split_k_autotuning(true);
 
   opts.set_xla_gpu_enable_reduction_epilogue_fusion(true);
-  opts.set_xla_gpu_enable_nccl_clique_optimization(false);
   opts.set_xla_gpu_cublas_fallback(true);
   opts.set_xla_gpu_cudnn_gemm_fusion_level(0);
   opts.set_xla_gpu_enable_while_loop_double_buffering(false);
@@ -339,7 +338,6 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_unsupported_crash_on_hlo_pass_fix_max_iterations(false);
   opts.set_xla_hlo_pass_fix_detect_cycles(false);
   opts.set_xla_gpu_experimental_enable_sync_collective_combining(false);
-  opts.set_xla_allow_get_default_platform(true);
   opts.set_xla_unsupported_crash_on_hlo_pass_silent_hlo_change(false);
   opts.set_xla_unsupported_crash_on_hlo_pass_noop_change(false);
   return opts;
@@ -1921,12 +1919,6 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_enable_reduction_epilogue_fusion(),
       "Enable fusion for reduction epilogues"));
   flag_list->push_back(
-      tsl::Flag("xla_gpu_enable_nccl_clique_optimization",
-                bool_setter_for(
-                    &DebugOptions::set_xla_gpu_enable_nccl_clique_optimization),
-                debug_options->xla_gpu_enable_nccl_clique_optimization(),
-                "Allow early return when acquiring NCCL cliques"));
-  flag_list->push_back(
       tsl::Flag("xla_gpu_cublas_fallback",
                 bool_setter_for(&DebugOptions::set_xla_gpu_cublas_fallback),
                 debug_options->xla_gpu_cublas_fallback(),
@@ -2314,11 +2306,6 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
               set_xla_gpu_experimental_enable_sync_collective_combining),
       debug_options->xla_gpu_experimental_enable_sync_collective_combining(),
       "Enable sync collective combining."));
-  flag_list->push_back(tsl::Flag(
-      "xla_allow_get_default_platform",
-      bool_setter_for(&DebugOptions::set_xla_allow_get_default_platform),
-      debug_options->xla_allow_get_default_platform(),
-      "If false, GetDefaultPlatform will cause an error if called."));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_experimental_collective_cse_distance_threshold",
       int64_setter_for(
