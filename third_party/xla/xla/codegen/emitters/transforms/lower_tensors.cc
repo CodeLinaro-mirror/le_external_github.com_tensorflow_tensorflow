@@ -124,6 +124,35 @@ Value GetDestinationBuffer(Value dest) {
   return dest;
 }
 
+std::optional<int> GetAlignmentFromArg(Value addr, ValueRange indices) {
+  CHECK_LE(indices.size(), 1) << "Only 0D and 1D tensors are supported";
+
+  // If the offset isn't empty or {0}, we don't return any alignment because
+  // computing it isn't trivial and it's unclear that we need to deal with that
+  // case in practice.
+  auto effective_offset = [](ValueRange offsets) -> int64_t {
+    if (offsets.empty()) return 0;
+    auto const_op =
+        mlir::dyn_cast<mlir::arith::ConstantOp>(offsets[0].getDefiningOp());
+    if (!const_op) return -1;
+    auto int_attr = const_op.getValue().dyn_cast<mlir::IntegerAttr>();
+    if (!int_attr) return -1;
+    return int_attr.getInt();
+  };
+  if (effective_offset(indices) != 0) return std::nullopt;
+
+  // Try to get the alignment from the function signature.
+  auto base = mlir::dyn_cast<mlir::BlockArgument>(addr);
+  if (!base) return std::nullopt;
+  auto func =
+      mlir::dyn_cast<mlir::func::FuncOp>(base.getOwner()->getParentOp());
+  if (!func) return std::nullopt;
+  auto align_attr =
+      func.getArgAttr(base.getArgNumber(), ml::LLVMDialect::getAlignAttrName());
+  if (!align_attr) return std::nullopt;
+  return align_attr.cast<mlir::IntegerAttr>().getValue().getSExtValue();
+}
+
 template <typename Op>
 bool IsSupportedTransfer(Op op) {
   return !absl::c_linear_search(op.getInBoundsValues(), false) &&
@@ -393,7 +422,11 @@ struct RewriteTransferRead : OpRewritePattern<vector::TransferReadOp> {
 
     mlir::LLVMTypeConverter converter(b.getContext());
     auto llvm_vector_type = converter.convertType(vector_type);
-    auto loaded = b.create<ml::LoadOp>(llvm_vector_type, gep).getResult();
+    auto load = b.create<ml::LoadOp>(llvm_vector_type, gep);
+    if (auto alignment = GetAlignmentFromArg(op.getSource(), op.getIndices())) {
+      load.setAlignment(*alignment);
+    }
+    auto loaded = load.getResult();
 
     if (source_element_type.isInteger(1)) {
       Value zero = b.create<mlir::arith::ConstantOp>(
