@@ -24,6 +24,7 @@ limitations under the License.
 #include "xla/client/executable_build_options.h"
 #include "xla/pjrt/compile_options.pb.h"
 #include "xla/shape_util.h"
+#include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/xla_data.pb.h"
 #include "tsl/platform/status_matchers.h"
 
@@ -94,18 +95,24 @@ TEST(ExecuteOptionsTest, SendRecvNotSupported) {
 }
 
 TEST(ExecuteOptionsTest, ApplyOptionsCanParseStringsAndEnums) {
-  using OptionOverride = std::variant<std::string, bool, int64_t, double>;
-  std::vector<std::pair<std::string, OptionOverride>> env_override_options;
-  env_override_options = {
-      {"xla_gpu_use_runtime_fusion", std::string("True")},
-      {"xla_gpu_graph_min_graph_size", std::string("2")},
-      {"xla_gpu_disable_async_collectives", std::string("2")},
-      {"xla_gpu_redzone_scratch_max_megabytes", std::string("3400")},
-      {"xla_gpu_auto_spmd_partitioning_memory_budget_ratio", 0.9},
-      {"xla_gpu_pgle_profile_file_or_directory_path", std::string("abc")}};
   CompileOptions src;
-  src.env_option_overrides = env_override_options;
-  auto s = src.ApplyAllOptionOverrides();
+  using Override = CompileOptions::OptionOverride;
+  src.env_option_overrides = {
+      {"xla_gpu_use_runtime_fusion", Override("True")},
+      {"xla_gpu_graph_min_graph_size", Override("2")},
+      {"xla_gpu_redzone_scratch_max_megabytes", Override("3400")},
+      {"xla_gpu_auto_spmd_partitioning_memory_budget_ratio", Override(0.9)},
+      {"xla_gpu_pgle_profile_file_or_directory_path", Override("abc")},
+      // Repeated fields.
+      {"xla_gpu_disable_async_collectives", Override("2,REDUCESCATTER")},
+      {"xla_disable_hlo_passes", Override("rematerialization,something else")},
+      // Repeated fields provided twice. The last one wins.
+      {"xla_enable_hlo_passes_only", Override("one, two, three")},
+      {"xla_enable_hlo_passes_only", Override(",,second, , third,")},
+      {"xla_gpu_enable_command_buffer", Override("CUSTOM_CALL,COLLECTIVES")},
+      {"xla_gpu_enable_command_buffer",
+       Override(static_cast<int64_t>(DebugOptions::CUSTOM_CALL))}};
+  TF_EXPECT_OK(src.ApplyAllOptionOverrides());
   auto& debug_options = src.executable_build_options.debug_options();
   EXPECT_EQ(debug_options.xla_gpu_use_runtime_fusion(), true);
   EXPECT_EQ(debug_options.xla_gpu_graph_min_graph_size(), 2);
@@ -113,8 +120,20 @@ TEST(ExecuteOptionsTest, ApplyOptionsCanParseStringsAndEnums) {
   EXPECT_FLOAT_EQ(
       debug_options.xla_gpu_auto_spmd_partitioning_memory_budget_ratio(), 0.9);
   EXPECT_EQ(debug_options.xla_gpu_pgle_profile_file_or_directory_path(), "abc");
-  EXPECT_EQ(debug_options.xla_gpu_disable_async_collectives().size(), 1);
-  EXPECT_EQ(debug_options.xla_gpu_disable_async_collectives()[0], 2);
+  EXPECT_THAT(debug_options.xla_gpu_disable_async_collectives(),
+              testing::ElementsAre(xla::DebugOptions::ALLGATHER,
+                                   xla::DebugOptions::REDUCESCATTER));
+  EXPECT_THAT(debug_options.xla_disable_hlo_passes(),
+              testing::ElementsAre("rematerialization", "something else"));
+  EXPECT_THAT(debug_options.xla_enable_hlo_passes_only(),
+              testing::ElementsAre("", "", "second", " ", " third", ""));
+  EXPECT_THAT(debug_options.xla_gpu_enable_command_buffer(),
+              testing::ElementsAre(DebugOptions::CUSTOM_CALL));
+
+  // Test that repeated fields are cleared when empty string is provided.
+  src.env_option_overrides = {{"xla_gpu_enable_command_buffer", Override("")}};
+  TF_EXPECT_OK(src.ApplyAllOptionOverrides());
+  EXPECT_TRUE(debug_options.xla_gpu_enable_command_buffer().empty());
 }
 
 TEST(CompiledMemoryStatsTest, Serialization) {
