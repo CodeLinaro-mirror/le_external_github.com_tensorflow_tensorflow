@@ -48,6 +48,8 @@ cc_library(
     hdrs = ["hlo_benchmark_runner.h"],
     deps = [
         "//xla:literal",
+        "//xla:shape_util",
+        "//xla:util",
         "//xla/hlo/builder:xla_computation",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/parser:hlo_parser",

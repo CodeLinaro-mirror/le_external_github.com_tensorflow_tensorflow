@@ -26,6 +26,7 @@ limitations under the License.
 #include "absl/synchronization/blocking_counter.h"
 #include "absl/types/span.h"
 #include "xla/hlo/builder/xla_computation.h"
+#include "xla/hlo/ir/hlo_input_output_alias_config.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/hlo/parser/hlo_parser.h"
 #include "xla/literal.h"
@@ -35,15 +36,44 @@ limitations under the License.
 #include "xla/pjrt/plugin/xla_cpu/cpu_client_options.h"
 #include "xla/pjrt/plugin/xla_cpu/xla_cpu_pjrt_client.h"
 #include "xla/service/hlo_module_config.h"
+#include "xla/shape_util.h"
 #include "xla/tests/test_utils.h"
 #include "xla/tsl/platform/env.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/test_benchmark.h"
 #include "xla/tsl/platform/threadpool.h"
+#include "xla/util.h"
 #include "tsl/platform/casts.h"
 
 namespace xla::cpu {
+
+namespace {
+
+// Removes aliases that aren't marked as must alias. This is done exclusively
+// for benchmarking purposes since it is unclear how to deal with losing
+// ownership of the input buffer.
+// If alias is marked as must alias, this function will return an error.
+absl::Status RemoveAliasesFromConfig(HloModule* hlo_module) {
+  bool has_must_alias = false;
+  hlo_module->input_output_alias_config().ForEachAlias(
+      [&has_must_alias](const ShapeIndex& output_index,
+                        const HloInputOutputAliasConfig::Alias& alias) {
+        if (alias.must_alias()) {
+          has_must_alias = true;
+        }
+      });
+
+  if (has_must_alias) {
+    return Internal("Must alias is not supported for CPU benchmarking.");
+  }
+
+  hlo_module->set_input_output_alias_config(HloInputOutputAliasConfig());
+
+  return absl::OkStatus();
+}
+
+}  // namespace
 
 absl::Status RunHloBenchmark(benchmark::State& state,
                              absl::string_view hlo_module,
@@ -61,6 +91,8 @@ absl::Status RunHloBenchmark(benchmark::State& state,
                       ParseAndReturnUnverifiedModule(
                           absl::StrReplaceAll(hlo_module, replacements),
                           HloModuleConfig() /* unused */));
+
+  TF_RETURN_IF_ERROR(RemoveAliasesFromConfig(module.get()));
 
   XlaComputation computation(module->ToProto());
 
