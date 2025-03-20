@@ -212,6 +212,7 @@ absl::StatusOr<ExecutableBuildOptions> ExecutableBuildOptionsFromProto(
     output.set_device_ordinal(input.device_ordinal());
   }
   if (input.has_result_layout()) {
+    // Set.
     output.set_result_layout(xla::Shape(input.result_layout()));
   }
   if (input.has_comp_envs()) {
