@@ -211,6 +211,7 @@ gentbl_cc_library(
         "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
         "@llvm-project//mlir:OpBaseTdFiles",
         "@llvm-project//mlir:SideEffectInterfacesTdFiles",
+        "@stablehlo//:stablehlo_ops_td_files",
     ],
 )
 

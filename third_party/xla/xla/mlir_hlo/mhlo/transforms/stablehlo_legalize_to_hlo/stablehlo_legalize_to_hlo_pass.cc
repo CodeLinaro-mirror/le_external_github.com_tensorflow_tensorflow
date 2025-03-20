@@ -39,12 +39,22 @@ namespace mhlo {
 
 namespace {
 
+void legalDirectStablehloToHloConversionOps(ConversionTarget& target) {
+  target.addLegalOp<stablehlo::AddOp, stablehlo::ConstantOp>();
+}
+
 struct StablehloLegalizeToHloPass
     : public impl::StablehloLegalizeToHloPassBase<StablehloLegalizeToHloPass> {
+  using StablehloLegalizeToHloPassBase::StablehloLegalizeToHloPassBase;
   void runOnOperation() override {
     ConversionTarget target(getContext());
     target.addIllegalDialect<stablehlo::StablehloDialect>();
     target.addLegalDialect<mhlo::MhloDialect>();
+    // Allow injecting legal ops to permit gradual migration to direct
+    // StableHLO to HLO translation.
+    if (partial_conversion_) {
+      legalDirectStablehloToHloConversionOps(target);
+    }
 
     stablehlo::StablehloToHloTypeConverter converter;
     RewritePatternSet patterns(&getContext());

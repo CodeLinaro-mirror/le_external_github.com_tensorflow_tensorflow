@@ -208,6 +208,11 @@ def StablehloLegalizeToHloPass : Pass<"stablehlo-legalize-to-hlo", "ModuleOp"> {
   let summary = "Legalize StableHLO to HLO.";
   let constructor = "createStablehloLegalizeToHloPass()";
   let dependentDialects = ["mhlo::MhloDialect"];
+  let options = [
+    Option<"partial_conversion_", "partial-conversion",
+           "bool", /*default=*/"false",
+           "If true, don't convert ops that have direct HLO lowering support.">
+  ];
 }
 
 def PrepareForExportPass : Pass<"xla-prepare-for-export", "mlir::func::FuncOp"> {
