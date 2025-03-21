@@ -246,10 +246,42 @@ CodegenDecision CanTritonHandleReduce(
       "Reduction is not a row-reduction of a single operand.");
 }
 
+CodegenDecision IsTritonSupportedDot(
+    const HloDotInstruction& dot, const se::GpuComputeCapability& gpu_version) {
+  // Dots support is being implemented in b/393299275, only a limited set of
+  // dots is supported.
+  if (!dot.GetModule()
+           ->config()
+           .debug_options()
+           .xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms()) {
+    return CodegenDecision::Forbid(
+        "Dot operation is only supported with "
+        "--xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms.");
+  }
+  PrimitiveType result_type = dot.shape().element_type();
+  PrimitiveType lhs_type = dot.operand(0)->shape().element_type();
+  PrimitiveType rhs_type = dot.operand(1)->shape().element_type();
+  if (result_type != lhs_type || result_type != rhs_type) {
+    return CodegenDecision::Forbid(
+        "Dot operation only supports same types for the result, lhs and rhs.");
+  }
+  if (result_type == PrimitiveType::F8E5M2 ||
+      result_type == PrimitiveType::BF16 ||
+      result_type == PrimitiveType::F8E4M3FN ||
+      result_type == PrimitiveType::F8E5M2 ||
+      result_type == PrimitiveType::S32 || result_type == PrimitiveType::S64 ||
+      result_type == PrimitiveType::S16) {
+    return CodegenDecision::Forbid(
+        absl::StrCat(PrimitiveType_Name(result_type), " is not supported"));
+  }
+  return CodegenDecision::Allow();
+}
+
 CodegenDecision IsTritonSupportedInstructionImpl(
     const HloInstruction& instr, const se::GpuComputeCapability& gpu_version) {
   if (internal::IsTritonUnsupportedOpcode(instr.opcode())) {
-    return CodegenDecision::Forbid("Unsupported opcode.");
+    return CodegenDecision::Forbid(
+        absl::StrCat("Unsupported opcode ", HloOpcodeString(instr.opcode())));
   }
 
   // Special handling for the kConvert instruction, which has a non-standard
@@ -308,7 +340,6 @@ CodegenDecision IsTritonSupportedInstructionImpl(
     return CodegenDecision::Allow();
   }
 
-  // TODO(bchetioui): support kDot, kPad, and kDynamicSlice.
   switch (instr.opcode()) {
     case HloOpcode::kReduce: {
       return CanTritonHandleReduce(*Cast<HloReduceInstruction>(&instr),
@@ -321,11 +352,14 @@ CodegenDecision IsTritonSupportedInstructionImpl(
     case HloOpcode::kSlice:
     case HloOpcode::kTranspose:
       return CodegenDecision::Allow();
+    case HloOpcode::kDot:
+      return IsTritonSupportedDot(*Cast<HloDotInstruction>(&instr),
+                                  gpu_version);
     default:
       VLOG(2) << "Unsupported instruction: " << instr.ToString();
       break;
   }
-  return CodegenDecision::Forbid("Unsupported opcode.");
+  return CodegenDecision::Forbid("Unsupported instruction.");
 }
 
 }  // namespace
@@ -348,7 +382,6 @@ bool IsTritonUnsupportedOpcode(HloOpcode opcode) {
     case HloOpcode::kCopyStart:
     case HloOpcode::kCustomCall:
     case HloOpcode::kDomain:
-    case HloOpcode::kDot:
     case HloOpcode::kDynamicReshape:
     case HloOpcode::kDynamicSlice:
     case HloOpcode::kDynamicUpdateSlice:
@@ -412,8 +445,9 @@ CodegenDecision IsTritonSupportedInstruction(
     const HloInstruction& instr, const se::GpuComputeCapability& gpu_version) {
   CodegenDecision decision =
       IsTritonSupportedInstructionImpl(instr, gpu_version);
-  VLOG(2) << "IsTritonSupportedInstruction: " << instr.ToString() << " "
-          << bool(decision);
+  VLOG(2) << absl::StrCat("IsTritonSupportedInstruction: ", instr.ToString(),
+                          " ",
+                          (decision.CanFuse() ? "yes" : decision.Explain()));
   return decision;
 }
 

@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -36,8 +37,10 @@ limitations under the License.
 #include "xla/primitive_util.h"
 #include "xla/service/gpu/gpu_device_info_for_tests.h"
 #include "xla/service/gpu/model/tiled_hlo_computation.h"
+#include "xla/stream_executor/cuda/cuda_compute_capability.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/tsl/platform/status_matchers.h"
+#include "xla/tsl/platform/statusor.h"
 #include "xla/xla.pb.h"
 #include "xla/xla_data.pb.h"
 #include "tsl/platform/protobuf.h"
@@ -130,11 +133,22 @@ bool DoesOpSupportType(HloOpcode opcode, PrimitiveType type) {
       return !pu::IsComplexType(type);
     case HloOpcode::kComplex:
       return type == F32 || type == F64;
+    case HloOpcode::kDot:
+      return type != PRED && type != S8;
     default:
       // Returning true by default ensures that newly added ops are not
       // skipped.
       return true;
   }
+}
+
+std::vector<xla::PrimitiveType> AllOpSupportedTypes(HloOpcode opcode) {
+  std::vector<xla::PrimitiveType> result;
+  absl::c_copy_if(AllXlaDataTypes(), std::back_inserter(result),
+                  [&](PrimitiveType data_type) {
+                    return DoesOpSupportType(opcode, data_type);
+                  });
+  return result;
 }
 
 auto AllDevicesToTest() {
@@ -1384,6 +1398,83 @@ INSTANTIATE_TEST_SUITE_P(ComplexTestSuite, ComplexTest,
                          AllTestCombinationsForOpcodes(kTestedOpsComplex),
                          TritonSupportTestTypeAndOpcodeAndDeviceToString);
 
+class DotTest
+    : public TritonSupportTest,
+      public ::testing::WithParamInterface<
+          std::tuple<PrimitiveType, PrimitiveType, se::GpuComputeCapability>> {
+ public:
+  DebugOptions GetDebugOptionsForTest() const override {
+    DebugOptions opts = TritonSupportTest::GetDebugOptionsForTest();
+    opts.set_xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms(true);
+    return opts;
+  }
+};
+
+TEST_P(DotTest, Dot) {
+  // Testing B[] = dot(A[], A[]).
+  // TODO(b/393299275): Add tests for cases where LHS and RHS are not of the
+  // same type. Just using infra of parameterized test will not work as the
+  // number of combinations is too large.
+  auto [type_a, type_b, cc] = GetParam();
+  if (type_a != type_b) {
+    GTEST_SKIP() << "TODO(b/393299275): different types of operands and result "
+                    "are not supported yet.";
+  }
+  const std::string hlo_text =
+      absl::Substitute(R"(
+flhs {
+  ROOT result = $0[128,256] parameter(0)
+}
+
+frhs {
+  ROOT result = $0[256,512] parameter(0)
+}
+
+ENTRY triton_computation {
+  p0 = $0[128,256] parameter(0)
+  p1 = $0[256,512] parameter(1)
+  lhs = $0[128,256] fusion(p0), kind=kCustom, calls=flhs, backend_config={
+    "fusion_backend_config":{
+      "kind":"__triton_nested_gemm_fusion", "block_level_fusion_config":{
+        "output_tiles":[{"sizes":["16", "64"]}]
+      }
+    }
+  }
+  rhs = $0[256,512]{1,0} fusion(p1), kind=kCustom, calls=frhs, backend_config={
+    "fusion_backend_config":{
+      "kind":"__triton_nested_gemm_fusion", "block_level_fusion_config":{
+        "output_tiles":[{"sizes":["64", "32"]}]
+      }
+    }
+  }
+  ROOT result = $1[128,512]{1,0} dot(lhs, rhs),
+    lhs_contracting_dims={1}, rhs_contracting_dims={0}
+}
+)",
+                       primitive_util::LowercasePrimitiveTypeName(type_a),
+                       primitive_util::LowercasePrimitiveTypeName(type_b));
+  bool skip_failure_branch_to_avoid_crash = false;
+  if (type_a == PrimitiveType::F8E4M3FN || type_a == PrimitiveType::F8E5M2) {
+    skip_failure_branch_to_avoid_crash = true;
+  }
+  TF_ASSERT_OK_AND_ASSIGN(
+      TestedInstruction ti,
+      ParseTemplateAndGetInstruction(
+          hlo_text, PrimitiveType::PRIMITIVE_TYPE_INVALID, HloOpcode::kDot));
+  RunSupportTest(std::move(ti), /*output_tile_sizes=*/{16, 32}, cc,
+                 skip_failure_branch_to_avoid_crash);
+}
+
+constexpr std::array kTestedOpsDot = {HloOpcode::kDot};
+
+INSTANTIATE_TEST_SUITE_P(
+    DotTestSuite, DotTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(AllOpSupportedTypes(HloOpcode::kDot)),
+        ::testing::ValuesIn(AllOpSupportedTypes(HloOpcode::kDot)),
+        ::testing::ValuesIn(AllDevicesToTest())),
+    TritonSupportTestTwoTypesAndDeviceToString);
+
 constexpr std::array kUnsupportedOps = {
     // clang-format off
     // go/keep-sorted start
@@ -1402,7 +1493,6 @@ constexpr std::array kUnsupportedOps = {
     HloOpcode::kCopyStart,
     HloOpcode::kCustomCall,
     HloOpcode::kDomain,
-    HloOpcode::kDot,
     HloOpcode::kDynamicReshape,
     HloOpcode::kDynamicSlice,
     HloOpcode::kDynamicUpdateSlice,
@@ -1460,6 +1550,7 @@ absl::flat_hash_set<HloOpcode> AllTestedOpcodes() {
   ret.insert(kTestedOpsRngGetAndUpdateState.begin(),
              kTestedOpsRngGetAndUpdateState.end());
   ret.insert(kTestedOpsComplex.begin(), kTestedOpsComplex.end());
+  ret.insert(kTestedOpsDot.begin(), kTestedOpsDot.end());
 
   ret.insert(kUnsupportedOps.begin(), kUnsupportedOps.end());
   return ret;
@@ -1467,7 +1558,9 @@ absl::flat_hash_set<HloOpcode> AllTestedOpcodes() {
 
 TEST(OpCoverage, UnsupportedOpcodes) {
   for (HloOpcode opcode : kUnsupportedOps) {
-    EXPECT_TRUE(internal::IsTritonUnsupportedOpcode(opcode));
+    EXPECT_TRUE(internal::IsTritonUnsupportedOpcode(opcode))
+        << "Opcode `" << HloOpcodeString(opcode)
+        << "` is not expected to be supported.";
   }
 }
 
