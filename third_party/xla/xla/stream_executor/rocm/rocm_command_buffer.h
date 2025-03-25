@@ -26,7 +26,9 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "rocm/include/hip/hip_runtime.h"
+#include "xla/stream_executor/bit_pattern.h"
 #include "xla/stream_executor/command_buffer.h"
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/gpu/gpu_command_buffer.h"
@@ -81,8 +83,9 @@ class RocmCommandBuffer : public GpuCommandBuffer {
       ConditionType type) override;
 
   absl::StatusOr<GraphNodeHandle> CreateMemsetNode(
-      const Dependencies& dependencies, DeviceMemoryBase destination,
-      BitPattern bit_pattern, size_t num_elements) override;
+      absl::Span<const GraphNodeHandle> dependencies,
+      DeviceMemoryBase destination, BitPattern bit_pattern,
+      size_t num_elements) override;
 
   absl::Status UpdateMemsetNode(GraphNodeHandle node_handle,
                                 DeviceMemoryBase destination,

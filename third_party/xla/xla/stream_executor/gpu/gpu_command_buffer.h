@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
@@ -34,6 +35,7 @@ limitations under the License.
 #include "xla/stream_executor/kernel.h"
 #include "xla/stream_executor/launch_dim.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "tsl/platform/casts.h"
 
 namespace stream_executor::gpu {
 
@@ -51,6 +53,9 @@ class GpuCommandBuffer : public CommandBuffer {
   struct GraphConditionalOpaque;
 
  public:
+  // A type of a conditional command support by the GPU command buffer.
+  enum class ConditionType { kIf, kWhile };
+
   // A graph node handle is an opaque handle that identifies a graph node in the
   // graph associated with a command buffer. GraphNodeHandles are created by
   // node factory functions and can be referenced in node update functions.
@@ -68,11 +73,12 @@ class GpuCommandBuffer : public CommandBuffer {
   using GraphConditionalHandle = GraphConditionalOpaque*;
   using GraphConditionalHandles = absl::Span<const GraphConditionalHandle>;
 
-  // A handle to a Gpu graph node and a metadata describing its properties. Each
-  // command (launch, memcpy, etc.) creates one or more graph nodes.
-  struct GpuGraphNodeInfo {
+  // A GPU command recorded into a GPU command buffer.
+  struct GpuCommand : public CommandBuffer::Command {
+    explicit GpuCommand(GraphNodeHandle handle) : handle(handle) {}
+
     // A handle to the gpu graph node corresponding to a command.
-    GraphNodeHandle handle{};
+    GraphNodeHandle handle = nullptr;
   };
 
   // A handle to Gpu graph barrier and metadata describing its properties. Each
@@ -109,7 +115,12 @@ class GpuCommandBuffer : public CommandBuffer {
                                     const DeviceMemoryBase& src,
                                     uint64_t size) override;
 
-  absl::Status Memset(DeviceMemoryBase* dst, BitPattern bit_pattern,
+  absl::StatusOr<const Command*> Memset(
+      DeviceMemoryBase* dst, BitPattern bit_pattern, size_t num_elements,
+      absl::Span<const Command* const> dependencies) override;
+
+  absl::Status Memset(const Command* command, DeviceMemoryBase* dst,
+                      const BitPattern& bit_pattern,
                       size_t num_elements) override;
 
   absl::Status If(DeviceMemory<bool> predicate, Builder then_builder) override;
@@ -138,7 +149,7 @@ class GpuCommandBuffer : public CommandBuffer {
   Mode mode() const override { return mode_; }
   State state() const override { return state_; }
 
-  absl::Span<const GpuGraphNodeInfo> nodes() const;
+  absl::Span<const std::unique_ptr<GpuCommand>> commands() const;
   absl::Span<const GpuGraphBarrierInfo> barriers() const;
 
   // Returns the list of dependencies for a given node. `node` must be a node
@@ -174,10 +185,6 @@ class GpuCommandBuffer : public CommandBuffer {
   // Wraps a regular command buffer builder into condition builder.
   static ConditionBuilder ToConditionBuilder(Builder builder);
 
- public:
-  enum class ConditionType { kIf, kWhile };
-
- private:
   // Prepares a nested command buffer for an update of the graph.
   // It's a prerequisite to a call to `Update` on a nested command buffer.
   // The return value needs to be kept alive until the update is finished. An
@@ -289,46 +296,26 @@ class GpuCommandBuffer : public CommandBuffer {
   // Collects a set of dependencies for a new barrier.
   Dependencies GetBarrierDependencies();
 
-  Mode mode_;
-  State state_ = State::kCreate;
-
-  StreamExecutor* parent_;  // not owned, must outlive *this
-
-  // Track the number of command buffer updates for debugging.
-  int64_t num_updates_ = 0;
-
-  // Gpu graph nodes corresponding to recorded commands (launch, memcpy,
-  // etc.).
-  std::vector<GpuGraphNodeInfo> nodes_;
-
-  // Gpu graph barriers that define recorded commands execution order.
-  std::vector<GpuGraphBarrierInfo> barriers_;
-
-  // Command buffers for conditional nodes in the Gpu graph. Underlying Gpu
-  // graphs owned by the `graph_` instance.
-  std::vector<ConditionalCommandBuffers> conditional_command_buffers_;
-
-  // Tracks indices into data structures during command buffer updates.
-  struct UpdateState {
-    // Index points to the graph node inside `nodes` that will be updated
-    // next.
-    int64_t node_idx = 0;
-
-    // Index points to the barrier node inside `barriers` that will be updated
-    // on a next call to `Barrier(...)`.
-    int64_t barrier_idx = 0;
-
-    // Index points to the conditional command buffers that will be updated
-    // next when we'll be updating next conditional command (If, Case, While).
-    int64_t conditional_idx = 0;
-  };
-
-  // Tracks execution scope update state.
-  UpdateState update_state_;
-
- private:
   absl::Status Case(DeviceMemory<uint8_t> index, bool index_is_bool,
                     std::vector<Builder> branches);
+
+  // Constructs a new command for the given graph node handle and appends it to
+  // the command buffer.
+  const Command* AppendCommand(GraphNodeHandle handle) {
+    commands_.push_back(std::make_unique<GpuCommand>(handle));
+    return commands_.back().get();
+  }
+
+  // Converts a list of command dependencies to a list of graph node handles.
+  Dependencies ToGraphNodeDependencies(
+      absl::Span<const Command* const> dependencies) {
+    Dependencies handles;
+    for (const Command* dependency : dependencies) {
+      auto* gpu_command = tsl::down_cast<const GpuCommand*>(dependency);
+      handles.push_back(gpu_command->handle);
+    }
+    return handles;
+  }
 
   // Adds a new conditional node to the graph and creates a corresponding nested
   // command buffer.
@@ -336,10 +323,11 @@ class GpuCommandBuffer : public CommandBuffer {
       const Dependencies& dependencies, GraphConditionalHandle conditional,
       ConditionType type) = 0;
 
-  // Adds a new memset node to the graph.
+  // Adds a new memset node to the underlying graph.
   virtual absl::StatusOr<GraphNodeHandle> CreateMemsetNode(
-      const Dependencies& dependencies, DeviceMemoryBase destination,
-      BitPattern bit_pattern, size_t num_elements) = 0;
+      absl::Span<const GraphNodeHandle> dependencies,
+      DeviceMemoryBase destination, BitPattern bit_pattern,
+      size_t num_elements) = 0;
 
   // Updates an existing memset node. Note that `node_handle` needs to be refer
   // to a node created by `CreateMemsetNode`.
@@ -407,6 +395,42 @@ class GpuCommandBuffer : public CommandBuffer {
 
   // Instantiates the executable graph from the underlying graph.
   virtual absl::Status InstantiateGraph() = 0;
+
+  Mode mode_;
+  State state_ = State::kCreate;
+
+  StreamExecutor* parent_;  // not owned, must outlive *this
+
+  // Track the number of command buffer updates for debugging.
+  int64_t num_updates_ = 0;
+
+  // Gpu commands recorded into the command buffer.
+  std::vector<std::unique_ptr<GpuCommand>> commands_;
+
+  // Gpu graph barriers that define recorded commands execution order.
+  std::vector<GpuGraphBarrierInfo> barriers_;
+
+  // Command buffers for conditional nodes in the Gpu graph. Underlying Gpu
+  // graphs owned by the `graph_` instance.
+  std::vector<ConditionalCommandBuffers> conditional_command_buffers_;
+
+  // Tracks indices into data structures during command buffer updates.
+  struct UpdateState {
+    // Index points to the graph node inside `nodes` that will be updated
+    // next.
+    int64_t node_idx = 0;
+
+    // Index points to the barrier node inside `barriers` that will be updated
+    // on a next call to `Barrier(...)`.
+    int64_t barrier_idx = 0;
+
+    // Index points to the conditional command buffers that will be updated
+    // next when we'll be updating next conditional command (If, Case, While).
+    int64_t conditional_idx = 0;
+  };
+
+  // Tracks execution scope update state.
+  UpdateState update_state_;
 };
 
 }  // namespace stream_executor::gpu
