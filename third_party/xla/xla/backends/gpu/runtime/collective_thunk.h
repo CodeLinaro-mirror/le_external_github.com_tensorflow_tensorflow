@@ -16,12 +16,12 @@ limitations under the License.
 #ifndef XLA_BACKENDS_GPU_RUNTIME_COLLECTIVE_THUNK_H_
 #define XLA_BACKENDS_GPU_RUNTIME_COLLECTIVE_THUNK_H_
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "absl/base/thread_annotations.h"
@@ -41,9 +41,7 @@ limitations under the License.
 #include "xla/hlo/translate/mhlo_to_hlo/attribute_exporter.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/collective_ops_utils.h"
-#include "xla/service/global_device_id.h"
 #include "xla/service/gpu/buffer_allocations.h"
-#include "xla/service/gpu/ir_emission_utils.h"
 #include "xla/service/llvm_ir/llvm_util.h"
 #include "xla/service/rendezvous.h"
 #include "xla/shape.h"
@@ -106,11 +104,11 @@ CollectiveConfig GetCollectiveConfigForMlir(
 
 // Handle to a communicator object with its `is_local` property.
 struct CommunicatorHandle {
-  CommunicatorHandle(Communicator* comm, bool is_local)
-      : comm(comm), is_local(is_local) {}
+  CommunicatorHandle(Communicator* comm, GpuCliqueKey clique_key)
+      : comm(comm), clique_key(std::move(clique_key)) {}
 
-  Communicator* comm;  // communicator object
-  bool is_local;       // whether this comm is a node-local comm
+  Communicator* comm;       // communicator object
+  GpuCliqueKey clique_key;  // clique key
 };
 
 //===----------------------------------------------------------------------===//
