@@ -62,7 +62,7 @@ TF_CALL_half(REGISTER_CPU_CONV_3D);
   REGISTER_KERNEL_BUILDER(                                            \
       Name("_FusedMatMul").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
       RaiseError<T>);
-TF_CALL_bfloat16(REGISTER_CPU_MATMUL);
+// TF_CALL_bfloat16(REGISTER_CPU_MATMUL);
 #undef REGISTER_CPU_MATMUL
 
 }  // namespace tensorflow
