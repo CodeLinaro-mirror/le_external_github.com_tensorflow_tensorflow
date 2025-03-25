@@ -146,7 +146,7 @@ xla_cc_test(
         ":protocol_proto_cc",
         ":service",
         ":topology_util",
-        "//xla:protobuf_util",
+        "//third_party/xls/common:proto_test_utils",
         "//xla:status_macros",
         "//xla/tsl/distributed_runtime/coordination:coordination_service_agent",
         "//xla/tsl/lib/core:status_test_util",

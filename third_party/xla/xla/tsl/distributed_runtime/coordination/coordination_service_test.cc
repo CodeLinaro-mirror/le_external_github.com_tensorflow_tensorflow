@@ -45,17 +45,18 @@ limitations under the License.
 #include "xla/tsl/protobuf/coordination_config.pb.h"
 #include "xla/tsl/protobuf/coordination_service.pb.h"
 #include "tsl/platform/random.h"
+#include "third_party/xls/common/proto_test_utils.h"
 
 namespace tsl {
 namespace {
 using ::testing::Each;
 using ::testing::Eq;
-using ::testing::EqualsProto;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::UnorderedElementsAre;
 using ::testing::UnorderedPointwise;
 using ::testing::status::StatusIs;
+using ::xls::proto_testing::EqualsProto;
 
 using tensorflow::CoordinatedJob;
 using tensorflow::CoordinatedTask;

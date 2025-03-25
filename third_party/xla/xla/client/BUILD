@@ -93,7 +93,7 @@ xla_cc_test(
     srcs = ["executable_build_options_test.cc"],
     deps = [
         ":executable_build_options",
-        "//xla:protobuf_util",
+        "//third_party/xls/common:proto_test_utils",
         "//xla:shape_util",
         "//xla/pjrt:compile_options_proto_cc",
         "//xla/service:computation_placer",

@@ -26,6 +26,7 @@ limitations under the License.
 #include "xla/hlo/experimental/auto_sharding/auto_sharding_strategy.h"
 #include "tsl/platform/platform.h"
 #include "tsl/platform/statusor.h"
+#include "third_party/xls/common/proto_test_utils.h"
 
 namespace xla {
 namespace spmd {
@@ -870,7 +871,7 @@ TEST(ScaleRequest, ScalesProperly) {
   AddCosts(expected_request.mutable_communication_costs(), expected_d);
   AddCosts(expected_request.mutable_resharding_costs(), expected_r);
   expected_request.mutable_coeff_limit()->set_coeff(1e7);
-  EXPECT_THAT(request, ::testing::EqualsProto(expected_request));
+  EXPECT_THAT(request, ::xls::proto_testing::EqualsProto(expected_request));
 }
 
 TEST(ScaleRequest, SkipsScaling) {
@@ -921,7 +922,7 @@ TEST(ScaleRequest, SkipsScaling) {
   AddCosts(expected_request.mutable_communication_costs(), expected_d);
   AddCosts(expected_request.mutable_resharding_costs(), expected_r);
   expected_request.mutable_coeff_limit()->set_coeff(1e7);
-  EXPECT_THAT(request, ::testing::EqualsProto(expected_request));
+  EXPECT_THAT(request, ::xls::proto_testing::EqualsProto(expected_request));
 }
 
 TEST(MinimumMemoryBudgetRequired, HandlesLiveMatrix) {

@@ -71,8 +71,8 @@ xla_cc_test(
     deps = [
         ":hlo_lexer",
         ":hlo_parser",
+        "//third_party/xls/common:proto_test_utils",
         "//xla:array",
-        "//xla:protobuf_util",
         "//xla:shape_util",
         "//xla:window_util",
         "//xla:xla_data_proto_cc",

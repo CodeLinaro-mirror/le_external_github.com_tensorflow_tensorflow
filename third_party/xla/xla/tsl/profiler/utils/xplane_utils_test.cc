@@ -33,6 +33,7 @@ limitations under the License.
 #include "xla/tsl/profiler/utils/xplane_schema.h"
 #include "xla/tsl/profiler/utils/xplane_visitor.h"
 #include "tsl/profiler/protobuf/xplane.pb.h"
+#include "third_party/xls/common/proto_test_utils.h"
 
 namespace tsl {
 namespace profiler {
@@ -43,10 +44,10 @@ using ::testing::SizeIs;
 using ::testing::UnorderedElementsAre;
 
 #if defined(PLATFORM_GOOGLE)
-using ::testing::EqualsProto;
 using ::testing::proto::IgnoringFields;
 using ::testing::proto::IgnoringRepeatedFieldOrdering;
 using ::testing::proto::Partially;
+using ::xls::proto_testing::EqualsProto;
 #endif
 
 XEvent CreateEvent(int64_t offset_ps, int64_t duration_ps) {

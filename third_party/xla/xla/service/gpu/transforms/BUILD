@@ -822,9 +822,9 @@ xla_cc_test(
     srcs = ["conv_rewriter_test.cc"],
     deps = [
         ":conv_rewriter",
+        "//third_party/xls/common:proto_test_utils",
         "//xla:array4d",
         "//xla:literal_util",
-        "//xla:protobuf_util",
         "//xla:shape_util",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/testlib:pattern_matcher_gmock",

@@ -2488,7 +2488,7 @@ xla_cc_test(
         ":gpu_device_info_for_tests",
         ":hlo_fusion_analysis",
         ":ir_emission_utils",
-        "//xla:protobuf_util",
+        "//third_party/xls/common:proto_test_utils",
         "//xla/hlo/utils:hlo_traversal",
         "//xla/stream_executor:device_description",
         "//xla/stream_executor:device_description_proto_cc",

@@ -759,7 +759,7 @@ PartitionedHlo::ReshardAsWindowedInput(const Window& window,
   auto& cache = state_.reshard_cache->per_hlo_cache[hlo()].window_reshard_cache;
   for (auto& entry : cache) {
     if (std::get<0>(entry) == target &&
-        protobuf_util::ProtobufEquals(std::get<1>(entry), window)) {
+        protobuf_util::HaveSameSerialization(std::get<1>(entry), window)) {
       return std::get<2>(entry);
     }
   }
