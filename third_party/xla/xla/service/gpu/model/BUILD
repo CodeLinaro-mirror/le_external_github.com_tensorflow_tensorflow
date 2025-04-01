@@ -1044,7 +1044,12 @@ xla_cc_test(
 cc_library(
     name = "interpolator",
     hdrs = ["interpolator.h"],
-    deps = ["@com_google_absl//absl/log:check"],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/strings",
+    ],
 )
 
 xla_cc_test(
@@ -1052,6 +1057,8 @@ xla_cc_test(
     srcs = ["interpolator_test.cc"],
     deps = [
         ":interpolator",
+        "//xla/service/gpu:variant_visitor",
+        "@com_google_absl//absl/log",
         "@com_google_googletest//:gtest_main",
     ],
 )
