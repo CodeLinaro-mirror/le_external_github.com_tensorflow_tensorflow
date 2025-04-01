@@ -416,7 +416,7 @@ config_setting(
     name = "android_x86",
     constraint_values =
         [
-            ":x86_any",
+            "@platforms//cpu:x86_32",
             "@platforms//os:android",
         ],
     values = dict(
@@ -442,14 +442,14 @@ selects.config_setting_group(
     visibility = ["//visibility:public"],
 )
 
-selects.config_setting_group(
-    name = "x86_any",
-    match_any = [
-        "@platforms//cpu:x86_32",
-        "@platforms//cpu:x86_64",
-    ],
-    visibility = ["//visibility:public"],
-)
+# selects.config_setting_group(
+#     name = "x86_any",
+#     match_any = [
+#         "@platforms//cpu:x86_32",
+#         "@platforms//cpu:x86_64",
+#     ],
+#     visibility = ["//visibility:public"],
+# )
 
 selects.config_setting_group(
     name = "linux_any",
