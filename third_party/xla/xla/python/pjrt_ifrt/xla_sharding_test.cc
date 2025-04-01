@@ -71,6 +71,13 @@ TEST_P(HloShardingTest, IsFullyReplicated) {
     EXPECT_TRUE(sharding->IsFullyReplicated());
   }
   {
+    // Fully replicated.
+    auto xla_hlo_sharding = xla::HloSharding::IotaTile({1, 1});
+    std::shared_ptr<const HloSharding> sharding =
+        HloSharding::Create(device_list, MemoryKind(), xla_hlo_sharding);
+    EXPECT_TRUE(sharding->IsFullyReplicated());
+  }
+  {
     // Not fully replicated.
     auto xla_hlo_sharding = xla::HloSharding::IotaTile({1, 6});
     std::shared_ptr<const HloSharding> sharding =
