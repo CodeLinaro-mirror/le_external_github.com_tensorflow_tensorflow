@@ -704,6 +704,10 @@ class LayoutAssignment : public HloModulePass {
     }
   }
 
+  void ResetEntryComputationLayout() {
+    *entry_computation_layout_ = saved_entry_computation_layout_;
+  }
+
   // Adds constraints related to host Send/Recv instructions.
   absl::Status BuildHostChannelConstraints(HloComputation* computation);
 
