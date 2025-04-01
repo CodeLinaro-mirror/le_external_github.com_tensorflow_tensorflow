@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -41,7 +42,6 @@ limitations under the License.
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
@@ -86,6 +86,7 @@ limitations under the License.
 #include "xla/backends/gpu/codegen/emitters/ir/xla_gpu_ops.h"
 #include "xla/backends/gpu/codegen/emitters/transforms/passes.h"
 #include "xla/backends/gpu/codegen/triton/compilation_pipeline.h"
+#include "xla/backends/gpu/codegen/triton/dot_algorithms.h"
 #include "xla/backends/gpu/codegen/triton/emitter_helpers.h"
 #include "xla/backends/gpu/codegen/triton/fusion_emitter_legacy_matmul.h"
 #include "xla/backends/gpu/codegen/triton/ir/triton_xla_ops.h"
@@ -96,6 +97,7 @@ limitations under the License.
 #include "xla/codegen/emitters/transforms/passes.h"
 #include "xla/hlo/analysis/indexing_analysis.h"
 #include "xla/hlo/analysis/indexing_map.h"
+#include "xla/hlo/builder/xla_builder.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
@@ -130,7 +132,6 @@ limitations under the License.
 #include "xla/util.h"
 #include "xla/xla.pb.h"
 #include "xla/xla_data.pb.h"
-#include "tsl/platform/path.h"
 #include "triton/Conversion/TritonGPUToLLVM/Passes.h"
 #include "triton/Conversion/TritonToTritonGPU/TritonToTritonGPUPass.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
@@ -470,7 +471,7 @@ ScalarOrTensor ReshapeTensorToScalar(EmitterLocOpBuilder& b, Value input) {
   if (mlir::cast<ShapedType>(input.getType()).getRank() > 1) {
     Type output_tensor_type = mlir::RankedTensorType::get({1}, element_type);
     single_dim_tensor = b.create<ttir::ReshapeOp>(output_tensor_type, input,
-                                                  /*allow_reorder*/ true);
+                                                  /*allow_reorder=*/true);
   }
 
   // Second, reduce to a scalar.
@@ -511,7 +512,6 @@ absl::StatusOr<ScalarOrTensor> EmitTiledReshape(EmitterLocOpBuilder& b,
   }
 
   // At this point we know that the input is a non-0D tensor.
-
   auto input_shaped_type = mlir::cast<ShapedType>(input.getType());
 
   // Handle the case of reshaping [1,1,1...] to a scalar.
@@ -520,7 +520,6 @@ absl::StatusOr<ScalarOrTensor> EmitTiledReshape(EmitterLocOpBuilder& b,
   }
 
   // At this point we know that neither the input nor the output are 0D tensors.
-
   Type output_tensor_type = mlir::RankedTensorType::get(
       padded_tile_sizes, input_shaped_type.getElementType());
 
@@ -714,6 +713,65 @@ absl::StatusOr<Value> MaskDotOperand(EmitterLocOpBuilder& b,
   return dot_operand_value;
 }
 
+// Returns `shape` without all its unit dimensions, as well as the index of the
+// remaining dimensions in the original `shape`.
+std::pair<SmallVector<int64_t>, SmallVector<int64_t>> CollapseUnitDims(
+    llvm::ArrayRef<int64_t> shape) {
+  SmallVector<int64_t> shape_without_unit_dims;
+  SmallVector<int64_t> non_unit_dims_indices;
+  for (auto [i, size] : llvm::enumerate(shape)) {
+    if (size != 1) {
+      shape_without_unit_dims.push_back(size);
+      non_unit_dims_indices.push_back(i);
+    }
+  }
+  return {std::move(shape_without_unit_dims), std::move(non_unit_dims_indices)};
+}
+
+enum class DotOperandSide { kLhs, kRhs };
+
+// Canonicalizes the given operand of a dot operation, i.e. make it a 2D tensor,
+// and make sure that the contracting dimension is where we expect it to be for
+// the given side (the second dimension for LHS, the first dimension for the
+// RHS).
+//
+// Returns an error if canonicalization is not possible.
+absl::StatusOr<Value> CanonicalizeDotOperand(EmitterLocOpBuilder& b,
+                                             Value operand,
+                                             int64_t contracting_dim_idx,
+                                             DotOperandSide side) {
+  llvm::ArrayRef<int64_t> shape =
+      mlir::cast<ShapedType>(operand.getType()).getShape();
+  auto [shape_without_unit_dims, non_unit_dims_indices] =
+      CollapseUnitDims(shape);
+
+  if (shape_without_unit_dims.size() != 2) {
+    return absl::FailedPreconditionError(
+        "Expected dot operand tile to have exactly two non-unit tile sizes");
+  }
+
+  if (shape.size() != shape_without_unit_dims.size()) {
+    TF_ASSIGN_OR_RETURN(
+        ScalarOrTensor wrapped_operand,
+        EmitTiledReshape(b, shape_without_unit_dims, ScalarOrTensor(operand)));
+    operand = wrapped_operand.UnwrapTensor();
+  }
+
+  int expected_contracting_dim_position = side == DotOperandSide::kLhs ? 1 : 0;
+  bool is_transposed =
+      non_unit_dims_indices[expected_contracting_dim_position] !=
+      contracting_dim_idx;
+
+  if (is_transposed) {
+    SmallVector<int64_t, 2> transposed_shape{shape_without_unit_dims[1],
+                                             shape_without_unit_dims[0]};
+    operand =
+        EmitTiledTranspose(b, transposed_shape, /*dimensions=*/{1, 0}, operand);
+  }
+
+  return operand;
+}
+
 absl::StatusOr<ScalarOrTensor> EmitDot(EmitterLocOpBuilder& b,
                                        absl::string_view libdevice_path,
                                        const se::DeviceDescription& device_info,
@@ -762,10 +820,30 @@ absl::StatusOr<ScalarOrTensor> EmitDot(EmitterLocOpBuilder& b,
     return absl::FailedPreconditionError("Expected dot operands to be fusions");
   }
 
-  // Iteration arguments only contain the accumulator.
-  TF_ASSIGN_OR_RETURN(Type ty, TritonType(b, dot.shape().element_type()));
-  SmallVector<Value> iter_args = {
-      CreateConst(b, ty, 0.0f, tiled_hlo_dot.tile_sizes()).UnwrapUnsafe()};
+  SmallVector<int64_t> padded_tile_sizes =
+      GetPaddedTileSizes(tiled_hlo_dot.tile_sizes());
+
+  SmallVector<int64_t, 2> padded_tile_sizes_no_unit_dims =
+      CollapseUnitDims(padded_tile_sizes).first;
+
+  // Sanity check: Triton historically did not support non-2D dots (and still
+  // doesn't support arbitrary nD dots), so we require that the dot is tiled
+  // with exactly two non-unit tile sizes. This anyway matches the hardware's
+  // expectations, so seems like a reasonable requirement.
+  // TODO(b/393299275): this needs to be enforced in tiling.
+  if (padded_tile_sizes_no_unit_dims.size() != 2) {
+    return absl::FailedPreconditionError(
+        "Expected dot to be tiled with exactly two non-unit tile sizes");
+  }
+
+  // The specific accumulator type to use may not correspond to the output type
+  // of the dot. In particular, that is the case when an algorithm is specified
+  // and the dot's output type does not match its expectations.
+  TF_ASSIGN_OR_RETURN(Type accumulator_type,
+                      triton::GetDotAccumulatorType(b, dot));
+  Value accumulator =
+      CreateConst(b, accumulator_type, 0.0f, padded_tile_sizes_no_unit_dims)
+          .UnwrapTensor();
 
   auto ci64 = [&](int64_t value) -> Value {
     return b.create<arith::ConstantOp>(b.getIntegerAttr(b.getI64Type(), value));
@@ -774,7 +852,7 @@ absl::StatusOr<ScalarOrTensor> EmitDot(EmitterLocOpBuilder& b,
                       GetDotLoopIterationCount(tiled_hlo_dot));
   auto for_op = b.create<mlir::scf::ForOp>(
       /*lowerBound=*/ci64(0), /*upperBound=*/ci64(loop_iteration_count),
-      /*step=*/ci64(1), iter_args);
+      /*step=*/ci64(1), SmallVector<Value>{accumulator});
   {  // Loop body.
     mlir::OpBuilder::InsertionGuard g(b);
     b.setInsertionPointToStart(for_op.getBody());
@@ -803,22 +881,7 @@ absl::StatusOr<ScalarOrTensor> EmitDot(EmitterLocOpBuilder& b,
       }
       dot_args.push_back(result.front().UnwrapTensor());
     }
-    QCHECK_EQ(dot_args.size(), 2);
-    QCHECK_EQ(iter_args.size(), 1);
     Value acc = for_op.getRegionIterArgs().front();
-    const PrecisionConfig& precision_config = dot.precision_config();
-    // TODO(b/393299275): Support precision config. Right now we bail out if
-    // user wants anything but the default.
-    if (precision_config.algorithm() != PrecisionConfig::ALG_UNSET ||
-        absl::c_any_of(precision_config.operand_precision(),
-                       [](const int precision) {
-                         return precision != PrecisionConfig::DEFAULT;
-                       })) {
-      return absl::UnimplementedError(
-          absl::StrCat("Unsupported precision config: ",
-                       precision_config.ShortDebugString()));
-    }
-
     int64_t lhs_contracting_dim_idx =
         dot.dot_dimension_numbers().lhs_contracting_dimensions(0);
 
@@ -837,13 +900,39 @@ absl::StatusOr<ScalarOrTensor> EmitDot(EmitterLocOpBuilder& b,
         Value rhs, MaskDotOperand(b, *tiled_hlo_dot.operand(1), dot_args[1],
                                   ki_i32, rhs_contracting_dim_idx));
 
-    Value dot_result =
-        b.create<ttir::DotOp>(lhs, rhs, acc,
-                              /*inputPrecision=*/ttir::InputPrecision::IEEE,
-                              /*maxNumImpreciseAcc=*/0);
-    b.create<mlir::scf::YieldOp>(dot_result);
+    // Canonicalize the dot operands to match Triton's/the hardware's
+    // expectations.
+    TF_ASSIGN_OR_RETURN(lhs,
+                        CanonicalizeDotOperand(b, lhs, lhs_contracting_dim_idx,
+                                               DotOperandSide::kLhs));
+    TF_ASSIGN_OR_RETURN(rhs,
+                        CanonicalizeDotOperand(b, rhs, rhs_contracting_dim_idx,
+                                               DotOperandSide::kRhs));
+
+    TF_ASSIGN_OR_RETURN(
+        Value acc_next,
+        triton::EmitSingleTileDot(b, dot, triton::DotOperands{lhs, rhs, acc}));
+    b.create<mlir::scf::YieldOp>(acc_next);
   }
-  return ScalarOrTensor(for_op.getResult(0));
+
+  // The output of the loop may not match the expected output type of the dot.
+  // We make sure to issue a conversion if necessary.
+  TF_ASSIGN_OR_RETURN(Type dot_output_type,
+                      TritonType(b, dot.shape().element_type()));
+
+  Value result = for_op.getResult(0);
+  if (dot_output_type != accumulator_type) {
+    result = Cast(b, result, dot_output_type);
+  }
+
+  if (padded_tile_sizes.size() != padded_tile_sizes_no_unit_dims.size()) {
+    TF_ASSIGN_OR_RETURN(
+        ScalarOrTensor wrapped_result,
+        EmitTiledReshape(b, padded_tile_sizes, ScalarOrTensor(result)));
+    result = wrapped_result.UnwrapTensor();
+  }
+
+  return ScalarOrTensor(result);
 }
 
 absl::StatusOr<ScalarOrTensor> EmitConcatenate(
