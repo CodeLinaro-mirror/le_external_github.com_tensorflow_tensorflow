@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/hlo/transforms/sharding_format_picker.h"
+#include "xla/service/spmd/sharding_format_picker.h"
 
 #include <algorithm>
 #include <cmath>

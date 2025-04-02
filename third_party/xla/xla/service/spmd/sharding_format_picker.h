@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_HLO_TRANSFORMS_SHARDING_FORMAT_PICKER_H_
-#define XLA_HLO_TRANSFORMS_SHARDING_FORMAT_PICKER_H_
+#ifndef XLA_SERVICE_SPMD_SHARDING_FORMAT_PICKER_H_
+#define XLA_SERVICE_SPMD_SHARDING_FORMAT_PICKER_H_
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/statusor.h"
@@ -46,4 +46,4 @@ class ShardingFormatPicker : public HloModulePass {
 
 }  // namespace xla
 
-#endif  // XLA_HLO_TRANSFORMS_SHARDING_FORMAT_PICKER_H_
+#endif  // XLA_SERVICE_SPMD_SHARDING_FORMAT_PICKER_H_

@@ -81,7 +81,6 @@ limitations under the License.
 #include "xla/hlo/transforms/literal_canonicalizer.h"
 #include "xla/hlo/transforms/memory_space_propagation.h"
 #include "xla/hlo/transforms/operand_upcaster.h"
-#include "xla/hlo/transforms/sharding_format_picker.h"
 #include "xla/hlo/transforms/simplifiers/algebraic_simplifier.h"
 #include "xla/hlo/transforms/simplifiers/all_reduce_folder.h"
 #include "xla/hlo/transforms/simplifiers/ar_crs_combiner.h"
@@ -322,8 +321,6 @@ void OptProvider::RegisterAllHardwareIndependentPasses() {
   RegisterPass<RngBitGeneratorExpander>(RandomAlgorithm::RNG_THREE_FRY);
   RegisterPass<RngExpander>();
   RegisterPass<RootInstructionSinker>();
-  RegisterPass<ShardingFormatPicker>(
-      /*sharding_type=*/ShardingFormatPicker::ShardingType::kBestEffortV2);
   RegisterPass<SimplifyFPConversions>();
   RegisterPass<SliceSinker>();
   RegisterPass<SortSimplifier>();
