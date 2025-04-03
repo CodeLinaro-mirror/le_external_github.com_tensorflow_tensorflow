@@ -40,7 +40,13 @@ namespace mhlo {
 namespace {
 
 void legalDirectStablehloToHloConversionOps(ConversionTarget& target) {
-  target.addLegalOp<stablehlo::AddOp, stablehlo::ConstantOp>();
+  target.addLegalOp<
+      // go/keep-sorted start
+      stablehlo::AddOp, stablehlo::BroadcastInDimOp, stablehlo::BroadcastOp,
+      stablehlo::ConstantOp, stablehlo::DynamicBroadcastInDimOp,
+      stablehlo::DynamicSliceOp, stablehlo::SliceOp
+      // go/keep-sorted end
+      >();
 }
 
 struct StablehloLegalizeToHloPass
