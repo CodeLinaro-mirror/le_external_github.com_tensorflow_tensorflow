@@ -400,18 +400,30 @@ static mlir::FailureOr<xla::Shape> ExtractXlaShape(mlir::Operation* op) {
     return ConvertDenseIntAttr(attribute);                   \
   }
 
+#define I64_ARRAY_ATTR_TO_VECTOR(attribute)                      \
+  static std::vector<int64_t> Convert_##attribute(               \
+      std::optional<llvm::ArrayRef<int64_t>> attribute) {        \
+    if (!attribute) return {};                                   \
+    return {attribute.value().begin(), attribute.value().end()}; \
+  }
+
 I64_ELEMENTS_ATTR_TO_VECTOR(broadcast_sizes);
 I64_ELEMENTS_ATTR_TO_VECTOR(permutation);
 I64_ELEMENTS_ATTR_TO_VECTOR(start_indices);
+I64_ARRAY_ATTR_TO_VECTOR(start_indices);
 I64_ELEMENTS_ATTR_TO_VECTOR(limit_indices);
+I64_ARRAY_ATTR_TO_VECTOR(limit_indices);
 I64_ELEMENTS_ATTR_TO_VECTOR(strides);
+I64_ARRAY_ATTR_TO_VECTOR(strides);
 I64_ELEMENTS_ATTR_TO_VECTOR(slice_sizes);
+I64_ARRAY_ATTR_TO_VECTOR(slice_sizes);
 I64_ELEMENTS_ATTR_TO_VECTOR(fft_length);
 I64_ELEMENTS_ATTR_TO_VECTOR(dimensions);
 I64_ELEMENTS_ATTR_TO_VECTOR(window_strides);
 I64_ELEMENTS_ATTR_TO_VECTOR(lhs_dilation);
 I64_ELEMENTS_ATTR_TO_VECTOR(rhs_dilation);
 
+#undef I64_ARRAY_ATTR_TO_VECTOR
 #undef I64_ELEMENTS_ATTR_TO_VECTOR
 
 #define BOOL_ELEMENTS_ATTR_TO_VECTOR(attribute)           \
