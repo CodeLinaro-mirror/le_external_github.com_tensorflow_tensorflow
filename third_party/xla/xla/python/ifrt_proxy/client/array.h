@@ -17,6 +17,8 @@
 #ifndef XLA_PYTHON_IFRT_PROXY_CLIENT_ARRAY_H_
 #define XLA_PYTHON_IFRT_PROXY_CLIENT_ARRAY_H_
 
+#include <stdbool.h>
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -109,13 +111,14 @@ class Array final : public llvm::RTTIExtends<Array, xla::ifrt::Array> {
 
   Array(xla::ifrt::Client* const client, std::shared_ptr<RpcHelper> rpc_helper,
         DType dtype, Shape shape, std::shared_ptr<const Sharding> sharding,
-        ArrayHandle handle)
+        ArrayHandle handle, std::shared_ptr<const xla::PjRtLayout> xla_layout)
       : client_(client),
         rpc_helper_(std::move(rpc_helper)),
         dtype_(dtype),
         shape_(std::move(shape)),
         sharding_(std::move(sharding)),
-        handle_(handle) {}
+        handle_(handle),
+        xla_layout_(std::move(xla_layout)) {}
 
   ~Array() override { Destruct(rpc_helper_.get(), handle_); }
 
@@ -157,10 +160,7 @@ class Array final : public llvm::RTTIExtends<Array, xla::ifrt::Array> {
   std::shared_ptr<const Sharding> shared_ptr_sharding() const override {
     return sharding_;
   }
-  absl::StatusOr<std::shared_ptr<const PjRtLayout>> layout() const override {
-    return absl::UnimplementedError(
-        "Array::layout() not implemented for IFRT proxy");
-  };
+  absl::StatusOr<std::shared_ptr<const PjRtLayout>> layout() const override;
 
   absl::StatusOr<std::vector<tsl::RCReference<xla::ifrt::Array>>>
   DisassembleIntoSingleDeviceArrays(
@@ -206,6 +206,8 @@ class Array final : public llvm::RTTIExtends<Array, xla::ifrt::Array> {
     kAlive     // IsDeleted() will return false.
   };
   mutable DeletionState deleted_ ABSL_GUARDED_BY(mu_) = DeletionState::kAlive;
+  mutable std::shared_ptr<const xla::PjRtLayout> xla_layout_
+      ABSL_GUARDED_BY(mu_);
 };
 
 }  // namespace proxy
