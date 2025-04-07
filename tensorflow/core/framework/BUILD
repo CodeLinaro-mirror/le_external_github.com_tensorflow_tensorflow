@@ -46,6 +46,7 @@ default_visibility = [
     #internal library,
     # TODO(matthurd): to be removed when summary.proto.h deps moves to TSL
     "@org_xprof//xprof:__subpackages__",
+    "//tensorflow/cc/experimental/tfa:__subpackages__",
 ]
 
 package(
