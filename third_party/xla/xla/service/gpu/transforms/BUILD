@@ -3256,6 +3256,26 @@ cc_library(
     ],
 )
 
+xla_cc_test(
+    name = "triangular_solve_rewriter_test",
+    srcs = [
+        "triangular_solve_rewriter_test.cc",
+    ],
+    deps = [
+        ":triangular_solve_rewriter",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/pass:hlo_pass_pipeline",
+        "//xla/hlo/testlib:pattern_matcher_gmock",
+        "//xla/hlo/utils:hlo_matchers",
+        "//xla/service:pattern_matcher",
+        "//xla/tests:hlo_test_base",
+        "//xla/tsl/platform:statusor",
+        "@com_google_googletest//:gtest_main",
+        "@local_tsl//tsl/platform:status_matchers",
+        "@local_tsl//tsl/platform:test",
+    ],
+)
+
 cc_library(
     name = "triton_fusion_numerics_verifier",
     srcs = ["triton_fusion_numerics_verifier.cc"],
