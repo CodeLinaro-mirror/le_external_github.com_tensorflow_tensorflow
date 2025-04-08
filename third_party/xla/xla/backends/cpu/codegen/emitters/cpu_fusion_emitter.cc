@@ -191,8 +191,72 @@ CpuFusionEmitterBase::CreateMLIRModule(
   mlir::OpBuilder builder(&context);
   auto loc = mlir::NameLoc::get(builder.getStringAttr(fusion.name()));
   mlir::OwningOpRef<mlir::ModuleOp> module = llvm_ir::CreateMlirModuleOp(loc);
+  SetDataLayoutAttribute(module.get(), fusion);
 
-  // Create the entry function.
+  TF_ASSIGN_OR_RETURN(
+      mlir::func::FuncOp entry_func,
+      EmitFusionKernelApi(module.get(), fusion, entry_function_name,
+                          buffer_assignment));
+
+  std::vector<emitters::EpilogueSpecification> epilogues =
+      GetEpilogues(fusion, &context);
+  emitters::PartitionedComputations computations(
+      fusion.fused_instructions_computation(), &context, epilogues);
+  TF_ASSIGN_OR_RETURN(
+      emitters::CallTargetProvider call_targets,
+      EmitCallTargets(module.get(), fusion, computations, epilogues));
+
+  TF_RETURN_IF_ERROR(
+      EmitEntryFunction(computations, call_targets, entry_func, fusion));
+  return module;
+}
+
+using mlir::AffineExpr;
+
+IndexingMap GetDefaultIndexingMap(absl::Span<const int64_t> thread_tile_sizes,
+                                  absl::Span<const int64_t> shape,
+                                  mlir::MLIRContext* mlir_context) {
+  CHECK_EQ(thread_tile_sizes.size(), shape.size())
+      << "thread_tile_sizes and shape must have the same size";
+  SmallVector<int64_t> thread_tile_counts;
+  thread_tile_counts.reserve(thread_tile_sizes.size());
+  for (auto [tile_size, dim_size] : llvm::zip(thread_tile_sizes, shape)) {
+    thread_tile_counts.push_back(CeilDiv(dim_size, tile_size));
+  }
+  // Delinearize thread_expr w.r.t. number of thread tiles per dimension.
+  auto thread_expr = mlir::getAffineDimExpr(0, mlir_context);
+  SmallVector<AffineExpr, 4> thread_ids =
+      DelinearizeInBoundsIndex(thread_expr, thread_tile_counts);
+  SmallVector<AffineExpr, 4> result;
+  result.reserve(thread_ids.size());
+  auto linear_index = mlir::getAffineSymbolExpr(0, mlir_context);
+  SmallVector<AffineExpr, 4> indices_in_tile =
+      DelinearizeInBoundsIndex(linear_index, thread_tile_sizes);
+  SmallVector<std::pair<AffineExpr, Interval>, 4> constraints;
+  constraints.reserve(thread_ids.size());
+  for (auto [tile_size, thread_id, index_in_tile, dim] :
+       llvm::zip(thread_tile_sizes, thread_ids, indices_in_tile, shape)) {
+    result.push_back(thread_id * tile_size + index_in_tile);
+    constraints.push_back(std::make_pair(result.back(), Interval{0, dim - 1}));
+  }
+  int64_t num_threads = Product(thread_tile_counts);
+  int64_t num_tile_elements = Product(thread_tile_sizes);
+
+  auto affine_map = mlir::AffineMap::get(/*num_dims=*/1, /*num_symbols=*/1,
+                                         result, mlir_context);
+  return IndexingMap(
+      affine_map, {IndexingMap::Variable({0, num_threads - 1, "thread_id"})},
+      {IndexingMap::Variable({0, num_tile_elements - 1, "linear_index"})}, {},
+      constraints);
+}
+
+absl::StatusOr<mlir::func::FuncOp> EmitFusionKernelApi(
+    mlir::ModuleOp fusion_module, const HloFusionInstruction& fusion,
+    const std::string& entry_function_name,
+    const BufferAssignment& buffer_assignment) {
+  auto* context = fusion_module.getContext();
+  mlir::OpBuilder builder(context);
+  auto loc = mlir::NameLoc::get(builder.getStringAttr(fusion.name()));
   TF_ASSIGN_OR_RETURN(
       std::vector<KernelApiIrBuilder::KernelParameter> arguments,
       KernelApiIrBuilder::GetKernelArgumentsParameters(&fusion,
@@ -237,21 +301,21 @@ CpuFusionEmitterBase::CreateMLIRModule(
                         get_arg_attrs(index, result.slice, /*is_result=*/true));
   }
 
-  builder.setInsertionPointToStart(module->getBody());
+  builder.setInsertionPointToStart(fusion_module.getBody());
   auto entry_func = builder.create<FuncOp>(
       loc, entry_function_name,
-      mlir::FunctionType::get(&context, param_types, result_types),
+      mlir::FunctionType::get(context, param_types, result_types),
       /*sym_visibility=*/mlir::StringAttr{},
-      mlir::ArrayAttr::get(&context, arg_attrs),
+      mlir::ArrayAttr::get(context, arg_attrs),
       /*res_attrs=*/mlir::ArrayAttr{});
-  entry_func->setAttr("xla.entry", mlir::UnitAttr::get(&context));
-  SetBackendKind(&context, entry_func, xla::BackendKind::kCpu);
+  entry_func->setAttr("xla.entry", mlir::UnitAttr::get(context));
+  SetBackendKind(context, entry_func, xla::BackendKind::kCpu);
   entry_func.setPrivate();
 
   // Create wrapper for the entry function. This function has one call_frame
   // argument and call the entry function.
-  auto error_type = cpu::ErrorType::get(&context);
-  auto call_frame_type = CallFrameType::get(mlir_context_);
+  auto error_type = cpu::ErrorType::get(context);
+  auto call_frame_type = CallFrameType::get(context);
   auto call_frame_func = builder.create<FuncOp>(
       loc, fusion.name(),
       builder.getFunctionType(/*arg_types=*/{call_frame_type},
@@ -269,7 +333,7 @@ CpuFusionEmitterBase::CreateMLIRModule(
   }
   auto call_results =
       builder.create<xla::PureCallOp>(loc, entry_func, extracted_values);
-  call_results->setAttr("noinline", mlir::UnitAttr::get(&context));
+  call_results->setAttr("noinline", mlir::UnitAttr::get(context));
   for (auto [index, call_result] : llvm::enumerate(call_results.getResults())) {
     builder.create<cpu::StoreOp>(loc, call_result, call_frame_arg,
                                  index + arguments.size());
@@ -277,19 +341,14 @@ CpuFusionEmitterBase::CreateMLIRModule(
   auto error = builder.create<cpu::SuccessOp>(loc, error_type);
   builder.create<mlir::func::ReturnOp>(loc, error.getResult());
 
-  TF_RETURN_IF_ERROR(EmitMlir(module.get(), entry_func, fusion));
-  return module;
+  return entry_func;
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-absl::Status CpuFusionEmitterBase::EmitMlir(
-    mlir::ModuleOp module, FuncOp entry_function,
-    const HloFusionInstruction& fusion) const {
-  std::vector<emitters::EpilogueSpecification> epilogues =
-      GetEpilogues(fusion, module->getContext());
-  emitters::PartitionedComputations computations(
-      fusion.fused_instructions_computation(), module->getContext(),
-      /*epilogues=*/epilogues);
+absl::StatusOr<emitters::CallTargetProvider> EmitCallTargets(
+    mlir::ModuleOp module, const HloFusionInstruction& fusion,
+    const emitters::PartitionedComputations& computations,
+    const std::vector<emitters::EpilogueSpecification>& epilogues) {
   auto subgraph_to_mlir_fn = computations.DeclareFunctions(module);
 
   // Erase subgraphs for all heroes that aren't used anywhere else. This is
@@ -331,6 +390,11 @@ absl::Status CpuFusionEmitterBase::EmitMlir(
         epilogue, subgraph_to_mlir_fn[&epilogue], call_targets));
   }
 
+  return call_targets;
+}
+
+void SetDataLayoutAttribute(mlir::ModuleOp module,
+                            const HloFusionInstruction& fusion) {
   int index_bitwidth =
       Needs64BitIndices(fusion.fused_instructions_computation()) ? 64 : 32;
   mlir::OpBuilder b(module->getContext());
@@ -339,47 +403,6 @@ absl::Status CpuFusionEmitterBase::EmitMlir(
   module->setAttr(
       mlir::DLTIDialect::kDataLayoutAttrName,
       mlir::DataLayoutSpecAttr::get(module->getContext(), {index_layout}));
-
-  return EmitEntryFunction(computations, call_targets, entry_function, fusion);
-}
-
-using mlir::AffineExpr;
-
-IndexingMap GetDefaultIndexingMap(absl::Span<const int64_t> thread_tile_sizes,
-                                  absl::Span<const int64_t> shape,
-                                  mlir::MLIRContext* mlir_context) {
-  CHECK_EQ(thread_tile_sizes.size(), shape.size())
-      << "thread_tile_sizes and shape must have the same size";
-  SmallVector<int64_t> thread_tile_counts;
-  thread_tile_counts.reserve(thread_tile_sizes.size());
-  for (auto [tile_size, dim_size] : llvm::zip(thread_tile_sizes, shape)) {
-    thread_tile_counts.push_back(CeilDiv(dim_size, tile_size));
-  }
-  // Delinearize thread_expr w.r.t. number of thread tiles per dimension.
-  auto thread_expr = mlir::getAffineDimExpr(0, mlir_context);
-  SmallVector<AffineExpr, 4> thread_ids =
-      DelinearizeInBoundsIndex(thread_expr, thread_tile_counts);
-  SmallVector<AffineExpr, 4> result;
-  result.reserve(thread_ids.size());
-  auto linear_index = mlir::getAffineSymbolExpr(0, mlir_context);
-  SmallVector<AffineExpr, 4> indices_in_tile =
-      DelinearizeInBoundsIndex(linear_index, thread_tile_sizes);
-  SmallVector<std::pair<AffineExpr, Interval>, 4> constraints;
-  constraints.reserve(thread_ids.size());
-  for (auto [tile_size, thread_id, index_in_tile, dim] :
-       llvm::zip(thread_tile_sizes, thread_ids, indices_in_tile, shape)) {
-    result.push_back(thread_id * tile_size + index_in_tile);
-    constraints.push_back(std::make_pair(result.back(), Interval{0, dim - 1}));
-  }
-  int64_t num_threads = Product(thread_tile_counts);
-  int64_t num_tile_elements = Product(thread_tile_sizes);
-
-  auto affine_map = mlir::AffineMap::get(/*num_dims=*/1, /*num_symbols=*/1,
-                                         result, mlir_context);
-  return IndexingMap(
-      affine_map, {IndexingMap::Variable({0, num_threads - 1, "thread_id"})},
-      {IndexingMap::Variable({0, num_tile_elements - 1, "linear_index"})}, {},
-      constraints);
 }
 
 int64_t CeilDiv(int64_t a, int64_t b) { return (a + b - 1) / b; }
