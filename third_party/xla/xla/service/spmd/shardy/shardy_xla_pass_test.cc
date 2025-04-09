@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+// DO NOT SUBMIT - update tests!
+
 #include "xla/service/spmd/shardy/shardy_xla_pass.h"
 
 #include <memory>
