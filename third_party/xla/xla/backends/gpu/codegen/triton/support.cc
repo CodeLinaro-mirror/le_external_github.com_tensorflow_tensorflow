@@ -389,9 +389,9 @@ CodegenDecision IsTritonSupportedDot(
   }
 
   // TODO(b/393299275): add support tests for mixed types.
-  if (result_type != lhs_type || result_type != rhs_type) {
+  if (lhs_type != rhs_type) {
     return CodegenDecision::Forbid(
-        "Dot operation only supports same types for the result, lhs and rhs.");
+        "Dot operation only supports same types for lhs and rhs.");
   }
 
   absl::Status status = CheckSupportedCheckDotDimensions(dot);
