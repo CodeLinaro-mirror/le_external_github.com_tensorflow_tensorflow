@@ -832,5 +832,50 @@ TEST_F(HloDceTest,
   EXPECT_EQ(add2->control_predecessors().size(), 1);
   EXPECT_EQ(add2->control_predecessors()[0], fusion);
 }
+
+TEST_F(HloDceTest, UnusedCalledParameter) {
+  constexpr absl::string_view kHlo = R"(
+HloModule main
+
+ENTRY main {
+  arg.0 = s32[] parameter(0)
+  arg.1 = s32[] parameter(1)
+  ROOT call.0 = (s32[]) call(arg.0, arg.1), to_apply={
+    arg.0 = s32[] parameter(0)
+    arg.1 = s32[] parameter(1)
+    ROOT tuple.0 = tuple(arg.0)
+  }
+}
+  )";
+
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                          ParseAndReturnVerifiedModule(kHlo));
+  HloDCE dce;
+  TF_ASSERT_OK_AND_ASSIGN(bool changed, dce.Run(module.get()));
+  EXPECT_TRUE(changed);
+}
+
+TEST_F(HloDceTest, UnusedAsyncParameter) {
+  constexpr absl::string_view kHlo = R"(
+HloModule main
+
+ENTRY main {
+  arg.0 = s32[] parameter(0)
+  arg.1 = s32[] parameter(1)
+  call-start.0 = ((s32[], s32[]), (s32[]), s32[]) call-start(arg.0, arg.1), to_apply={
+    arg.0 = s32[] parameter(0)
+    arg.1 = s32[] parameter(1)
+    ROOT tuple.0 = tuple(arg.0)
+  }, async_execution_thread="thread"
+  ROOT call-done.0 = (s32[]) call-done(call-start.0)
+}
+  )";
+
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                          ParseAndReturnVerifiedModule(kHlo));
+  HloDCE dce;
+  TF_ASSERT_OK_AND_ASSIGN(bool changed, dce.Run(module.get()));
+  EXPECT_TRUE(changed);
+}
 }  // namespace
 }  // namespace xla

@@ -23,6 +23,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/hlo/pass/hlo_pass_interface.h"
+#include "xla/service/call_graph.h"
 
 namespace xla {
 
@@ -46,7 +47,8 @@ class HloDCE : public HloModulePass {
 
   // Run DCE on a computation.
   static absl::StatusOr<bool> RunOnComputation(
-      HloComputation* computation, bool remove_cross_partition_collective_ops);
+      HloComputation* computation, bool remove_cross_partition_collective_ops,
+      const CallGraph* call_graph = nullptr);
 
   // Run the pass on the given module. Returns whether the module was changed
   // (instructions were removed).

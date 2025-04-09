@@ -17,12 +17,15 @@ limitations under the License.
 
 #include <cstdint>
 #include <iterator>
+#include <memory>
+#include <optional>
 #include <set>
 #include <stack>
 #include <tuple>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
 #include "absl/status/statusor.h"
@@ -34,8 +37,10 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/hlo/ir/hlo_opcode.h"
+#include "xla/service/call_graph.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
+#include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
 #include "tsl/platform/errors.h"
 #include "tsl/platform/logging.h"
@@ -163,39 +168,80 @@ absl::StatusOr<bool> RemoveMultiOutputFusionsUnusedOutputs(
 }  // namespace
 
 /*static*/ absl::StatusOr<bool> HloDCE::RunOnComputation(
-    HloComputation* computation, bool remove_cross_partition_collective_ops) {
+    HloComputation* computation, bool remove_cross_partition_collective_ops,
+    const CallGraph* call_graph) {
   // We do this first, because it may create dead roots which we can clean up
   // next.
   TF_ASSIGN_OR_RETURN(bool changed,
                       RemoveMultiOutputFusionsUnusedOutputs(computation));
+
+  auto callers = [call_graph](const HloComputation* computation) {
+    if (call_graph == nullptr) {
+      return std::vector<HloInstruction*>();
+    }
+    return call_graph->GetComputationCallers(computation);
+  };
 
   // Remove any dead roots and their dead transitive operands. Collect
   // them into a separate list first to avoid problems with iterating through
   // the computation's instruction while simultaneously removing instructions.
   std::vector<HloInstruction*> dead_roots;
   for (auto* instruction : computation->instructions()) {
-    auto maybe_collective_op = DynCast<HloCollectiveInstruction>(instruction);
-    if (instruction->IsDead() && computation->IsSafelyRemovable(instruction) &&
-        (!instruction->IsCustomCall("Sharding") ||
-         (!instruction->operand(0)->IsRoot() &&
-          instruction->operand(0)->opcode() != HloOpcode::kParameter &&
-          instruction->operand(0)->user_count() == 1)) &&
-        (!instruction->HasSideEffect() ||
-         (remove_cross_partition_collective_ops && maybe_collective_op &&
-          !maybe_collective_op->constrain_layout()) ||
-         IsRemovableWhile(instruction,
-                          remove_cross_partition_collective_ops))) {
-      dead_roots.push_back(instruction);
+    if (!instruction->IsDead()) {
+      continue;
     }
+    if (!computation->IsSafelyRemovable(instruction,
+                                        /*ignore_control_dependency=*/false,
+                                        /*callers=*/callers)) {
+      continue;
+    }
+    // TODO(vsytch): explain.
+    if (instruction->opcode() == HloOpcode::kParameter) {
+      continue;
+    }
+    if (instruction->IsCustomCall("Sharding") &&
+        (instruction->operand(0)->IsRoot() ||
+         instruction->operand(0)->opcode() == HloOpcode::kParameter ||
+         instruction->operand(0)->user_count() != 1)) {
+      continue;
+    }
+    if (instruction->HasSideEffect()) {
+      auto maybe_collective_op = DynCast<HloCollectiveInstruction>(instruction);
+      bool allow_collective = remove_cross_partition_collective_ops &&
+                              maybe_collective_op &&
+                              !maybe_collective_op->constrain_layout();
+      bool allow_while =
+          IsRemovableWhile(instruction, remove_cross_partition_collective_ops);
+      if (!allow_collective && !allow_while) {
+        continue;
+      }
+    }
+    dead_roots.push_back(instruction);
   }
 
   for (HloInstruction* dead_root : dead_roots) {
     VLOG(1) << "Removing dead root " << dead_root->ToString()
             << " and its unused operands";
-    TF_RETURN_IF_ERROR(
-        computation->RemoveInstructionAndUnusedOperands(dead_root));
+    TF_RETURN_IF_ERROR(computation->RemoveInstructionAndUnusedOperands(
+        dead_root, /*cleanup=*/std::nullopt,
+        /*ignore_control_dependencies=*/false, /*callers=*/callers));
     changed = true;
   }
+
+  auto parameters = computation->parameter_instructions();
+  absl::c_reverse(parameters);
+  for (HloInstruction* parameter : parameters) {
+    if (parameter->IsDead() &&
+        computation->IsSafelyRemovable(parameter,
+                                       /*ignore_control_dependency=*/false,
+                                       /*callers=*/callers)) {
+      TF_RETURN_IF_ERROR(computation->RemoveInstructionAndUnusedOperands(
+          parameter, /*cleanup=*/std::nullopt,
+          /*ignore_control_dependencies=*/false, /*callers=*/callers));
+      changed = true;
+    }
+  }
+
   return changed;
 }
 
@@ -206,6 +252,8 @@ absl::StatusOr<bool> HloDCE::Run(
 
   VLOG(2) << "Before dce; threads: " << absl::StrJoin(execution_threads, ",");
   XLA_VLOG_LINES(2, module->ToString());
+
+  std::unique_ptr<CallGraph> call_graph = CallGraph::Build(module);
 
   // Run DCE on each computation. Visit callers before callees so that we
   // cleanup dead get-tuple-element users of MultiOutput fusions before cleaning
@@ -230,8 +278,8 @@ absl::StatusOr<bool> HloDCE::Run(
         execution_threads.contains(computation->execution_thread())) {
       TF_ASSIGN_OR_RETURN(
           bool computation_changed,
-          RunOnComputation(computation,
-                           remove_cross_partition_collective_ops_));
+          RunOnComputation(computation, remove_cross_partition_collective_ops_,
+                           call_graph.get()));
       changed |= computation_changed;
     }
 
