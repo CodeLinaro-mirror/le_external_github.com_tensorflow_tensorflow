@@ -37,6 +37,7 @@ class ShapeTest : public ::testing::Test {
   const Shape matrix_ = ShapeUtil::MakeShape(U32, {1, 2});
   const Shape matrix2_ =
       ShapeUtil::MakeShapeWithDenseLayout(S32, {3, 4}, {0, 1});
+  const Shape matrix_buffer_ = ShapeUtil::MakeBufferShape(S32, {3, 4});
   const Shape tuple_ =
       ShapeUtil::MakeTupleShape({opaque_, scalar_, matrix_, matrix2_});
   const Shape nested_tuple_ =
@@ -59,8 +60,8 @@ TEST(Shape, ArrayCtorTreatsEmptyDynamicDimensionsAsAllStatic) {
 
 TEST_F(ShapeTest, ShapeToFromProto) {
   for (const Shape& shape :
-       {opaque_, token_, scalar_, matrix_, matrix2_, tuple_, nested_tuple_,
-        dynamic_matrix_, unbounded_}) {
+       {opaque_, token_, scalar_, matrix_, matrix2_, matrix_buffer_, tuple_,
+        nested_tuple_, dynamic_matrix_, unbounded_}) {
     auto shape_copy = Shape::FromProto(shape.ToProto());
     TF_ASSERT_OK(shape_copy);
     EXPECT_TRUE(ShapeUtil::Equal(shape, *shape_copy))
@@ -84,6 +85,7 @@ TEST_F(ShapeTest, ShapeToString) {
             scalar_with_tile_.ToString(/*print_layout=*/true));
   EXPECT_EQ("u32[1,2]{1,0}", matrix_.ToString(/*print_layout=*/true));
   EXPECT_EQ("s32[3,4]{0,1}", matrix2_.ToString(/*print_layout=*/true));
+  EXPECT_EQ("b(s32[3,4]{1,0})", matrix_buffer_.ToString(/*print_layout=*/true));
   EXPECT_EQ("(opaque[], f32[], u32[1,2]{1,0}, s32[3,4]{0,1})",
             tuple_.ToString(/*print_layout=*/true));
   EXPECT_EQ(
@@ -133,6 +135,13 @@ TEST_F(ShapeTest, EqualityTest) {
   // Equal shapes.
   EXPECT_EQ(ShapeUtil::MakeShapeWithDenseLayout(F32, {23, 44}, {1, 0}),
             ShapeUtil::MakeShapeWithDenseLayout(F32, {23, 44}, {1, 0}));
+
+  // Equal with Buffer shapes.
+  EXPECT_TRUE(
+      Shape::Equal().IgnoreBuffer()(ShapeUtil::MakeBufferShape(S32, {3, 4}),
+                                    ShapeUtil::MakeShape(S32, {3, 4})));
+  EXPECT_FALSE(Shape::Equal()(ShapeUtil::MakeBufferShape(S32, {3, 4}),
+                              ShapeUtil::MakeShape(S32, {3, 4})));
 }
 
 TEST_F(ShapeTest, AreAllLeavesIntegers) {
@@ -301,8 +310,8 @@ TEST_F(ShapeTest, IgnoreSplitsComparison) {
 
 TEST_F(ShapeTest, SupportsAbslHash) {
   EXPECT_TRUE(absl::VerifyTypeImplementsAbslHashCorrectly(
-      {opaque_, token_, scalar_, scalar_with_tile_, matrix_, matrix2_, tuple_,
-       nested_tuple_, dynamic_matrix_}));
+      {opaque_, token_, scalar_, scalar_with_tile_, matrix_, matrix2_,
+       matrix_buffer_, tuple_, nested_tuple_, dynamic_matrix_}));
 }
 
 void BM_ShapeCopy(::testing::benchmark::State& state) {

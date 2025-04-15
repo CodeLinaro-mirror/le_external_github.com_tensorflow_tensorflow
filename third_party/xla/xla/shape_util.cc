@@ -279,6 +279,11 @@ static std::vector<bool> MakeDynamicDimensions(
       .value();
 }
 
+/* static */ Shape ShapeUtil::MakeBufferShape(
+    PrimitiveType element_type, absl::Span<const int64_t> dimensions) {
+  return Shape::MakeBufferShape(MakeShape(element_type, dimensions));
+}
+
 /* static */ Shape ShapeUtil::MakeShapeWithStaticDimensions(
     const Shape& shape) {
   Shape output = shape;
@@ -703,6 +708,11 @@ Shape ShapeUtil::PrependMajorDimension(int64_t bound, Shape shape) {
     PrintTupleShapes</*kPrintLayout=*/false>(printer, shape.tuple_shapes());
     return;
   }
+  if (shape.IsBuffer()) {
+    printer->Append("b");
+    PrintTupleShapes</*kPrintLayout=*/false>(printer, {shape.buffer_shape()});
+    return;
+  }
   printer->Append(
       primitive_util::LowercasePrimitiveTypeName(shape.element_type()));
   if (!shape.IsArray() || shape.dimensions().empty()) {
@@ -735,6 +745,11 @@ Shape ShapeUtil::PrependMajorDimension(int64_t bound, Shape shape) {
                                                         const Shape& shape) {
   if (shape.IsTuple()) {
     PrintTupleShapes</*kPrintLayout=*/true>(printer, shape.tuple_shapes());
+    return;
+  }
+  if (shape.IsBuffer()) {
+    printer->Append("b");
+    PrintTupleShapes</*kPrintLayout=*/true>(printer, {shape.buffer_shape()});
     return;
   }
   PrintHumanString(printer, shape);

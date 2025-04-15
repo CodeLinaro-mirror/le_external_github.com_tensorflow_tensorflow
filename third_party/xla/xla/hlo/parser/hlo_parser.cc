@@ -6271,11 +6271,18 @@ bool HloParserImpl::ParseLayout(Layout* layout) {
 
 // shape ::= shape_val_
 // shape ::= '(' tuple_elements ')'
+// shape ::= 'b''(' shape ')'
 // tuple_elements
 //   ::= /*empty*/
 //   ::= shape (',' shape)*
 bool HloParserImpl::ParseShape(Shape* result,
                                bool allow_fallback_to_default_layout) {
+  bool is_buffer = false;
+  if (lexer_.GetKind() == TokKind::kIdent && lexer_.GetStrVal() == "b" &&
+      lexer_.LookAhead() == TokKind::kLparen) {
+    lexer_.Lex();
+    is_buffer = true;
+  }
   if (EatIfPresent(TokKind::kLparen)) {  // Tuple
     std::vector<Shape> shapes;
     if (lexer_.GetKind() == TokKind::kRparen) {
@@ -6289,8 +6296,21 @@ bool HloParserImpl::ParseShape(Shape* result,
         }
       } while (EatIfPresent(TokKind::kComma));
     }
-    *result = ShapeUtil::MakeTupleShape(shapes);
+    if (is_buffer) {
+      if (shapes.size() != 1) {
+        return Error(lexer_.GetLoc(),
+                     "expects a single shape for a buffer element shape.");
+      }
+      *result = Shape::MakeBufferShape(shapes[0]);
+    } else {
+      *result = ShapeUtil::MakeTupleShape(shapes);
+    }
     return ParseToken(TokKind::kRparen, "expects ')' at the end of tuple.");
+  }
+
+  if (is_buffer) {
+    return Error(lexer_.GetLoc(),
+                 "expects '(...)' for a buffer element shape.");
   }
 
   PrimitiveType primitive_type;
@@ -6369,7 +6389,9 @@ bool HloParserImpl::CanBeShape() {
   // A non-tuple shape starts with a kPrimitiveType token; a tuple shape starts
   // with '('.
   return lexer_.GetKind() == TokKind::kPrimitiveType ||
-         lexer_.GetKind() == TokKind::kLparen;
+         lexer_.GetKind() == TokKind::kLparen ||
+         (lexer_.GetKind() == TokKind::kIdent && lexer_.GetStrVal() == "b" &&
+          lexer_.LookAhead() == TokKind::kLparen);
 }
 
 bool HloParserImpl::ParseName(std::string* result) {
