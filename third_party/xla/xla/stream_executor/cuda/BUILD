@@ -1118,6 +1118,7 @@ cc_library(
         ":cufft_plugin",
         ":make_batch_pointers_kernel_cuda",
         ":ragged_all_to_all_kernel_cuda",
+        "//xla/backends/gpu/collectives:gpu_collectives_plugin",  # Register GPU collectives plugin.
         "//xla/tsl/cuda:cusolver",
         "//xla/tsl/cuda:cusparse",
         "//xla/tsl/cuda:tensorrt_rpath",

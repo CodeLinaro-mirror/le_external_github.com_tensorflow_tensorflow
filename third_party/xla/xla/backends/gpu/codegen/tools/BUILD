@@ -68,6 +68,10 @@ xla_cc_binary(
     # set linkopts in such a way that dynamic libraries are found, which are
     # symlinked from the lit_lib directory.
     linkopts = ["-Wl,-rpath,$$ORIGIN/../lit_lib"],
+    tags = [
+        "cuda-only",
+        "gpu",
+    ],
     visibility = ["//xla/backends/gpu/codegen:__subpackages__"],
     deps = [
         ":test_lib",
@@ -76,8 +80,9 @@ xla_cc_binary(
         "//xla:shape_util",
         "//xla/hlo/analysis:indexing_analysis",
         "//xla/hlo/analysis:indexing_test_utils",
-        "//xla/service:gpu_plugin",
+        "//xla/service:gpu_plugin",  #  buildcleaner: keep. Without this dependency an interpreter will be used instead of the GPU backend.
         "//xla/service/gpu:hlo_fusion_analysis",
+        "//xla/stream_executor/cuda:all_runtime",  # registers
         "//xla/tests:hlo_test_base",
         "//xla/tsl/lib/core:status_test_util",
         "@com_google_absl//absl/log",

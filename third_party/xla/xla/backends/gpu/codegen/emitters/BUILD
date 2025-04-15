@@ -17,6 +17,7 @@ cc_library(
     name = "concatenate",
     srcs = ["concatenate.cc"],
     hdrs = ["concatenate.h"],
+    tags = ["gpu"],
     deps = [
         ":emitter_base",
         "//xla:shape_util",
@@ -43,6 +44,7 @@ cc_library(
     name = "emitter_base",
     srcs = ["emitter_base.cc"],
     hdrs = ["emitter_base.h"],
+    tags = ["gpu"],
     deps = [
         "//xla:shape_util",
         "//xla:status_macros",
@@ -125,6 +127,7 @@ cc_library(
 xla_cc_test(
     name = "emitter_base_test",
     srcs = ["emitter_base_test.cc"],
+    tags = ["gpu"],
     deps = [
         ":emitter_base",
         "//xla/codegen/emitters:computation_partitioner",
@@ -169,6 +172,7 @@ cc_library(
     name = "in_place_dynamic_update_slice",
     srcs = ["in_place_dynamic_update_slice.cc"],
     hdrs = ["in_place_dynamic_update_slice.h"],
+    tags = ["gpu"],
     deps = [
         ":emitter_base",
         "//xla:shape_util",
@@ -196,6 +200,7 @@ cc_library(
     name = "input_slices",
     srcs = ["input_slices.cc"],
     hdrs = ["input_slices.h"],
+    tags = ["gpu"],
     deps = [
         ":emitter_base",
         "//xla:util",
@@ -224,6 +229,7 @@ cc_library(
     name = "loop",
     srcs = ["loop.cc"],
     hdrs = ["loop.h"],
+    tags = ["gpu"],
     deps = [
         ":emitter_base",
         "//xla:shape_util",
@@ -253,6 +259,7 @@ cc_library(
     name = "reduction",
     srcs = ["reduction.cc"],
     hdrs = ["reduction.h"],
+    tags = ["gpu"],
     deps = [
         ":emitter_base",
         ":reduction_base",
@@ -298,6 +305,7 @@ cc_library(
     name = "reduction_base",
     srcs = ["reduction_base.cc"],
     hdrs = ["reduction_base.h"],
+    tags = ["gpu"],
     visibility = ["//xla/backends/gpu/codegen:__subpackages__"],
     deps = [
         "//xla:shape_util",
@@ -330,6 +338,7 @@ cc_library(
 xla_cc_test(
     name = "reduction_base_test",
     srcs = ["reduction_base_test.cc"],
+    tags = ["gpu"],
     deps = [
         ":reduction_base",
         "//xla/service/gpu:gpu_device_info_for_tests",
@@ -344,6 +353,7 @@ cc_library(
     name = "scatter",
     srcs = ["scatter.cc"],
     hdrs = ["scatter.h"],
+    tags = ["gpu"],
     deps = [
         ":emitter_base",
         "//xla:shape_util",
@@ -384,6 +394,7 @@ cc_library(
     name = "transpose",
     srcs = ["transpose.cc"],
     hdrs = ["transpose.h"],
+    tags = ["gpu"],
     deps = [
         ":emitter_base",
         "//xla:permutation_util",
