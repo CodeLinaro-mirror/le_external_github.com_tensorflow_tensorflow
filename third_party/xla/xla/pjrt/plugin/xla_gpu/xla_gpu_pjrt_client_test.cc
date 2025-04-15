@@ -31,12 +31,10 @@ TEST(XlaCpuPjrtClientTest, GetXlaPjrtGpuClient) {
 }
 
 TEST(XlaCpuPjrtClientTest, GetXlaPjrtGpuClientWithTfrtClient) {
-  setenv("USE_TFRT_GPU_CLIENT", "true", 1);
   GpuClientOptions options;
-  ASSERT_OK_AND_ASSIGN(auto client, GetXlaPjrtGpuClient(options));
+  ASSERT_OK_AND_ASSIGN(auto client, GetXlaPjrtGpuClient(options, true));
   EXPECT_EQ(client->platform_name(), "cuda");
   EXPECT_NE(dynamic_cast<TfrtGpuClient*>(client.get()), nullptr);
-  unsetenv("USE_TFRT_GPU_CLIENT");
 }
 
 }  // namespace xla

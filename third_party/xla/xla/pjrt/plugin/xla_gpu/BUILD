@@ -19,7 +19,6 @@ cc_library(
         "//xla/pjrt:pjrt_client",
         "//xla/pjrt/gpu:se_gpu_pjrt_client",
         "//xla/pjrt/gpu/tfrt:tfrt_gpu_client",
-        "//xla/tsl/util:env_var",
         "@com_google_absl//absl/status:statusor",
     ],
 )

@@ -29,7 +29,7 @@ bool UseTfrtGpuClient();
 
 // Public entry point to get an XLA:GPU PjRtClient
 absl::StatusOr<std::unique_ptr<PjRtClient>> GetXlaPjrtGpuClient(
-    GpuClientOptions options);
+    GpuClientOptions options, bool use_tfrt_gpu_client = false);
 
 }  // namespace xla
 
