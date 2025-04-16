@@ -118,7 +118,7 @@ mlir::Attribute GetDeviceOfResource(mlir::func::FuncOp func,
   if (auto* resource_op = resource.getDefiningOp()) {
     return resource_op->getAttr(kDeviceAttr);
   } else {
-    const auto resource_arg = resource.dyn_cast_or_null<BlockArgument>();
+    const auto resource_arg = dyn_cast_or_null<BlockArgument>(resource);
     if (resource_arg && (resource_arg.getOwner() == &(func.front()))) {
       return func.getArgAttrOfType<mlir::StringAttr>(
           resource_arg.getArgNumber(), kFuncDeviceAttr);
