@@ -28,14 +28,14 @@ limitations under the License.
 #include <string>
 #include <thread>  // NOLINT(build/c++11)
 
+#include "absl/synchronization/mutex.h"
 #include "xla/tsl/platform/types.h"
-#include "tsl/platform/mutex.h"
 #include "tsl/platform/stacktrace.h"
 
 namespace tsl {
 
-// This mutex allows us to unblock an alarm thread.
-static mutex alarm_mu(LINKER_INITIALIZED);
+// This absl::Mutex allows us to unblock an alarm thread.
+static absl::Mutex alarm_mu(LINKER_INITIALIZED);
 static bool alarm_activated = false;
 
 static void AlarmThreadBody() {

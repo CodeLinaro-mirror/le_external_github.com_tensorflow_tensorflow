@@ -1144,8 +1144,8 @@ cc_library(
         "//xla:executable_run_options",
         "//xla/backends/cpu/runtime:convolution_thunk_internal",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",  # build_cleaner: keep
         "@eigen_archive//:eigen3",
-        "@local_tsl//tsl/platform:mutex",  # build_cleaner: keep
     ],
 )
 
@@ -1160,8 +1160,8 @@ cc_library(
         "//xla:executable_run_options",
         "//xla/backends/cpu/runtime:convolution_thunk_internal",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",  # build_cleaner: keep
         "@eigen_archive//:eigen3",
-        "@local_tsl//tsl/platform:mutex",  # build_cleaner: keep
     ],
 )
 
@@ -1232,8 +1232,8 @@ cc_library(
         "//xla/tsl/framework/contraction:eigen_contraction_kernel",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:dynamic_annotations",
+        "@com_google_absl//absl/synchronization",  # build_cleaner: keep
         "@eigen_archive//:eigen3",
-        "@local_tsl//tsl/platform:mutex",  # build_cleaner: keep
     ],
 )
 
@@ -1286,8 +1286,8 @@ cc_library(
     deps = [
         "//xla/backends/cpu/runtime:convolution_thunk_internal",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",  # build_cleaner: keep
         "@eigen_archive//:eigen3",
-        "@local_tsl//tsl/platform:mutex",  # build_cleaner: keep
     ],
 )
 
@@ -1300,8 +1300,8 @@ cc_library(
     deps = [
         "//xla/backends/cpu/runtime:convolution_thunk_internal",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",  # build_cleaner: keep
         "@eigen_archive//:eigen3",
-        "@local_tsl//tsl/platform:mutex",  # build_cleaner: keep
     ],
 )
 
