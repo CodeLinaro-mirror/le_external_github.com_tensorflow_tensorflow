@@ -103,13 +103,8 @@ class Array final : public llvm::RTTIExtends<Array, xla::ifrt::Array> {
   static void Destruct(RpcHelper* rpc_helper, ArrayHandle handle);
 
   Array(xla::ifrt::Client* const client, std::shared_ptr<RpcHelper> rpc_helper,
-        DType dtype, Shape shape, ShardingRef sharding, ArrayHandle handle)
-      : client_(client),
-        rpc_helper_(std::move(rpc_helper)),
-        dtype_(dtype),
-        shape_(std::move(shape)),
-        sharding_(std::move(sharding)),
-        handle_(handle) {}
+        DType dtype, Shape shape, ShardingRef sharding, ArrayHandle handle,
+        std::shared_ptr<const xla::PjRtLayout> xla_layout);
 
   ~Array() override { Destruct(rpc_helper_.get(), handle_); }
 
@@ -139,6 +134,11 @@ class Array final : public llvm::RTTIExtends<Array, xla::ifrt::Array> {
     return handle_;
   }
 
+  std::shared_ptr<const xla::PjRtLayout> raw_xla_layout() const {
+    absl::MutexLock lock(&mu_);
+    return xla_layout_;
+  }
+
   xla::ifrt::Client* client() const override;
   Future<> GetReadyFuture() const override;
   Future<> Delete() override;
@@ -149,10 +149,7 @@ class Array final : public llvm::RTTIExtends<Array, xla::ifrt::Array> {
   const Shape& shape() const override { return shape_; }
   const Sharding& sharding() const override { return *sharding_; }
   ShardingRef shared_ptr_sharding() const override { return sharding_; }
-  absl::StatusOr<std::shared_ptr<const PjRtLayout>> layout() const override {
-    return absl::UnimplementedError(
-        "Array::layout() not implemented for IFRT proxy");
-  };
+  absl::StatusOr<std::shared_ptr<const PjRtLayout>> layout() const override;
 
   absl::StatusOr<std::vector<xla::ifrt::ArrayRef>>
   DisassembleIntoSingleDeviceArrays(
@@ -198,6 +195,8 @@ class Array final : public llvm::RTTIExtends<Array, xla::ifrt::Array> {
     kAlive     // IsDeleted() will return false.
   };
   mutable DeletionState deleted_ ABSL_GUARDED_BY(mu_) = DeletionState::kAlive;
+  mutable std::shared_ptr<const xla::PjRtLayout> xla_layout_
+      ABSL_GUARDED_BY(mu_);
 };
 
 }  // namespace proxy
