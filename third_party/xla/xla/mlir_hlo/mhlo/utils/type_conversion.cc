@@ -180,11 +180,7 @@ Attribute HloToStablehloTypeConverter::convertSourceDialectEncoding(
 }
 
 StablehloToHloTypeConverter::StablehloToHloTypeConverter()
-    : HloTypeConverter() {
-  addConversion([](stablehlo::TokenType stablehloType) -> Type {
-    return mhlo::TokenType::get(stablehloType.getContext());
-  });
-}
+    : HloTypeConverter() {}
 
 bool StablehloToHloTypeConverter::isSourceDialect(Dialect& dialect) {
   return dialect.getNamespace() ==
