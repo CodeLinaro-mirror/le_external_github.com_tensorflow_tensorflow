@@ -114,7 +114,10 @@ TEST_F(LayoutTest, Equality) {
 TEST_F(LayoutTest, LayoutToFromProto) {
   // Round-trips a Layout through proto de/serialization.
   auto expect_unchanged = [](const Layout& layout) {
-    EXPECT_EQ(layout, Layout::CreateFromProto(layout.ToProto()));
+    auto layout_proto = layout.ToProto();
+    auto from_proto_result = Layout::FromProto(layout_proto);
+    ASSERT_OK(from_proto_result);
+    EXPECT_EQ(layout, from_proto_result.value());
   };
 
   expect_unchanged(Layout());
