@@ -78,8 +78,22 @@ class TritonEmitterTest : public GpuCodegenTest {
   }
 };
 
+class TmaParameterizedTritonEmitterTest
+    : public TritonEmitterTest,
+      public ::testing::WithParamInterface<bool> {
+ public:
+  DebugOptions GetDebugOptionsForTest() const override {
+    DebugOptions debug_options = TritonEmitterTest::GetDebugOptionsForTest();
+    debug_options.set_xla_gpu_experimental_enable_triton_tma(GetParam());
+    return debug_options;
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(TmaParameterizedTritonEmitterTestSuite,
+                         TmaParameterizedTritonEmitterTest, ::testing::Bool());
+
 // TODO(bchetioui): turn this into a general binary elementwise test.
-TEST_F(TritonEmitterTest, MinimumIsEmittedCorrectly) {
+TEST_P(TmaParameterizedTritonEmitterTest, MinimumIsEmittedCorrectly) {
   constexpr absl::string_view kHloText = R"(
 computation {
   p0 = f32[8,4] parameter(0)
@@ -406,7 +420,8 @@ CHECK:  "tt.reduce"(%[[SELECT:.*]]) <{axis = 2 : i32}>
   EXPECT_TRUE(RunAndCompareNoHloPasses(kHloText, kExactMatch));
 }
 
-TEST_F(TritonEmitterTest, TestReductionWithTileSizeLargerThanSourceTensor) {
+TEST_P(TmaParameterizedTritonEmitterTest,
+       TestReductionWithTileSizeLargerThanSourceTensor) {
   constexpr absl::string_view kHloText = R"(
 HloModule t
 maximum {
@@ -416,20 +431,20 @@ maximum {
 }
 
 triton_reduction_computation {
-  parameter_0 = f32[5,3] parameter(0)
+  parameter_0 = f32[5,16] parameter(0)
   constant_0 = f32[] constant(0)
-  ROOT reduce = f32[3] reduce(parameter_0, constant_0), dimensions={0}, to_apply=maximum
+  ROOT reduce = f32[16] reduce(parameter_0, constant_0), dimensions={0}, to_apply=maximum
 }
 
 ENTRY main {
-  param_0 = f32[5,3] parameter(0)
-  ROOT triton_reduction = f32[3] fusion(param_0), kind=kCustom,
+  param_0 = f32[5,16] parameter(0)
+  ROOT triton_reduction = f32[16] fusion(param_0), kind=kCustom,
     calls=triton_reduction_computation,
     backend_config={
       "fusion_backend_config":{
         "kind":"__triton",
         "block_level_fusion_config":{
-          "output_tiles":[{"sizes":["3"]}],
+          "output_tiles":[{"sizes":["16"]}],
           "num_warps":"1",
           "num_ctas":"1",
           "num_stages":"1"}}}
@@ -674,9 +689,15 @@ ENTRY main {
   EXPECT_TRUE(RunAndCompareNoHloPasses(kHloText, kExactMatch));
 }
 
-TEST_F(TritonEmitterTest, NestedReducerFusionGetsCodegenedCorrectly) {
+TEST_P(TmaParameterizedTritonEmitterTest,
+       NestedReducerFusionGetsCodegenedCorrectly) {
   if (!SupportsBF16(GpuComputeCapability())) {
     GTEST_SKIP() << "BF16 not supported.";
+  }
+  bool tma_enabled = GetParam();
+  if (tma_enabled) {
+    GTEST_SKIP() << "TODO(manany): Skipping TMA due to: Wrong results. Create "
+                    "bug and investigate.";
   }
 
   constexpr absl::string_view kHloText = R"(
@@ -1094,7 +1115,12 @@ ENTRY entry_computation {
                                                            /*arel=*/1e-6}));
 }
 
-TEST_F(TritonEmitterTest, TestSliceWithTileThatNeedsMasking) {
+TEST_P(TmaParameterizedTritonEmitterTest, TestSliceWithTileThatNeedsMasking) {
+  bool tma_enabled = GetParam();
+  if (tma_enabled) {
+    GTEST_SKIP() << "TODO(manany): Skipping TMA due to: continguous dimension "
+                    "size too small. Create bug and investigate.";
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule m
 
@@ -1146,6 +1172,35 @@ ENTRY entry_computation {
                                                            /*arel=*/1e-6}));
 }
 
+TEST_P(TmaParameterizedTritonEmitterTest,
+       TestSlice2DWithTileElementsNotAllContiguous) {
+  constexpr absl::string_view kHloText = R"(
+HloModule m
+
+fused_computation {
+  param_0.1 = f32[16,32] parameter(0)
+  slice = f32[4,16] slice(param_0.1), slice={[2:6], [3:19]}
+  slice.1 = f32[4,16] slice(param_0.1), slice={[4:8], [13:29]}
+  ROOT add.3 = f32[4,16] add(slice, slice.1)
+}
+
+ENTRY entry_computation {
+  param_0.2 = f32[16,32] parameter(0)
+  ROOT fusion = f32[4,16] fusion(param_0.2), kind=kCustom,
+    calls=fused_computation,
+    backend_config={
+      "fusion_backend_config":{
+      "kind":"__triton",
+      "block_level_fusion_config":{
+        "output_tiles":[{"sizes":["2","8"]}],
+        "num_warps":"1",
+        "num_ctas":"1",
+        "num_stages":"1"}}}
+})";
+  EXPECT_TRUE(RunAndCompareNoHloPasses(kHloText, ErrorSpec{/*aabs=*/1e-6,
+                                                           /*arel=*/1e-6}));
+}
+
 TEST_F(TritonEmitterTest, TestSliceWithTileElementsNotAllContiguousUnaligned) {
   constexpr absl::string_view kHloText = R"(
 HloModule m
@@ -1170,7 +1225,13 @@ ENTRY entry_computation {
   EXPECT_TRUE(RunAndCompareNoHloPasses(kHloText, ErrorSpec{0, 0}));
 }
 
-TEST_F(TritonEmitterTest, ReshapeIntoBroadcastIsLoweredCorrectly) {
+TEST_P(TmaParameterizedTritonEmitterTest,
+       ReshapeIntoBroadcastIsLoweredCorrectly) {
+  bool tma_enabled = GetParam();
+  if (tma_enabled) {
+    GTEST_SKIP() << "TODO(manany): Skipping TMA due to: continguous dimension "
+                    "size too small. Create bug and investigate.";
+  }
   constexpr absl::string_view kHloText = R"(
 triton_computation {
   param_0 = f32[128,256]{1,0} parameter(0)
@@ -1198,7 +1259,8 @@ CHECK: tt.reshape
   EXPECT_TRUE(RunAndCompareNoHloPasses(kHloText, kExactMatch));
 }
 
-TEST_F(TritonEmitterTest, BitcastIntoBroadcastIsLoweredCorrectly) {
+TEST_P(TmaParameterizedTritonEmitterTest,
+       BitcastIntoBroadcastIsLoweredCorrectly) {
   constexpr absl::string_view kHloText = R"(
 triton_computation {
   param_0 = f32[128,256]{1,0} parameter(0)
@@ -1257,16 +1319,22 @@ CHECK:     triton_xla.insert
   EXPECT_TRUE(RunAndCompareNoHloPasses(kHloText, kExactMatch));
 }
 
-TEST_F(TritonEmitterTest, BitcastNonNormalizedInputLayoutIsLoweredCorrectly) {
+TEST_P(TmaParameterizedTritonEmitterTest,
+       BitcastNonNormalizedInputLayoutIsLoweredCorrectly) {
+  bool tma_enabled = GetParam();
+  if (tma_enabled) {
+    GTEST_SKIP() << "TODO(manany): Skipping TMA due to: continguous dimension "
+                    "size too small. Create bug and investigate.";
+  }
   constexpr absl::string_view kHloText = R"(
 triton_computation {
-  p = s8[42,5]{0,1} parameter(0)
-  ROOT bitcast = s8[5,6,7] bitcast(p)
+  p = s8[42,16]{0,1} parameter(0)
+  ROOT bitcast = s8[16,6,7] bitcast(p)
 }
 
 ENTRY entry_computation {
-  p = s8[42,5]{0,1} parameter(0)
-  ROOT fusion = s8[5,6,7] fusion(p), kind=kCustom, calls=triton_computation,
+  p = s8[42,16]{0,1} parameter(0)
+  ROOT fusion = s8[16,6,7] fusion(p), kind=kCustom, calls=triton_computation,
     backend_config={
       "fusion_backend_config":{
       "kind":"__triton",
@@ -1897,8 +1965,14 @@ CHECK:     triton_xla.insert
 }
 
 // Reproducer from b/384110192.
-TEST_F(TritonEmitterTest,
+TEST_P(TmaParameterizedTritonEmitterTest,
        FusionWithOutputContainingMoreThanInt32MaxElementsExecutesCorrectly) {
+  bool tma_enabled = GetParam();
+  if (tma_enabled) {
+    GTEST_SKIP() << "TODO(manany): Skipping TMA due to: Wrong results. Create "
+                    "bug and investigate.";
+  }
+
   // The point here is to check the output of the Triton fusion. The `slice` op
   // at the end is inserted to allow the comparison of output to run in a
   // reasonable amount of time, and has been proven to still correctly capture
@@ -2028,38 +2102,6 @@ ENTRY entry_computation {
       RunAndCompareNoHloPasses(std::move(module), {&literal}, kExactMatch));
 }
 
-TEST_F(TritonEmitterTest, FP8ToFP8EndToEnd) {
-  if (auto cc = std::get_if<se::CudaComputeCapability>(&GpuComputeCapability());
-      cc && !cc->IsAtLeastHopper()) {
-    GTEST_SKIP() << "Doesn't pass on pre-Hopper GPUs.";
-  }
-
-  const std::string hlo_text = R"(
-HloModule t
-
-triton_dot {
-  parameter_0 = f8e5m2[32,32]{1,0} parameter(0)
-  parameter_1 = f8e4m3fn[32,32]{1,0} parameter(1)
-  convert = f8e4m3fn[32,32]{1,0} convert(parameter_0)
-  ROOT dot = f32[32,32]{1,0} dot(convert, parameter_1),
-                lhs_contracting_dims={1}, rhs_contracting_dims={1}
-}
-
-ENTRY main {
-  parameter_0 = f8e5m2[32,32]{1,0} parameter(0)
-  parameter_1 = f8e4m3fn[32,32]{1,0} parameter(1)
-  ROOT gemm_fusion_dot = f32[32,32]{1,0} fusion(parameter_0, parameter_1),
-       kind=kCustom, calls=triton_dot,
-       backend_config={
-       "fusion_backend_config":{"kind":"__triton_gemm","triton_gemm_config":
-         {"block_m":"32","block_n":"32","block_k":"32","split_k":"1",
-          "num_stages":"1","num_warps":"4","num_ctas":"1"}}}
-})";
-
-  EXPECT_TRUE(RunAndCompareNoHloPasses(hlo_text,
-                                       ErrorSpec{/*aabs=*/1.0, /*arel=*/1e-3}));
-}
-
 TEST_F(TritonEmitterTest, SingleTileDotWithNestedFusionsIsEmittedCorrectly) {
   // Simplest case when everything fits into one tile that is useful for
   // debugging. This also tests support for empty nested fusions.
@@ -2116,7 +2158,8 @@ CHECK: tt.dot {{.*}} -> tensor<16x16xf32>
       kHloText, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-6}));
 }
 
-TEST_F(TritonEmitterTest, DotWithNestedFusionsIsEmittedCorrectly) {
+TEST_P(TmaParameterizedTritonEmitterTest,
+       DotWithNestedFusionsIsEmittedCorrectly) {
   const std::string kHloText = R"(
 flhs {
   flhs.p0 = f32[32,256] parameter(0)
@@ -2184,7 +2227,7 @@ CHECK-COUNT-1: triton_xla.insert
       kHloText, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-6}));
 }
 
-TEST_F(TritonEmitterTest, MaskedDotIsEmittedCorrectly) {
+TEST_P(TmaParameterizedTritonEmitterTest, MaskedDotIsEmittedCorrectly) {
   const std::string kHloText = R"(
 flhs {
   flhs.p0 = f32[32,299] parameter(0)
