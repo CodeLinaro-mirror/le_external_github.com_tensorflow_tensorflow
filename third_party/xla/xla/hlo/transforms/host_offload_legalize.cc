@@ -948,16 +948,6 @@ absl::StatusOr<bool> HostOffloadLegalize::Run(
     HloModule* module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
   bool changed = false;
-
-  // Split broadcasts so that each HloUse of a broadcast instruction will get
-  // its own copy.
-  // TODO(b/319293925): Do not blindly duplicate all broadcasts, instead do it
-  // only when necessary.
-  TF_ASSIGN_OR_RETURN(bool duplicated_at_least_one_broadcast,
-                      DuplicateBroadcastForEachUse(module));
-  if (duplicated_at_least_one_broadcast) {
-    changed = true;
-  }
   if (!after_layout_) {
     return changed;
   }

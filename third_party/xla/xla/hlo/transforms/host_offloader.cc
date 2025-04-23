@@ -752,24 +752,24 @@ absl::Status HostOffloader::CreateAllocateBufferForDynamicUpdateSlice(
         // Found a broadcast.
         found_broadcast = true;
         HloInstruction* broadcast_user = instruction_and_shape.instruction;
-        const auto operand_indices =
-            broadcast_user->OperandIndices(predecessor_instruction);
-        CHECK(!operand_indices.empty())
-            << "We could only have the broadcast as a predecessor if it is an "
-               "operand of this instruction; something is wrong.";
         HloInstruction* allocate_buffer =
             predecessor_instruction->parent()->AddInstruction(
                 HloInstruction::CreateCustomCall(
                     predecessor_instruction->shape(), {}, "AllocateBuffer"));
+        // We expect a 1d shape index because we have arrived at the broadcast,
+        // which does not produce a tuple.
+        CHECK_EQ(instruction_and_shape.shape_index.size(), 1)
+            << "Expect a 1d shape index (non-nested)";
         VLOG(1) << absl::StreamFormat(
-            "Created new AllocateBuffer instruction \"%s\"",
-            allocate_buffer->ToString());
+            "Created new AllocateBuffer instruction \"%s\" to replace "
+            "broadcast \"%s\"'s use at index %s in user \"%s\"",
+            allocate_buffer->ToString(), predecessor_instruction->name(),
+            instruction_and_shape.shape_index.ToString(),
+            broadcast_user->name());
         SetMemorySpace(allocate_buffer->mutable_shape(),
                        Layout::kHostMemorySpace);
-        for (int64_t index : operand_indices) {
-          TF_RETURN_IF_ERROR(
-              broadcast_user->ReplaceOperandWith(index, allocate_buffer));
-        }
+        TF_RETURN_IF_ERROR(broadcast_user->ReplaceOperandWith(
+            instruction_and_shape.shape_index[0], allocate_buffer));
         if (predecessor_instruction->user_count() == 0) {
           // No remaining users. Remove the broadcast.
           VLOG(3) << absl::StreamFormat(
