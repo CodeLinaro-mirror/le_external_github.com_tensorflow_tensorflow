@@ -1339,12 +1339,60 @@ class CopyRemover {
     // used for sorting below.
     absl::flat_hash_map<int, int64_t> instruction_ids;
     int64_t id = 0;
-    for (HloComputation* computation : module.MakeComputationPostOrder()) {
-      for (HloInstruction* instruction :
-           computation->MakeInstructionPostOrder()) {
-        instruction_ids[instruction->unique_id()] = id++;
-      }
-    }
+
+    // Generate instruction ids for all instructions in the module, starting at
+    // the entry computation, processing instructions post-order and recursing
+    // depth-first into called computations.
+    absl::flat_hash_set<HloComputation*> visited;
+    std::function<void(HloComputation*)> dfs_id_assign =
+        [&](HloComputation* computation) {
+          if (visited.contains(computation)) {
+            return;
+          }
+          visited.insert(computation);
+          // Assign ids to parameters first, in case they are phis.
+          for (HloInstruction* instruction :
+               computation->parameter_instructions()) {
+            instruction_ids[instruction->unique_id()] = id++;
+          }
+          // Assign ids to instructions in post order, ignoring parameters.
+          for (HloInstruction* instruction :
+               computation->MakeInstructionPostOrder()) {
+            switch (instruction->opcode()) {
+              case HloOpcode::kParameter:
+                // Parameters are already assigned ids above.
+                continue;
+              case HloOpcode::kWhile:
+                dfs_id_assign(instruction->while_condition());
+                dfs_id_assign(instruction->while_body());
+                break;
+              case HloOpcode::kCall:
+                for (HloComputation* called_computation :
+                     instruction->called_computations()) {
+                  dfs_id_assign(called_computation);
+                }
+                break;
+              case HloOpcode::kConditional:
+                for (HloComputation* branch :
+                     instruction->branch_computations()) {
+                  dfs_id_assign(branch);
+                }
+                break;
+              case HloOpcode::kFusion:
+                dfs_id_assign(instruction->fused_instructions_computation());
+                break;
+              case HloOpcode::kAsyncStart:
+                dfs_id_assign(instruction->async_wrapped_computation());
+                break;
+              default:
+                break;
+            }
+            instruction_ids[instruction->unique_id()] = id++;
+          }
+        };
+
+    CHECK(module.has_entry_computation());
+    dfs_id_assign(module.entry_computation());
 
     // Construct a list for each HLO buffer in the alias analysis. Maintain a
     // map from HloValue to the respective list element representing that
@@ -1396,6 +1444,13 @@ class CopyRemover {
             return false;
           }
           if (ordering_->IsDefinedBefore(*a, *b)) {
+            VLOG(0)
+                << a->defining_instruction()->parent()->parent()->ToString();
+            CHECK(false)
+                << " a: " << a->ToShortString() << " "
+                << instruction_ids[a->defining_instruction()->unique_id()]
+                << " b: " << b->ToShortString() << " "
+                << instruction_ids[b->defining_instruction()->unique_id()];
             return true;
           }
         }
