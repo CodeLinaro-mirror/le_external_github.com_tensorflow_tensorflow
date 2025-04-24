@@ -1,3 +1,4 @@
+load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("//xla:xla.default.bzl", "xla_cc_test")
 load("//xla/tsl:tsl.default.bzl", "filegroup")
 load("//xla/tsl/platform:rules_cc.bzl", "cc_library")
@@ -48,10 +49,7 @@ cc_library(
     name = "api",
     hdrs = [":api_headers"],
     visibility = ["//visibility:private"],
-    deps = [
-        ":c_api",
-        "@com_google_absl//absl/strings:string_view",
-    ],
+    deps = [":c_api"],
 )
 
 cc_library(
@@ -71,7 +69,6 @@ cc_library(
     deps = [
         ":api",
         ":c_api",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -105,5 +102,17 @@ xla_cc_test(
         "@com_google_absl//absl/synchronization",
         "@com_google_googletest//:gtest",
         "@eigen_archive//:eigen3",
+    ],
+)
+
+# Check that the FFI API does not depend on any of the absl libraries.
+check_dependencies(
+    name = "ffi_api_deps_check",
+    of = [
+        ":api",
+        ":ffi",
+    ],
+    dont_depend_on = [
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
