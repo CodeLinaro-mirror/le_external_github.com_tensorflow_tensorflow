@@ -39,8 +39,8 @@ class GpuCodegenBackend : public CodegenBackend {
  public:
   // target_config, debug_options and compiler should outlive the backend.
   GpuCodegenBackend(absl::string_view name,
-             const Compiler::TargetConfig* target_config,
-             const DebugOptions* debug_options, Compiler* compiler)
+                    const Compiler::TargetConfig* target_config,
+                    const DebugOptions* debug_options, Compiler* compiler)
       : name_(name),
         target_config_(*target_config),
         debug_options_(*debug_options),
@@ -62,8 +62,7 @@ class GpuCodegenBackend : public CodegenBackend {
 
     TF_ASSIGN_OR_RETURN(auto optimized_module,
                         RunHloPasses(std::move(hlo_module), options));
-    return compiler_->RunBackend(std::move(optimized_module),
-                                 /*executor=*/nullptr, options);
+    return compiler_->RunBackend(std::move(optimized_module), nullptr, options);
   }
 
  private:
