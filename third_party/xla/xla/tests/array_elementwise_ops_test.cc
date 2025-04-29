@@ -2920,6 +2920,40 @@ TEST_F(ArrayElementwiseOpTest, ExpF32sVector) {
                              error_spec_);
 }
 
+XLA_TEST_F(ArrayElementwiseOpTest, ExpF64sVector) {
+  // The input tensor is large enough to exercise the vectorized exp
+  // approximation on XLA CPU.
+  XlaBuilder builder(TestName());
+
+  // exp(708) saturates f64 and exp(-10) is smaller than our error spec.
+  Literal input_literal = LiteralUtil::CreateR1<double>({
+      1.02,   -0.32,  0.85,   0.9,    1.23,   -0.91,  -0.49,  0.8,   -1.31,
+      -1.44,  -0.13,  -1.31,  -0.79,  1.41,   1.21,   708,    707,   706,
+      705,    704,    703,    702,    701,    700,    699,    698,   697,
+      -193.4, -1.44,  -0.13,  -1.31,  -0.79,  1.41,   1.21,   1.05,  -195.6,
+      -194.5, -193.4, -192.3, -191.2, -190.1, -189.0, -187.9, -19.6, -18.5,
+      -17.4,  -16.3,  -15.2,  -14.1,  -13.0,  -11.9,  -10.8,  -9.7,  -8.6,
+      -7.5,   -6.4,   -5.3,   -4.2,   -3.1,   -2.0,   -0.9,   0.2,   1.3,
+      2.4,    3.5,    4.6,    5.7,    6.8,    7.9,    9.0,    10.1,  11.2,
+      12.3,   13.4,   14.5,   15.6,   16.7,   17.8,   18.9,   20.0,  21.1,
+      22.2,   23.3,   24.4,   25.5,   26.6,   27.7,   28.8,   29.9,  31.0,
+      32.1,   68.4,   69.5,   70.6,   71.7,   72.8,   73.9,   75.0,  76.1,
+      77.2,   78.3,   79.4,   80.5,   81.6,   82.7,   83.8,   84.9,  85.2,
+      86.3,
+  });
+  Exp(Parameter(&builder, 0, input_literal.shape(), "input"));
+
+  std::vector<double> expected_result;
+  int64_t input_size = input_literal.shape().dimensions(0);
+  expected_result.reserve(input_size);
+  for (int64_t i = 0; i < input_size; i++) {
+    expected_result.push_back(std::exp(input_literal.Get<double>({i})));
+  }
+
+  ComputeAndCompareR1<double>(&builder, expected_result, {&input_literal},
+                              error_spec_);
+}
+
 TEST_F(ArrayElementwiseOpTest, LogF32sVector) {
   // The input tensor is large enough to exercise the vectorized exp
   // implementation on XLA CPU.
