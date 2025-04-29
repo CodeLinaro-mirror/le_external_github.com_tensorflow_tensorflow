@@ -1,0 +1,124 @@
+diff --git a/python/test/unit/cuda/test_tensor_descriptor.py b/python/test/unit/cuda/test_tensor_descriptor.py
+--- a/python/test/unit/cuda/test_tensor_descriptor.py
++++ b/python/test/unit/cuda/test_tensor_descriptor.py
+@@ -1306,7 +1306,6 @@ def test_mxfp8_mxfp4_matmul_tma(M, N, K,
+ 
+ 
+ @requires_tma
+-@pytest.mark.skip  # TODO(b/362458006): fix failing test
+ @pytest.mark.interpreter()
+ @pytest.mark.parametrize("dtype_str", tma_dtypes)
+ @pytest.mark.parametrize("num_ctas", [1, 2])
+@@ -1359,7 +1358,6 @@ def matmul_kernel_host_tensor_descriptor
+ 
+ 
+ @requires_tma
+-@pytest.mark.skip  # TODO(b/362458006): fix failing test
+ @pytest.mark.interpreter()
+ @pytest.mark.parametrize("num_ctas", [1, 2])
+ @pytest.mark.parametrize("BLOCK_M, BLOCK_N, BLOCK_K, num_stages", [
+diff --git a/python/triton/tools/experimental_descriptor.py b/python/triton/tools/experimental_descriptor.py
+--- a/python/triton/tools/experimental_descriptor.py
++++ b/python/triton/tools/experimental_descriptor.py
+@@ -10,9 +10,12 @@ class TmaDescKernelParam:
+     _ALIGN = 64
+ 
+     def __init__(self):
+-        self._array = array.array('B', [0] * self.TMA_DESC_SIZE)
+-        address, _ = self._array.buffer_info()
++        # Add the alignment to the array size to ensure that the address can be
++        # aligned without access going out of bounds.
++        self._array = array.array('B', [0] * (self.TMA_DESC_SIZE + self._ALIGN))
++        address, num_bytes = self._array.buffer_info()
+         self._aligned_address = address + self._ALIGN - (address % self._ALIGN)
++        assert self._aligned_address + self.TMA_DESC_SIZE <= address + num_bytes
+ 
+     def fill_(self, ptr, dims, block_dims, element_size):
+         assert len(dims) == len(block_dims)
+diff --git a/third_party/nvidia/backend/driver.py b/third_party/nvidia/backend/driver.py
+--- a/third_party/nvidia/backend/driver.py
++++ b/third_party/nvidia/backend/driver.py
+@@ -1,5 +1,7 @@
+-from collections.abc import Callable, Iterator, Sequence
++from collections.abc import Callable, Iterator, MutableSequence, Sequence
++import copy
+ import functools
++import inspect
+ import operator
+ import os
+ import subprocess
+@@ -137,6 +139,23 @@ def _flatten_and_apply_arg_mask(args: Se
+ 
+ 
+ def make_launcher(signature_types: Sequence[_ArgTypeWithNesting]) -> Callable[..., None]:
++    def _expand_signature(sig: _ArgTypeWithNesting, output: MutableSequence[_ArgTypeWithNesting]):
++        # Expand tensordesc arguments
++        if isinstance(sig, str) and sig.startswith("tensordesc"):
++            output.append("nvTmaDesc")
++            ndim = sig.count(",") + 1
++            for _ in range(ndim):
++                output.append("i32")
++            for _ in range(ndim):
++                output.append("i64")
++        else:
++            output.append(sig)
++
++    expand_signature = []
++    for sig in signature_types:
++        _expand_signature(sig, expand_signature)
++
++    signature_types = expand_signature
+     non_const_arg_mask = _make_nonconst_arg_mask(signature_types)
+     flattened_signature = _flatten_and_apply_arg_mask(signature_types, non_const_arg_mask)
+ 
+@@ -155,6 +174,7 @@ def make_launcher(signature_types: Seque
+                           packed_metadata, hook_args, launch_enter_hook,
+                           launch_exit_hook, signature_metadata, global_scratch,
+                           non_const_args)
++
+     return wrapper
+ 
+ 
+@@ -189,13 +209,26 @@ def make_tensordesc_arg(arg, metadata):
+     return result
+ 
+ 
++def get_var_positional_arg_index(launcher: Callable[..., None]) -> int | None:
++    """Returns the index of the variable positional argument in a callable."""
++    launcher_sig = inspect.signature(launcher)
++    for i, param in enumerate(launcher_sig.parameters.values()):
++        if param.kind == inspect.Parameter.VAR_POSITIONAL:
++            return i
++    return -1
++
++
+ def wrap_handle_tensordesc(launcher, tensordesc_meta):
+     if not tensordesc_meta:
+         return launcher
+ 
++    # Get the index of the `*args` entry in the launcher signature.
++    var_positional_arg = get_var_positional_arg_index(launcher)
++    assert var_positional_arg is not None
++
+     def inner(*args):
+-        meta_args = args[:11]
+-        raw_kernel_args = args[11:]
++        meta_args = args[:var_positional_arg]
++        raw_kernel_args = args[var_positional_arg:]
+         tensordesc_idx = 0
+         final_args = []
+         for i, arg in enumerate(raw_kernel_args):
+@@ -220,7 +253,12 @@ class CudaLauncher(object):
+         signature = {idx: value for idx, value in src.signature.items()}
+         self.num_ctas = functools.reduce(operator.mul, metadata.cluster_dims, 1)
+         del constants  # Unused.
+-        self.launch = make_launcher(signature.values())
++        launch = make_launcher(signature.values())
++        tensordesc_meta = getattr(metadata, "tensordesc_meta", None)
++        if tensordesc_meta is not None:
++            self.launch = wrap_handle_tensordesc(launch, tensordesc_meta)
++        else:
++            self.launch = launch
+         self.global_scratch_size = metadata.global_scratch_size
+         self.global_scratch_align = metadata.global_scratch_align
+         self.launch_cooperative_grid = metadata.launch_cooperative_grid
