@@ -43,6 +43,7 @@ cc_library(
         "nobuilder",
     ],
     textual_hdrs = ["context.h"],
+    visibility = ["//tensorflow:__subpackages__"],
     deps = [
         "@local_tsl//tsl/platform",
     ],

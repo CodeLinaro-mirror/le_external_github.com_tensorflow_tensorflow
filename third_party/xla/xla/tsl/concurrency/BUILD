@@ -1,5 +1,9 @@
 load("//xla/tsl:tsl.default.bzl", "get_compatible_with_portable")
-load("//xla/tsl/platform:build_config.bzl", "tsl_cc_test")
+load(
+    "//xla/tsl/platform:build_config.bzl",
+    "tf_windows_aware_platform_deps",
+    "tsl_cc_test",
+)
 load("//xla/tsl/platform:rules_cc.bzl", "cc_library")
 
 package(
@@ -41,7 +45,7 @@ cc_library(
         "chain.h",
     ],
     compatible_with = get_compatible_with_portable(),
-    deps = [
+    deps = tf_windows_aware_platform_deps("context") + [
         ":concurrent_vector",
         ":ref_count",
         "//xla/tsl/platform:logging",
