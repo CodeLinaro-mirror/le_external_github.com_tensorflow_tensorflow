@@ -26,7 +26,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/quantization/tensorflow/quantization_options.pb.h"
 
 namespace mlir {
-namespace quant {
+namespace tf_quant {
 
 // Creates a pass that add QuantizationUnitLoc to quantizable layers.
 std::unique_ptr<OperationPass<func::FuncOp>>
@@ -75,7 +75,7 @@ std::unique_ptr<OperationPass<func::FuncOp>> CreateTFPrepareLiftingPass(
 // ops from the final quantized graph.
 std::unique_ptr<OperationPass<func::FuncOp>> CreatePostQuantizePass();
 
-}  // namespace quant
+}  // namespace tf_quant
 }  // namespace mlir
 
 #endif  // TENSORFLOW_COMPILER_MLIR_QUANTIZATION_TENSORFLOW_PASSES_TF_PASSES_H_
