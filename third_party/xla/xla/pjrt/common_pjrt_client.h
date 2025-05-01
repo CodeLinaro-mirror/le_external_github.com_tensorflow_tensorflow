@@ -85,6 +85,13 @@ class CommonPjRtClient : public PjRtClient {
   virtual tsl::AsyncValueRef<bool> CreateAllocationEventForTransfers(
       PjRtMemorySpace* memory_space,
       const std::optional<std::string>& debug_info);
+
+  // Applies memory-space normalization logic on top of
+  // GetTopologyDescription()->GetDefaultLayout() to select the default
+  // device layout (if not provided).
+  virtual absl::StatusOr<xla::Shape> MakeDefaultShapeForMemorySpace(
+      PjRtMemorySpace* memory_space, xla::PrimitiveType element_type,
+      absl::Span<const int64_t> dimensions, const xla::Layout* layout) const;
 };
 
 }  // namespace xla

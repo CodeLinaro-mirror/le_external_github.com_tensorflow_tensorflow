@@ -29,4 +29,18 @@ tsl::AsyncValueRef<bool> CommonPjRtClient::CreateAllocationEventForTransfers(
   return tsl::AsyncValueRef<bool>();
 }
 
+absl::StatusOr<xla::Shape> CommonPjRtClient::MakeDefaultShapeForMemorySpace(
+    PjRtMemorySpace* memory_space, xla::PrimitiveType element_type,
+    absl::Span<const int64_t> dimensions, const xla::Layout* layout) const {
+  xla::Shape shape = xla::ShapeUtil::MakeShape(element_type, dimensions);
+  if (layout) {
+    *shape.mutable_layout() = *layout;
+  } else {
+    TF_ASSIGN_OR_RETURN(*shape.mutable_layout(),
+                        (*GetTopologyDescription())
+                            ->GetDefaultLayout(element_type, dimensions));
+  }
+  return shape;
+}
+
 }  // namespace xla
