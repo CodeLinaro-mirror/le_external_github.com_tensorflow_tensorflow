@@ -704,12 +704,15 @@ class Delegate {
   }
 
   bool enable_subgraph_reshaping() const {
-#ifdef XNNPACK_DELEGATE_ENABLE_SUBGRAPH_RESHAPING
+    if (options_.flags &
+        TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_SUBGRAPH_RESHAPING) {
+      TFLITE_LOG_PROD_ONCE(
+          tflite::TFLITE_LOG_ERROR,
+          "Subgraph reshaping is enabled by default, "
+          "TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_SUBGRAPH_RESHAPING is "
+          "deprecated and will be removed in the future.");
+    }
     return true;
-#else
-    return (options_.flags &
-            TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_SUBGRAPH_RESHAPING) != 0;
-#endif
   }
 
   bool enable_slinky() const {
@@ -852,8 +855,8 @@ class Delegate {
       var_handles_;
 };
 
-// Prepare/invoke for VarHandle that also returns the resource_id. We can't use
-// the tensorflow/lite/kernels/var_handle.cc implementation because there's a
+// Prepare/invoke for VarHandle. We can't use the
+// tensorflow/lite/kernels/var_handle.cc implementation because there's a
 // circular dependency if we try to depend on "builtin_op_kernels".
 TfLiteStatus PrepareVarHandle(TfLiteContext* context, const TfLiteNode* node) {
   TfLiteTensor* output;
@@ -863,6 +866,12 @@ TfLiteStatus PrepareVarHandle(TfLiteContext* context, const TfLiteNode* node) {
   const int kBytesRequired = sizeof(int32_t);
   TfLiteTensorRealloc(kBytesRequired, output);
   output->bytes = kBytesRequired;
+
+  if (!output->dims) {
+    output->dims = TfLiteIntArrayCreate(0);
+  } else {
+    output->dims->size = 0;
+  }
 
   return kTfLiteOk;
 }
