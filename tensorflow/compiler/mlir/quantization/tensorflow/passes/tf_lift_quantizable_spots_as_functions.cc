@@ -66,23 +66,23 @@ using tf_quant::HasStaticShapeAtDims;
 using tf_quant::kAttrMapAttribute;
 using tf_quant::kQuantTraitAttrName;
 
-class TFLiftQuantizableSpotsAsFunctionsPass
-    : public PassWrapper<TFLiftQuantizableSpotsAsFunctionsPass,
+class LiftQuantizableSpotsAsFunctionsPass
+    : public PassWrapper<LiftQuantizableSpotsAsFunctionsPass,
                          OperationPass<ModuleOp>> {
  public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(
-      TFLiftQuantizableSpotsAsFunctionsPass)
+      LiftQuantizableSpotsAsFunctionsPass)
 
-  TFLiftQuantizableSpotsAsFunctionsPass() : test_mode_(true) {
+  LiftQuantizableSpotsAsFunctionsPass() : test_mode_(true) {
     initializeForTest();
   }
 
-  explicit TFLiftQuantizableSpotsAsFunctionsPass(
+  explicit LiftQuantizableSpotsAsFunctionsPass(
       const QuantizationOptions& quant_options)
       : quant_options_(quant_options), test_mode_(false) {}
 
-  TFLiftQuantizableSpotsAsFunctionsPass(
-      const TFLiftQuantizableSpotsAsFunctionsPass& other) {
+  LiftQuantizableSpotsAsFunctionsPass(
+      const LiftQuantizableSpotsAsFunctionsPass& other) {
     quant_options_ = other.quant_options_;
     test_mode_ = other.test_mode_;
     op_set_ = other.op_set_;
@@ -388,11 +388,11 @@ class CheckQuantizableOps
   const QuantizationOptions& quant_options_;
 };
 
-static PassRegistration<TFLiftQuantizableSpotsAsFunctionsPass> pass;
+static PassRegistration<LiftQuantizableSpotsAsFunctionsPass> pass;
 
 #include "tensorflow/compiler/mlir/quantization/tensorflow/passes/tf_lift_quantizable_spots_as_functions.inc"
 
-void TFLiftQuantizableSpotsAsFunctionsPass::runOnOperation() {
+void LiftQuantizableSpotsAsFunctionsPass::runOnOperation() {
   MLIRContext* ctx = &getContext();
   RewritePatternSet patterns(ctx);
   ModuleOp module = getOperation();
@@ -413,9 +413,9 @@ void TFLiftQuantizableSpotsAsFunctionsPass::runOnOperation() {
 }  // namespace
 
 std::unique_ptr<OperationPass<ModuleOp>>
-CreateTFLiftQuantizableSpotsAsFunctionsPass(
+CreateLiftQuantizableSpotsAsFunctionsPass(
     const QuantizationOptions& quant_options) {
-  return std::make_unique<TFLiftQuantizableSpotsAsFunctionsPass>(quant_options);
+  return std::make_unique<LiftQuantizableSpotsAsFunctionsPass>(quant_options);
 }
 
 }  // namespace tf_quant
