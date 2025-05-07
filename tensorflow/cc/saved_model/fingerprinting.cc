@@ -20,6 +20,7 @@ limitations under the License.
 
 #include "absl/container/btree_map.h"
 #include "absl/log/log.h"
+#include "absl/numeric/int128.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -184,7 +185,17 @@ absl::StatusOr<FingerprintDef> CreateFingerprintDefPb(
   // Set fingerprint field #5.
   fingerprint_def.set_checkpoint_hash(HashCheckpointIndexFile(export_dir));
   // Assign a random UUID to the fingerprint.
-  fingerprint_def.set_uuid(absl::StrFormat("%016d", tsl::random::New64()));
+  // UINT64MAX is 18'446'744'073'709'551'615 (20 digits)
+  // UINT128MAX is 340'282'366'920'938'463'463'374'607'431'768'211'455 (39 dgts)
+  // After sqrt(INT64MAX) = 4'294'967'296 (4B models), it's 50% likely to be
+  // duplicates in the ID space. In comparison, sqrt(UINT128MAX) = UINT64MAX,
+  // meaning that we can continue generating unique IDs for a lot longer time
+  // if the UUID is generated from two random UINT64s. This can be replaced by
+  // random::New128() if that becomes available.
+  absl::uint128 uuid_1 = tsl::random::New64();
+  absl::uint128 uuid_2 = tsl::random::New64();
+  absl::uint128 uuid_complete = (uuid_1 << 64) | uuid_2;
+  fingerprint_def.set_uuid(absl::StrFormat("%020d", uuid_complete));
   // Set version of the fingerprint.
   VersionDef* version = fingerprint_def.mutable_version();
   version->set_producer(kFingerprintProducer);
