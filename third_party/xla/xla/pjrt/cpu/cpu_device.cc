@@ -36,8 +36,10 @@ limitations under the License.
 namespace xla {
 
 TfrtCpuDevice::TfrtCpuDevice(int process_id, int local_device_id,
+                             bool legacy_memory_space_behavior,
                              int max_inflight_computations)
     : description_(process_id, local_device_id),
+      legacy_memory_space_behavior_(legacy_memory_space_behavior),
       max_inflight_computations_semaphore_(
           /*capacity=*/max_inflight_computations),
       async_execution_tracker_(std::make_unique<CpuAsyncExecutionTracker>()) {}
@@ -68,7 +70,10 @@ absl::Span<PjRtMemorySpace* const> TfrtCpuDevice::memory_spaces() const {
 }
 
 absl::StatusOr<PjRtMemorySpace*> TfrtCpuDevice::default_memory_space() const {
-  return memory_space_by_kind_id(UnpinnedHostMemorySpace::kKindId);
+  if (legacy_memory_space_behavior_) {
+    return memory_space_by_kind(UnpinnedHostMemorySpace::kKind);
+  }
+  return memory_space_by_kind_id(CpuDeviceMemorySpace::kKindId);
 }
 
 absl::StatusOr<PjRtMemorySpace*> TfrtCpuDevice::memory_space_by_kind(

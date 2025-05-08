@@ -39,6 +39,7 @@ namespace xla {
 class TfrtCpuDevice final : public PjRtDevice {
  public:
   explicit TfrtCpuDevice(int process_id, int local_device_id,
+                         bool legacy_memory_space_behavior,
                          int max_inflight_computations = 32);
 
   const CpuDeviceDescription& description() const override {
@@ -101,6 +102,7 @@ class TfrtCpuDevice final : public PjRtDevice {
   CpuDeviceDescription description_;
   absl::InlinedVector<PjRtMemorySpace*, 1> memory_spaces_;
   absl::flat_hash_map<int, PjRtMemorySpace*> memory_spaces_by_id_;
+  const bool legacy_memory_space_behavior_;
 
   // TODO(zhangqiaorjc): Optimize semaphore related overhead.
   // Semaphore used to limit how many programs can be enqueued by the host
