@@ -5982,4 +5982,10 @@ void HloInstruction::set_original_value(
   original_value_ = original_value;
 }
 
+void HloInstruction::CopyOriginalValue(const HloInstruction* instruction,
+                                       bool clone) {
+  ::xla::CopyOriginalValue(/*src_instruction=*/instruction,
+                           /*dest_instruction=*/this, clone);
+}
+
 }  // namespace xla
