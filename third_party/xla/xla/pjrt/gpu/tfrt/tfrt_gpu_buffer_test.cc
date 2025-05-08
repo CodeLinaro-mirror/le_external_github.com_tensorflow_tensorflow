@@ -306,8 +306,5 @@ TEST(TfrtGpuBufferTest, IsDeviceShapeWhenStaticShape) {
   }
 }
 
-// TODO: b/382117736 - Add test for logical shape when shape is dynamic after
-// TfrtGpuClient::Execute() is ready.
-
 }  // namespace
 }  // namespace xla

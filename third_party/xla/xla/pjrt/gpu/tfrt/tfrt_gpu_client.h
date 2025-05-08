@@ -147,9 +147,7 @@ class TfrtGpuDevice final : public PjRtDevice {
 
   PjRtClient* client() const override { return client_; }
 
-  bool IsAddressable() const override {
-    return process_index() == client()->process_index();
-  }
+  bool IsAddressable() const override { return local_device_id_ != -1; }
 
   int id() const override { return id_; }
 
@@ -195,9 +193,12 @@ class TfrtGpuDevice final : public PjRtDevice {
   // Returns a fresh, PRNG-generated random seed for an XLA computation.
   int GetNewPrngSeed();
 
-  BoundedStreamPool& stream_pool() { return stream_pool_; }
+  BoundedStreamPool& stream_pool() {
+    CHECK(stream_pool_ != nullptr);
+    return *stream_pool_;
+  }
 
-  se::StreamExecutor* executor() { return executor_; }
+  se::StreamExecutor* executor() const { return executor_; }
 
   tsl::AsyncValueRef<GpuEvent> GetLastCollectiveLaunchEvent();
 
@@ -215,7 +216,7 @@ class TfrtGpuDevice final : public PjRtDevice {
   const PjRtLocalDeviceId local_device_id_;
   const PjRtLocalHardwareId local_hardware_id_;
   se::StreamExecutor* executor_;
-  BoundedStreamPool stream_pool_;
+  std::unique_ptr<BoundedStreamPool> stream_pool_;
   absl::InlinedVector<PjRtMemorySpace*, 1> memory_spaces_;
   absl::flat_hash_map<int, PjRtMemorySpace*> memory_spaces_by_kind_id_;
 
@@ -244,7 +245,8 @@ class TfrtGpuDevice final : public PjRtDevice {
 
 class TfrtGpuClient final : public PjRtClient {
  public:
-  TfrtGpuClient(int process_index, xla::LocalClient* xla_client,
+  TfrtGpuClient(std::string platform_name, int process_index,
+                xla::LocalClient* xla_client,
                 std::vector<std::unique_ptr<TfrtGpuDevice>> devices,
                 bool should_stage_host_to_device_transfers,
                 MaybeOwning<se::DeviceMemoryAllocator> allocator,
@@ -426,6 +428,9 @@ class TfrtGpuClient final : public PjRtClient {
 
   int process_index_;
 
+  // Platform name must be initialized before SetClient is called on devices.
+  const std::string platform_name_;
+
   xla::LocalClient* xla_client_;
 
   bool should_stage_host_to_device_transfers_;
@@ -464,7 +469,6 @@ class TfrtGpuClient final : public PjRtClient {
   absl::Mutex transpose_mu_;
   TransposePlanCache transpose_cache_ ABSL_GUARDED_BY(transpose_mu_);
 
-  const std::string platform_name_;
   StreamExecutorGpuTopologyDescription topology_;
 
   absl::Mutex dma_maps_mutex_;
