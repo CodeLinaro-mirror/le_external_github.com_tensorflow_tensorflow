@@ -385,6 +385,14 @@ absl::Status EinsumDepthAnalysis::HandleDot(HloInstruction* dot) {
   return HandleDepthIncrementInstruction(dot);
 }
 
+absl::Status EinsumDepthAnalysis::HandleCustomCall(
+    HloInstruction* custom_call) {
+  if (custom_call->custom_call_target().starts_with("SparseDenseMatmul")) {
+    return HandleDot(custom_call);
+  }
+  return DefaultAction(custom_call);
+}
+
 absl::Status EinsumDepthAnalysis::HandleCall(HloInstruction* call) {
   const ShapeTree<int>& depth_tree = GetDepthTreeOrDie(call);
   return HandleCalledComputation(*call->called_computations()[0], depth_tree,
@@ -765,6 +773,15 @@ absl::Status EinsumHeightAnalysis::HandleGetTupleElement(
 absl::Status EinsumHeightAnalysis::HandleDot(HloInstruction* dot) {
   RETURN_IF_HEIGHT_EXISTS(dot);
   return HandleHeightIncrementInstruction(dot);
+}
+
+absl::Status EinsumHeightAnalysis::HandleCustomCall(
+    HloInstruction* custom_call) {
+  RETURN_IF_HEIGHT_EXISTS(custom_call);
+  if (custom_call->custom_call_target().starts_with("SparseDenseMatmul")) {
+    return HandleDot(custom_call);
+  }
+  return DefaultAction(custom_call);
 }
 
 absl::Status EinsumHeightAnalysis::HandleCall(HloInstruction* call) {
@@ -1168,6 +1185,13 @@ const HloValueSemantics* HloValueSemanticsPropagation::AddSemantics(
 
 namespace {
 bool IsDotOrConvolution(const HloInstruction* instruction) {
+  // Generic catch all for current and future SC matmul ops.
+  if (instruction->opcode() == HloOpcode::kCustomCall &&
+      instruction->custom_call_target().starts_with("SparseDenseMatmul")) {
+    VLOG(3) << "Treating " << instruction->custom_call_target()
+            << " as dot or convolution.";
+    return true;
+  }
   return HloPredicateIsOp<HloOpcode::kDot, HloOpcode::kConvolution,
                           HloOpcode::kRaggedDot>(instruction);
 }
