@@ -140,7 +140,7 @@ class TritonTest : public GpuCodegenTest {
 //   broadcast -> reshape -> multiply -> dot.
 // On top of that there could be an additional bitcast between the parameter and
 // the broadcast.
-TEST_F(TritonTest, DISABLED_FuseChannelDequantizationFused) {
+TEST_F(TritonTest, FuseChannelDequantizationFused) {
   // This test is a Channel Dequantization fusion.
   // We run the fused version to avoid the hlo passes.
   // The case where we do:
@@ -281,7 +281,7 @@ TEST_F(TritonTest, DISABLED_FuseSubchannelDequantization) {
       std::move(optimized_module), ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
-TEST_F(TritonTest, DISABLED_FuseChannelDequantization) {
+TEST_F(TritonTest, FuseChannelDequantization) {
   // This test is a Channel Dequantization fusion.
   // We run the non-fused version with the goal to fail if an hlo rewrite broke
   // the dequantization logic. The case where we do:
@@ -523,7 +523,7 @@ TEST_F(TritonTest, DISABLED_FuseBroadcastBitcastMultiplyInPrologue) {
                             ErrorSpec{/*aabs=*/1e-5, /*arel=*/1e-5}));
 }
 
-TEST_F(TritonTest, DISABLED_DotWithI4WeightsOnLhsWithBitcastTo3dTensor) {
+TEST_F(TritonTest, DotWithI4WeightsOnLhsWithBitcastTo3dTensor) {
   constexpr absl::string_view kHloText = R"(
     HloModule DotWithI4WeightsOnLhsWithBitcastTo3dTensor
 
@@ -907,7 +907,7 @@ TEST_F(TritonTest, NonstandardLayoutWithManyNonContractingDimsReversedLayout) {
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
-TEST_F(TritonTest, DISABLED_NegatePlusConvertHLO) {
+TEST_F(TritonTest, NegatePlusConvertHLO) {
   constexpr absl::string_view kHloText = R"(
     HloModule NegatePlusConvertHLO
 
@@ -1027,7 +1027,7 @@ TEST_F(TritonTest, DISABLED_LHSNonMinorContractingDim) {
       kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
-TEST_F(TritonTest, DISABLED_LHSNonMinorContractingDimWithBatchDim0) {
+TEST_F(TritonTest, LHSNonMinorContractingDimWithBatchDim0) {
   // We prove that triton can handle int4 dot with non minor
   // lhs_contracting_dim.
   constexpr absl::string_view kHloText = R"(
@@ -1054,7 +1054,7 @@ TEST_F(TritonTest, DISABLED_LHSNonMinorContractingDimWithBatchDim0) {
       kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
-TEST_F(TritonTest, DISABLED_LHSMinorContractingDim) {
+TEST_F(TritonTest, LHSMinorContractingDim) {
   // We prove that triton can handle int4 dot with minor lhs_contracting_dim.
   constexpr absl::string_view kHloText = R"(
     HloModule LHSMinorContractingDim
@@ -1104,7 +1104,7 @@ TEST_F(TritonTest, DISABLED_ConvertPlusNegate) {
       kHloText, ErrorSpec{/*aabs=*/1e-2, /*arel=*/1e-2}));
 }
 
-TEST_F(TritonTest, DISABLED_LHSMinorContractingDimWithBatchDim0) {
+TEST_F(TritonTest, LHSMinorContractingDimWithBatchDim0) {
   // We prove that triton can handle int4 dot with minor lhs_contracting_dim.
   constexpr absl::string_view kHloText = R"(
     HloModule LHSMinorContractingDimWithBatchDim0
@@ -1154,7 +1154,7 @@ TEST_F(TritonTest, DISABLED_RHSTestWithNotMinorContractingDim) {
       kHloText, ErrorSpec{/*aabs=*/1e-2, /*arel=*/1e-2}));
 }
 
-TEST_F(TritonTest, DISABLED_RHSTestWithMinorContractingDim) {
+TEST_F(TritonTest, RHSTestWithMinorContractingDim) {
   constexpr absl::string_view kHloText = R"(
     HloModule RHSTestWithMinorContractingDim
 
@@ -1178,7 +1178,7 @@ TEST_F(TritonTest, DISABLED_RHSTestWithMinorContractingDim) {
       kHloText, ErrorSpec{/*aabs=*/1e-2, /*arel=*/1e-2}));
 }
 
-TEST_F(TritonTest, DISABLED_RHSTestWithMinorContractingDimWithBatchDim) {
+TEST_F(TritonTest, RHSTestWithMinorContractingDimWithBatchDim) {
   constexpr absl::string_view kHloText = R"(
     HloModule RHSTestWithMinorContractingDimWithBatchDim
 
@@ -1203,7 +1203,7 @@ TEST_F(TritonTest, DISABLED_RHSTestWithMinorContractingDimWithBatchDim) {
       kHloText, ErrorSpec{/*aabs=*/1e-2, /*arel=*/1e-2}));
 }
 
-TEST_F(TritonTest, DISABLED_RHSTestWithNotMinorContractingDimWithBatchDim0) {
+TEST_F(TritonTest, RHSTestWithNotMinorContractingDimWithBatchDim0) {
   constexpr absl::string_view kHloText = R"(
     HloModule RHSTestWithNotMinorContractingDimWithBatchDim0
 
