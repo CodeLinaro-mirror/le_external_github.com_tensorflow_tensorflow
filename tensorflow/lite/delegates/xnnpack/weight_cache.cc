@@ -788,4 +788,21 @@ PackIdentifier MMapWeightCacheProvider::BuildPackIdentifier(
                         /*bias_id=*/get_buffer_id(key.bias)};
 }
 
+bool IsCompatibleCacheFile(const char* path) {
+  FileDescriptor fd = FileDescriptor::Open(path, O_RDONLY);
+  if (!fd.IsValid()) {
+    return false;
+  }
+  XNNPackCacheHeader header;
+  auto pos = fd.GetPos();
+  fd.SetPos(0);
+  const bool res = fd.Read(&header, sizeof(header)) &&
+                   header.version == XNNPackCacheHeader::kVersion &&
+                   xnn_experimental_check_build_identifier(
+                       header.xnnpack_build_identifier,
+                       sizeof(header.xnnpack_build_identifier));
+  fd.SetPos(pos);
+  return res;
+}
+
 }  // namespace tflite::xnnpack
