@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package xla.gpu;
+
+import "xla/service/hlo.proto";
+
+message OutputInfoProto {
+  int64 allocation_index = 1;
+  bool passthrough = 2;
+  optional xla.HloInputOutputAliasProto.AliasEntryProto alias_config = 3;
+}

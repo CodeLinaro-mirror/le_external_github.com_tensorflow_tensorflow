@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package xla.gpu;
+
+message DenseDataIntermediateProto {
+  bytes data = 1;
+}
