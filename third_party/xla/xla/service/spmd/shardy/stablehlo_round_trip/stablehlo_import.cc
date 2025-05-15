@@ -20,6 +20,7 @@ limitations under the License.
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -427,26 +428,44 @@ TensorShardingAttr convertToSdySharding(
   const AnalyzeTileAssignmentResult result =
       analyzeTileAssignment(hloSharding.tile_assignment());
 
-  // 1. Create a mapping from local axis to global axes.
+  // 1. Create a mapping from local axis to global axis refs.
   SmallVector<SmallVector<AxisRefAttr>> localAxisIndexToGlobalAxes;
   localAxisIndexToGlobalAxes.reserve(result.localMesh.size());
-  int64_t globalAxisIndex = 0;
-  for (int64_t localAxisSize : result.localMesh) {
+  ArrayRef<MeshAxisAttr> remainingGlobalAxes = globalMesh.getAxes();
+  int64_t globalAxisRemainingSize =
+      remainingGlobalAxes.empty() ? 1 : remainingGlobalAxes.front().getSize();
+  int64_t globalAxisPreSize = 1;
+  int64_t totalLocalMeshSize = 1;
+  for (int64_t localAxisRemainingSize : result.localMesh) {
+    totalLocalMeshSize *= localAxisRemainingSize;
     SmallVector<AxisRefAttr>& globalAxes =
         localAxisIndexToGlobalAxes.emplace_back();
-    int64_t product = 1;
-    // The local axis size can correspond to multiple global axes since we may
-    // break it when we find common mesh axes.
-    while (product < localAxisSize) {
-      MeshAxisAttr axisAttr = globalMesh.getAxes()[globalAxisIndex++];
-      if (axisAttr.getSize() == 1) {
+    // The local axis size can correspond to multiple global axes or sub-axes.
+    while (localAxisRemainingSize > 1) {
+      CHECK(!remainingGlobalAxes.empty());
+      if (globalAxisRemainingSize == 1) {
+        remainingGlobalAxes = remainingGlobalAxes.drop_front();
+        globalAxisRemainingSize = remainingGlobalAxes.front().getSize();
+        globalAxisPreSize = 1;
         continue;
       }
-      globalAxes.push_back(AxisRefAttr::get(ctx, axisAttr.getName()));
-      product *= axisAttr.getSize();
+      int64_t gcd = std::gcd(localAxisRemainingSize, globalAxisRemainingSize);
+      CHECK_NE(gcd, 1);
+      StringRef globalAxisName = remainingGlobalAxes.front().getName();
+      if (gcd == globalAxisRemainingSize && globalAxisPreSize == 1) {
+        // The full global axis is used.
+        globalAxes.push_back(AxisRefAttr::get(ctx, globalAxisName));
+      } else {
+        // We use a sub-axis of the global axis.
+        globalAxes.push_back(
+            AxisRefAttr::get(ctx, globalAxisName, globalAxisPreSize, gcd));
+        globalAxisPreSize *= gcd;
+      }
+      globalAxisRemainingSize /= gcd;
+      localAxisRemainingSize /= gcd;
     }
-    CHECK_EQ(product, localAxisSize);
   }
+  CHECK_EQ(totalLocalMeshSize, globalMesh.getTotalSize());
 
   // 2. Create a mapping from dim and nested sub-dim to local axis index.
   SmallVector<SmallVector<int64_t>> dimToSubDimToLocalAxisIndex(rank);
