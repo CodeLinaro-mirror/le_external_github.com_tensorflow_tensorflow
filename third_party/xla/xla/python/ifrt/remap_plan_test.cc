@@ -18,6 +18,7 @@ limitations under the License.
 #include <cstdint>
 #include <memory>
 #include <numeric>
+#include <tuple>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -29,15 +30,15 @@ limitations under the License.
 #include "xla/pjrt/pjrt_layout.h"
 #include "xla/python/ifrt/array.h"
 #include "xla/python/ifrt/array_spec.h"
-#include "xla/python/ifrt/device.h"
 #include "xla/python/ifrt/device_list.h"
 #include "xla/python/ifrt/device_test_util.h"
 #include "xla/python/ifrt/dtype.h"
 #include "xla/python/ifrt/memory.h"
 #include "xla/python/ifrt/remap_plan.pb.h"
+#include "xla/python/ifrt/serdes_test_util.h"
+#include "xla/python/ifrt/serdes_version.h"
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/ifrt/sharding.h"
-#include "xla/tsl/concurrency/ref_count.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/platform/status_matchers.h"
 #include "xla/tsl/platform/statusor.h"
@@ -52,8 +53,21 @@ using ::testing::HasSubstr;
 using ::testing::SizeIs;
 using ::tsl::testing::StatusIs;
 
-class RemapPlanTest : public test_util::DeviceTest {
+using RemapPlanTestParam =
+    std::tuple<SerDesVersion, test_util::DeviceTestParam>;
+
+class RemapPlanTest : public testing::TestWithParam<RemapPlanTestParam> {
  public:
+  RemapPlanTest()
+      : version_(std::get<0>(GetParam())), fixture_(std::get<1>(GetParam())) {}
+
+  SerDesVersion version() const { return version_; }
+
+  Client* client() { return fixture_.client(); }
+  DeviceListRef GetDevices(absl::Span<const int> device_indices) {
+    return fixture_.GetDevices(device_indices);
+  }
+
   ArraySpec GetDummySpec() {
     return ArraySpec{
         /*dtype=*/DType(DType::kS32),
@@ -63,6 +77,10 @@ class RemapPlanTest : public test_util::DeviceTest {
                                      /*shape=*/Shape({4, 3}),
                                      /*shard_shape=*/Shape({2, 3}))};
   }
+
+ private:
+  SerDesVersion version_;
+  test_util::DeviceTestFixture fixture_;
 };
 
 TEST_P(RemapPlanTest, ToFromProto) {
@@ -98,7 +116,7 @@ TEST_P(RemapPlanTest, ToFromProto) {
       /*from=*/{RemapPlan::Interval{0, 4, 2}, RemapPlan::Interval{1, 4, 2}},
       /*to=*/{RemapPlan::Interval{0, 2, 1}, RemapPlan::Interval{2, 4, 1}}});
 
-  TF_ASSERT_OK_AND_ASSIGN(RemapPlanProto plan_proto, plan.ToProto());
+  TF_ASSERT_OK_AND_ASSIGN(RemapPlanProto plan_proto, plan.ToProto(version()));
   TF_ASSERT_OK_AND_ASSIGN(RemapPlan plan_copy,
                           RemapPlan::FromProto(client(), plan_proto));
 
@@ -627,10 +645,12 @@ TEST_P(RemapPlanTest, CheckMultipleInputsToOneOutput) {
       xla::ifrt::ArrayCopySemantics::kDonateInput));
 }
 
-INSTANTIATE_TEST_SUITE_P(NumDevices, RemapPlanTest,
-                         testing::Values(test_util::DeviceTestParam{
-                             /*num_devices=*/4,
-                             /*num_addressable_devices=*/4}));
+INSTANTIATE_TEST_SUITE_P(
+    SerDesVersion_NumDevices, RemapPlanTest,
+    testing::Combine(testing::ValuesIn(test_util::AllSupportedSerDesVersions()),
+                     testing::Values(test_util::DeviceTestParam{
+                         /*num_devices=*/4,
+                         /*num_addressable_devices=*/4})));
 
 }  // namespace
 }  // namespace ifrt

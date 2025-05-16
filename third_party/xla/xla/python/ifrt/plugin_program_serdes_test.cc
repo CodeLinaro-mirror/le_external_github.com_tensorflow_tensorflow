@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include <memory>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include "xla/python/ifrt/plugin_program.h"
 #include "xla/python/ifrt/serdes.h"
 #include "xla/python/ifrt/serdes.pb.h"
+#include "xla/python/ifrt/serdes_test_util.h"
+#include "xla/python/ifrt/serdes_version.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/protobuf/error_codes.pb.h"
@@ -27,11 +30,23 @@ namespace xla {
 namespace ifrt {
 namespace {
 
-TEST(PluginProgramSerDesTest, RoundTrip) {
+class PluginProgramSerDesTest : public testing::TestWithParam<SerDesVersion> {
+ public:
+  PluginProgramSerDesTest() : version_(GetParam()) {}
+
+  SerDesVersion version() const { return version_; }
+
+ private:
+  SerDesVersion version_;
+};
+
+TEST_P(PluginProgramSerDesTest, RoundTrip) {
   PluginProgram orig;
   orig.data = "foo";
+  auto options = std::make_unique<SerializeOptions>();
+  options->version = version();
   TF_ASSERT_OK_AND_ASSIGN(Serialized serialized,
-                          Serialize(orig, /*options=*/nullptr));
+                          Serialize(orig, std::move(options)));
   TF_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<PluginProgram> deserialized_program,
       Deserialize<PluginProgram>(serialized, /*options=*/nullptr));
@@ -39,14 +54,26 @@ TEST(PluginProgramSerDesTest, RoundTrip) {
   EXPECT_EQ(deserialized_program->data, "foo");
 }
 
-TEST(PluginCompileOptionsSerDesTest, RoundTrip) {
+INSTANTIATE_TEST_SUITE_P(
+    SerDesVersion, PluginProgramSerDesTest,
+    testing::ValuesIn(test_util::AllSupportedSerDesVersions()));
+
+class PluginCompileOptionsSerDesTest : public PluginProgramSerDesTest {};
+
+TEST_P(PluginCompileOptionsSerDesTest, RoundTrip) {
   PluginCompileOptions orig;
+  auto options = std::make_unique<SerializeOptions>();
+  options->version = version();
   TF_ASSERT_OK_AND_ASSIGN(Serialized serialized,
-                          Serialize(orig, /*options=*/nullptr));
+                          Serialize(orig, std::move(options)));
   TF_EXPECT_OK(
       Deserialize<PluginCompileOptions>(serialized, /*options=*/nullptr)
           .status());
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    SerDesVersion, PluginCompileOptionsSerDesTest,
+    testing::ValuesIn(test_util::AllSupportedSerDesVersions()));
 
 }  // namespace
 }  // namespace ifrt
