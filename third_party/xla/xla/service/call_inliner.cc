@@ -27,10 +27,12 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "xla/hlo/ir/dfs_hlo_visitor_with_default.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_opcode.h"
+#include "xla/hlo/ir/hlo_schedule.h"
 #include "xla/hlo/ir/hlo_sharding_metadata.h"
 #include "xla/hlo/transforms/simplifiers/hlo_dce.h"
 #include "xla/service/call_graph.h"
@@ -262,22 +264,35 @@ absl::StatusOr<bool> CallInliner::Run(
             node.computation()->execution_thread(), execution_threads)) {
       return absl::OkStatus();
     }
-    bool did_node_mutate = false;
-    VLOG(1) << "Visiting node: " << node.ToString();
-    for (HloInstruction* instruction :
-         node.computation()->MakeInstructionPostOrder()) {
-      // Don't inline async called computation since currently it's only
-      // used for parallel device computation.
-      // TODO(b/229887502): update the inliner to ignore only parallel
-      // device type async call instead of all.
-      if (IsInlineableCallOp(instruction)) {
-        const auto& callees = instruction->called_computations();
-        TF_RET_CHECK(callees.size() == 1);
-        if (!single_call_site_ || call_graph->GetNode(instruction->to_apply())
-                                          .caller_callsites()
-                                          .size() == 1) {
+    auto inline_instructions =
+        [&](absl::Span<HloInstruction* const> instructions) -> absl::Status {
+      bool did_node_mutate = false;
+      std::vector<HloInstruction*> inlined_instructions;
+      for (HloInstruction* instruction : instructions) {
+        // Don't inline async called computation since currently it's only
+        // used for parallel device computation.
+        // TODO(b/229887502): update the inliner to ignore only parallel
+        // device type async call instead of all.
+        if (IsInlineableCallOp(instruction) &&
+            (!single_call_site_ || call_graph->GetNode(instruction->to_apply())
+                                           .caller_callsites()
+                                           .size() == 1)) {
+          // The caller instruction will get removed after inlining. Record the
+          // callee computation beforehand, so we can find its schedule.
+          HloComputation* callee = instruction->to_apply();
           TF_ASSIGN_OR_RETURN(CallInliner::InlinedInstructionMap inline_map,
                               Inline(instruction));
+          if (module->has_schedule()) {
+            for (HloInstruction* inlined_instruction :
+                 module->schedule().sequence(callee).instructions()) {
+              // Parameters were already added to sequence as operands to the
+              // call.
+              if (inlined_instruction->opcode() != HloOpcode::kParameter) {
+                inlined_instructions.push_back(inline_map[inlined_instruction]);
+              }
+            }
+            module->schedule().remove_computation(callee);
+          }
           if (update_domain_) {
             HloDomainIsolator isolator(
                 []() { return ShardingDomainCreator{}; });
@@ -287,16 +302,31 @@ absl::StatusOr<bool> CallInliner::Run(
           }
           did_node_mutate = true;
           did_mutate = true;
+        } else if (module->has_schedule()) {
+          inlined_instructions.push_back(instruction);
         }
       }
-    }
-    if (did_node_mutate && uniquify_channel_ids_) {
-      int unique_channel_id = 1;
-      for (HloInstruction* instruction : node.computation()->instructions()) {
-        if (dynamic_cast<HloChannelInstruction*>(instruction)) {
-          instruction->set_channel_id(unique_channel_id++);
+      if (did_node_mutate && module->has_schedule()) {
+        module->schedule().GetOrCreateSequence(node.computation()) =
+            HloInstructionSequence(inlined_instructions);
+      }
+      if (did_node_mutate && uniquify_channel_ids_) {
+        int unique_channel_id = 1;
+        for (HloInstruction* instruction : node.computation()->instructions()) {
+          if (dynamic_cast<HloChannelInstruction*>(instruction)) {
+            instruction->set_channel_id(unique_channel_id++);
+          }
         }
       }
+      return absl::OkStatus();
+    };
+    if (module->has_schedule()) {
+      HloInstructionSequence& sequence =
+          module->schedule().GetOrCreateSequence(node.computation());
+      TF_RETURN_IF_ERROR(inline_instructions(sequence.instructions()));
+    } else {
+      TF_RETURN_IF_ERROR(
+          inline_instructions(node.computation()->MakeInstructionPostOrder()));
     }
 
     return absl::OkStatus();
@@ -308,6 +338,9 @@ absl::StatusOr<bool> CallInliner::Run(
     // error finding the same channel ID used for multiple send/recv
     // instructions.
     TF_RETURN_IF_ERROR(HloDCE().Run(module, execution_threads).status());
+    if (module->has_schedule()) {
+      TF_RETURN_IF_ERROR(module->schedule().Update(execution_threads));
+    }
   }
   return did_mutate;
 }
