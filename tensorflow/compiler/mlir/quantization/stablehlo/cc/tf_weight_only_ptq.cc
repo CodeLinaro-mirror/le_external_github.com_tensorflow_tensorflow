@@ -30,9 +30,9 @@ limitations under the License.
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/quantization/stablehlo/cc/config.h"
 #include "tensorflow/compiler/mlir/quantization/stablehlo/cc/context.h"
+#include "tensorflow/compiler/mlir/quantization/stablehlo/cc/saved_model_export.h"
+#include "tensorflow/compiler/mlir/quantization/stablehlo/cc/saved_model_import.h"
 #include "tensorflow/compiler/mlir/quantization/stablehlo/cc/tf_pass_pipeline.h"
-#include "tensorflow/compiler/mlir/quantization/stablehlo/cc/tf_saved_model_export.h"
-#include "tensorflow/compiler/mlir/quantization/stablehlo/cc/tf_saved_model_import.h"
 #include "tensorflow/compiler/mlir/quantization/stablehlo/cc/types.h"
 #include "tensorflow/compiler/mlir/quantization/stablehlo/instrumentations/tf_save_report.h"
 #include "tensorflow/compiler/mlir/quantization/stablehlo/quantization_config.pb.h"
@@ -46,6 +46,10 @@ limitations under the License.
 
 namespace mlir::tf_quant::stablehlo {
 
+using ::mlir::quant::stablehlo::FunctionAlias;
+using ::mlir::quant::stablehlo::FunctionName;
+using ::mlir::quant::stablehlo::GetFunctionAliases;
+using ::mlir::quant::stablehlo::ImportSavedModel;
 using ::stablehlo::quantization::GetReportFilePath;
 using ::stablehlo::quantization::QuantizationConfig;
 using ::tensorflow::SignatureDef;
@@ -107,9 +111,9 @@ absl::Status QuantizeWeightOnlyPtq(
 
   TF_ASSIGN_OR_RETURN(
       const ExportedModel post_calibrated_exported_model,
-      CreateExportedModel(signature_keys, tags, quantization_config,
-                          WeightOnlyPtqComponent::kName, *function_aliases,
-                          *ctx, *module));
+      quant::stablehlo::CreateExportedModel(
+          signature_keys, tags, quantization_config,
+          WeightOnlyPtqComponent::kName, *function_aliases, *ctx, *module));
 
   // Remove the `tpu` tag for exporting because the output quantized model is
   // essentially a CPU model.
