@@ -37,7 +37,7 @@ namespace mlir::quant::stablehlo {
 // The resulting `ModuleOp` contains quantized StableHLO ops serialized in
 // `TF::XlaCallModuleOp`s. They are quantized using the weight constants, not
 // relying on calibration.
-class WeightOnlyPtqComponent : public Component {
+class WeightOnlyPtqComponent : public quant::stablehlo::Component {
  public:
   // Used for debugging purposes.
   static constexpr absl::string_view kName = "quant_ptq_weight_only";
