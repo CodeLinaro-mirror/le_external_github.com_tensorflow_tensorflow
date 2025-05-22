@@ -130,23 +130,24 @@ bool CheckAffineQuantization(
                        TfLiteTypeGetName(tensor.type), t);
     return false;
   }
-  if (quantization_params.zero_point == nullptr) {
-    TF_LITE_KERNEL_LOG(context,
-                       "missing zero point quantization parameters for "
-                       "%s tensor %d in XNNPACK delegate",
-                       TfLiteTypeGetName(tensor.type), t);
-    return false;
-  }
-  if (quantization_params.scale->size != quantization_params.zero_point->size) {
-    TF_LITE_KERNEL_LOG(context,
-                       "mismatching number of scale (%d) and zero "
-                       "point (%d) quantization parameters for %s "
-                       "tensor %d in XNNPACK delegate",
-                       quantization_params.scale->size,
-                       quantization_params.zero_point->size,
-                       TfLiteTypeGetName(tensor.type), t);
-    return false;
-  }
+  // if (quantization_params.zero_point == nullptr) {
+  //   TF_LITE_KERNEL_LOG(context,
+  //                      "missing zero point quantization parameters for "
+  //                      "%s tensor %d in XNNPACK delegate",
+  //                      TfLiteTypeGetName(tensor.type), t);
+  //   return false;
+  // }
+  // if (quantization_params.scale->size !=
+  // quantization_params.zero_point->size) {
+  //   TF_LITE_KERNEL_LOG(context,
+  //                      "mismatching number of scale (%d) and zero "
+  //                      "point (%d) quantization parameters for %s "
+  //                      "tensor %d in XNNPACK delegate",
+  //                      quantization_params.scale->size,
+  //                      quantization_params.zero_point->size,
+  //                      TfLiteTypeGetName(tensor.type), t);
+  //   return false;
+  // }
   for (int i = 0; i < quantization_params.scale->size; i++) {
     const float scale = quantization_params.scale->data[i];
     if (!std::isnormal(scale) || scale <= 0.0f) {
@@ -163,32 +164,37 @@ bool CheckAffineQuantization(
 template <typename T>
 bool CheckZeroPointForPerTensorQuantization(
     TfLiteContext* context, const TfLiteTensor& tensor, int t,
-    const TfLiteIntArray& quantization_zero_point) {
+    const TfLiteIntArray* quantization_zero_point) {
   // The single zero point must be within the min-max range of the tensor type.
-  const int zero_point = quantization_zero_point.data[0];
-  if (zero_point < std::numeric_limits<T>::min() ||
-      zero_point > std::numeric_limits<T>::max()) {
-    TF_LITE_KERNEL_LOG(context,
-                       "unsupported zero-point value (%d) for %s tensor "
-                       "%d in XNNPACK delegate",
-                       zero_point, TfLiteTypeGetName(tensor.type), t);
-    return false;
+  if (quantization_zero_point) {
+    const int zero_point = quantization_zero_point->data[0];
+    if (zero_point < std::numeric_limits<T>::min() ||
+        zero_point > std::numeric_limits<T>::max()) {
+      TF_LITE_KERNEL_LOG(context,
+                         "unsupported zero-point value (%d) for %s tensor "
+                         "%d in XNNPACK delegate",
+                         zero_point, TfLiteTypeGetName(tensor.type), t);
+      return false;
+    }
   }
   return true;
 }
 
 bool CheckZeroPointForPerChannelQuantization(
     TfLiteContext* context, const TfLiteTensor& tensor, int t,
-    const TfLiteIntArray& quantization_zero_point) {
-  // All zero points must be 0, except for INT4 tensors where it can also be 8.
-  for (int c = 0; c < quantization_zero_point.size; c++) {
-    const int zero_point = quantization_zero_point.data[c];
-    if (zero_point != 0 && (tensor.type != kTfLiteInt4 && zero_point != 8)) {
-      TF_LITE_KERNEL_LOG(context,
-                         "unsupported zero-point value (%d) in channel %d of "
-                         "%s tensor %d in XNNPACK delegate",
-                         zero_point, c, TfLiteTypeGetName(tensor.type), t);
-      return false;
+    const TfLiteIntArray* quantization_zero_point) {
+  if (quantization_zero_point) {
+    // All zero points must be 0, except for INT4 tensors where it can also
+    // be 8.
+    for (int c = 0; c < quantization_zero_point->size; c++) {
+      const int zero_point = quantization_zero_point->data[c];
+      if (zero_point != 0 && (tensor.type != kTfLiteInt4 && zero_point != 8)) {
+        TF_LITE_KERNEL_LOG(context,
+                           "unsupported zero-point value (%d) in channel %d of "
+                           "%s tensor %d in XNNPACK delegate",
+                           zero_point, c, TfLiteTypeGetName(tensor.type), t);
+        return false;
+      }
     }
   }
   return true;
@@ -234,7 +240,7 @@ xnn_datatype GetXNNPackDatatype(TfLiteContext* context,
       // CheckAffineQuantization already checks if it is the same as
       // quantization_params->scale->size.
       if (!CheckZeroPointForPerTensorQuantization<uint8_t>(
-              context, tensor, t, *(quantization_params->zero_point))) {
+              context, tensor, t, quantization_params->zero_point)) {
         return xnn_datatype_invalid;
       }
       return xnn_datatype_quint8;
@@ -262,7 +268,7 @@ xnn_datatype GetXNNPackDatatype(TfLiteContext* context,
           if (quantization_scale->size == 1 && tensor.type == kTfLiteInt8) {
             // Per-tensor quantization
             if (!CheckZeroPointForPerTensorQuantization<int8_t>(
-                    context, tensor, t, *quantization_zero_point)) {
+                    context, tensor, t, quantization_zero_point)) {
               return xnn_datatype_invalid;
             }
             return xnn_datatype_qint8;
@@ -273,7 +279,7 @@ xnn_datatype GetXNNPackDatatype(TfLiteContext* context,
                                   quantization_params->quantized_dimension)) {
             // Per-channel quantization
             if (!CheckZeroPointForPerChannelQuantization(
-                    context, tensor, t, *(quantization_params->zero_point))) {
+                    context, tensor, t, quantization_params->zero_point)) {
               return xnn_datatype_invalid;
             }
           } else {
@@ -367,7 +373,7 @@ xnn_datatype GetXNNPackDatatype(TfLiteContext* context,
       // Note, for INT32 tensors, the zero-point values for per-tensor
       // quantization follow the stricter per-channel quantization requirements.
       if (!CheckZeroPointForPerChannelQuantization(
-              context, tensor, t, *(quantization_params->zero_point))) {
+              context, tensor, t, quantization_params->zero_point)) {
         return xnn_datatype_invalid;
       }
       if (quantization_params->scale->size == 1) {
@@ -489,18 +495,21 @@ TfLiteStatus DefineXNNPACKValue(TfLiteContext* context, xnn_subgraph_t subgraph,
   switch (datatype) {
     case xnn_datatype_qint8:
     case xnn_datatype_quint8:
-    case xnn_datatype_qint32:
-      status = xnn_define_quantized_tensor_value(
-          subgraph, datatype,
+    case xnn_datatype_qint32: {
+      const TfLiteAffineQuantization* quantization_params =
           static_cast<const TfLiteAffineQuantization*>(
-              tensor.quantization.params)
-              ->zero_point->data[0],
+              tensor.quantization.params);
+      int32_t zero_point = (quantization_params->zero_point
+                                ? quantization_params->zero_point->data[0]
+                                : 0);
+      status = xnn_define_quantized_tensor_value(
+          subgraph, datatype, zero_point,
           static_cast<const TfLiteAffineQuantization*>(
               tensor.quantization.params)
               ->scale->data[0],
           dims.size(), dims.data(), data, XNN_INVALID_VALUE_ID, flags,
           xnnpack_id);
-      break;
+    } break;
     case xnn_datatype_qcint4:
     case xnn_datatype_qcint8:
     case xnn_datatype_qcint32:
@@ -2002,12 +2011,16 @@ class Subgraph {
           const auto* quantization_params =
               static_cast<const TfLiteAffineQuantization*>(
                   tensor.quantization.params);
+          bool valid_zero_point = true;
+          if (quantization_params->zero_point) {
+            if (quantization_params->zero_point->size != 1) {
+              valid_zero_point = false;
+            }
+          }
           if (tensor.quantization.type != kTfLiteAffineQuantization ||
               quantization_params->quantized_dimension != 0 ||
-              quantization_params->scale == nullptr ||
-              quantization_params->zero_point == nullptr ||
-              quantization_params->scale->size != 1 ||
-              quantization_params->zero_point->size != 1) {
+              quantization_params->scale == nullptr || valid_zero_point ||
+              quantization_params->scale->size != 1) {
             TF_LITE_MAYBE_KERNEL_LOG(
                 context,
                 "unsupported quantization type %d in tensor #%d in node #%d",
@@ -2058,12 +2071,16 @@ class Subgraph {
           const auto* quantization_params =
               static_cast<const TfLiteAffineQuantization*>(
                   tensor.quantization.params);
+          bool valid_zero_point = true;
+          if (quantization_params->zero_point) {
+            if (quantization_params->zero_point->size != 1) {
+              valid_zero_point = false;
+            }
+          }
           if (tensor.quantization.type != kTfLiteAffineQuantization ||
               quantization_params->quantized_dimension != 0 ||
-              quantization_params->scale == nullptr ||
-              quantization_params->zero_point == nullptr ||
-              quantization_params->scale->size != 1 ||
-              quantization_params->zero_point->size != 1) {
+              quantization_params->scale == nullptr || valid_zero_point ||
+              quantization_params->scale->size != 1) {
             TF_LITE_MAYBE_KERNEL_LOG(
                 context,
                 "unsupported quantization type %d in tensor #%d in node #%d",
@@ -2122,9 +2139,11 @@ class Subgraph {
             return kTfLiteError;
           }
           if (quantization_params->scale->size > 1) {
+            int zero_point = quantization_params->zero_point
+                                 ? quantization_params->zero_point->data[0]
+                                 : 0;
             if (xnn_validate_channelwise_quantized_tensor(
-                    xnn_datatype_qcint8,
-                    /*zero_point=*/quantization_params->zero_point->data[0],
+                    xnn_datatype_qcint8, zero_point,
                     quantization_params->scale->data, tensor_dims.size(),
                     /*channel_dim=*/quantization_params->quantized_dimension,
                     tensor_dims.data()) != xnn_status_success) {
@@ -2157,12 +2176,16 @@ class Subgraph {
           const auto* quantization_params =
               static_cast<const TfLiteAffineQuantization*>(
                   tensor.quantization.params);
+          bool valid_zero_point = true;
+          if (quantization_params->zero_point) {
+            if (quantization_params->zero_point->size != 1) {
+              valid_zero_point = false;
+            }
+          }
           if (tensor.quantization.type != kTfLiteAffineQuantization ||
               quantization_params->quantized_dimension != 0 ||
-              quantization_params->scale == nullptr ||
-              quantization_params->zero_point == nullptr ||
-              quantization_params->scale->size != 1 ||
-              quantization_params->zero_point->size != 1) {
+              quantization_params->scale == nullptr || valid_zero_point ||
+              quantization_params->scale->size != 1) {
             TF_LITE_MAYBE_KERNEL_LOG(
                 context,
                 "unsupported quantization type %d in tensor #%d in node #%d",
@@ -2280,12 +2303,16 @@ class Subgraph {
           const auto* quantization_params =
               static_cast<const TfLiteAffineQuantization*>(
                   tensor.quantization.params);
+          bool valid_zero_point = true;
+          if (quantization_params->zero_point) {
+            if (quantization_params->zero_point->size != 1) {
+              valid_zero_point = false;
+            }
+          }
           if (tensor.quantization.type != kTfLiteAffineQuantization ||
               quantization_params->quantized_dimension != 0 ||
-              quantization_params->scale == nullptr ||
-              quantization_params->zero_point == nullptr ||
-              quantization_params->scale->size != 1 ||
-              quantization_params->zero_point->size != 1) {
+              quantization_params->scale == nullptr || valid_zero_point ||
+              quantization_params->scale->size != 1) {
             TF_LITE_MAYBE_KERNEL_LOG(
                 context,
                 "unsupported quantization type %d in tensor #%d in node #%d",
@@ -3590,12 +3617,12 @@ class Subgraph {
           for (int i = 0; i < output_channels; ++i) {
             filter_params->scale->data[i] = filter_tensor.params.scale;
           }
-          TfLiteIntArrayFree(filter_params->zero_point);
-          filter_params->zero_point = TfLiteIntArrayCreate(output_channels);
-          for (int i = 0; i < output_channels; ++i) {
-            filter_params->zero_point->data[i] =
-                filter_tensor.params.zero_point;
-          }
+          // TfLiteIntArrayFree(filter_params->zero_point);
+          // filter_params->zero_point = TfLiteIntArrayCreate(output_channels);
+          // for (int i = 0; i < output_channels; ++i) {
+          //   filter_params->zero_point->data[i] =
+          //       filter_tensor.params.zero_point;
+          // }
         }
         uint32_t dq_quantized_id = XNN_INVALID_VALUE_ID;
         std::vector<size_t> input_dims(
@@ -4535,12 +4562,12 @@ class Subgraph {
           filter_params->scale = TfLiteFloatArrayCreate(output_channels);
           std::fill_n(filter_params->scale->data, output_channels,
                       filter_tensor.params.scale);
-          TfLiteIntArrayFree(filter_params->zero_point);
-          filter_params->zero_point = TfLiteIntArrayCreate(output_channels);
-          for (int i = 0; i < output_channels; ++i) {
-            filter_params->zero_point->data[i] =
-                filter_tensor.params.zero_point;
-          }
+          // TfLiteIntArrayFree(filter_params->zero_point);
+          // filter_params->zero_point = TfLiteIntArrayCreate(output_channels);
+          // for (int i = 0; i < output_channels; ++i) {
+          //   filter_params->zero_point->data[i] =
+          //       filter_tensor.params.zero_point;
+          // }
         }
         std::vector<size_t> input_dims(
             &input_tensor.dims->data[0],
@@ -4573,7 +4600,8 @@ class Subgraph {
         switch (filter_datatype) {
           case xnn_datatype_qcint4:
           case xnn_datatype_qcint8: {
-            int32_t zero_point_value = filter_params->zero_point->data[0];
+            int32_t zero_point_value =
+                0;  // filter_params->zero_point->data[0];
             status = xnn_define_channelwise_quantized_tensor_value_v2(
                 subgraph, filter_datatype, zero_point_value,
                 filter_params->scale->data, filter_dims.size(),
@@ -6407,12 +6435,12 @@ class Subgraph {
           for (int i = 0; i < output_channels; ++i) {
             filter_params->scale->data[i] = filter_tensor.params.scale;
           }
-          TfLiteIntArrayFree(filter_params->zero_point);
-          filter_params->zero_point = TfLiteIntArrayCreate(output_channels);
-          for (int i = 0; i < output_channels; ++i) {
-            filter_params->zero_point->data[i] =
-                filter_tensor.params.zero_point;
-          }
+          // TfLiteIntArrayFree(filter_params->zero_point);
+          // filter_params->zero_point = TfLiteIntArrayCreate(output_channels);
+          // for (int i = 0; i < output_channels; ++i) {
+          //   filter_params->zero_point->data[i] =
+          //       filter_tensor.params.zero_point;
+          // }
         }
         uint32_t dq_quantized_id = XNN_INVALID_VALUE_ID;
         std::vector<size_t> input_dims(
@@ -6945,10 +6973,13 @@ TfLiteIntArray* Delegate::PrepareOpsToDelegate(TfLiteContext* context) {
                              input_tensor.params.scale);
             } else {
               // Per-channel quantization
+              std::vector<int> zero_points(quant_params->scale->size, 0);
               PerChannelDequantizeInt8(
                   reinterpret_cast<const int8_t*>(packed_data),
                   reinterpret_cast<float*>(unpacked_data),
-                  GetTensorShape(&input_tensor), quant_params->zero_point->data,
+                  GetTensorShape(&input_tensor),
+                  quant_params->zero_point ? quant_params->zero_point->data
+                                           : zero_points.data(),
                   quant_params->scale->data, quant_params->quantized_dimension);
             }
             break;

@@ -20,6 +20,7 @@ limitations under the License.
 #include <string.h>
 
 #include <algorithm>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <string>
@@ -448,6 +449,13 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
   }
 
   const size_t num_scales = src_quantization->scale()->size();
+  const size_t num_zero_points = src_quantization->zero_point()->size();
+  // Only conditionally allocate this buffer for per channel quantization.
+  bool all_zero = num_zero_points > 1;
+  for (int i = 0; i < num_zero_points; ++i) {
+    all_zero &= (src_quantization->zero_point()->data()[i] == 0);
+  }
+  std::cout << " all_zero " << all_zero << std::endl;
 
   // Ensure that the quantization dimension is valid.
   if (src_quantization->quantized_dimension() < 0 ||
@@ -478,11 +486,17 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
   auto* affine_quantization = reinterpret_cast<TfLiteAffineQuantization*>(
       malloc(sizeof(TfLiteAffineQuantization)));
   affine_quantization->scale = TfLiteFloatArrayCreate(num_scales);
-  affine_quantization->zero_point = TfLiteIntArrayCreate(num_scales);
   for (size_t i = 0; i < num_scales; ++i) {
     affine_quantization->scale->data[i] = src_quantization->scale()->Get(i);
-    affine_quantization->zero_point->data[i] =
-        src_quantization->zero_point()->Get(i);
+  }
+  if (all_zero) {
+    affine_quantization->zero_point = nullptr;
+  } else {
+    affine_quantization->zero_point = TfLiteIntArrayCreate(num_scales);
+    for (size_t i = 0; i < num_scales; ++i) {
+      affine_quantization->zero_point->data[i] =
+          src_quantization->zero_point()->Get(i);
+    }
   }
   affine_quantization->quantized_dimension =
       src_quantization->quantized_dimension();

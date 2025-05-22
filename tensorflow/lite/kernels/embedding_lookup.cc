@@ -60,16 +60,18 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     const auto qparams = static_cast<const TfLiteAffineQuantization*>(
         value->quantization.params);
     TF_LITE_ENSURE(context, qparams->scale != nullptr);
-    TF_LITE_ENSURE(context, qparams->zero_point != nullptr);
+    // TF_LITE_ENSURE(context, qparams->zero_point != nullptr);
     TfLiteTensor* output;
     TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, 0, &output));
     if ((value->type == kTfLiteUInt8 || value->type == kTfLiteInt8 ||
          value->type == kTfLiteInt4) &&
         (output->type == kTfLiteFloat32)) {
       // EvalHybrid supports only symmetric quantization for now.
-      TF_LITE_ENSURE(context, qparams->zero_point->data[0] == 0);
+      if (qparams->zero_point) {
+        TF_LITE_ENSURE(context, qparams->zero_point->data[0] == 0);
+      }
     }
-    if (qparams->scale->size > 1 || qparams->zero_point->size > 1) {
+    if (qparams->scale->size > 1) {  // || qparams->zero_point->size > 1) {
       // Per-axis quantization is supported by EvalHybrid only.
       TF_LITE_ENSURE(context, value->type == kTfLiteUInt8 ||
                                   value->type == kTfLiteInt8 ||
@@ -80,7 +82,9 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       TF_LITE_ENSURE(context, qparams->quantized_dimension == 0);
       const int row_size = SizeOfDimension(value, 0);
       TF_LITE_ENSURE(context, qparams->scale->size == row_size);
-      TF_LITE_ENSURE(context, qparams->zero_point->size == row_size);
+      if (qparams->zero_point) {
+        TF_LITE_ENSURE(context, qparams->zero_point->size == row_size);
+      }
     }
   }
 

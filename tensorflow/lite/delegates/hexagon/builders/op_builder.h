@@ -205,7 +205,9 @@ class OpBuilder {
     const TfLiteAffineQuantization* params =
         static_cast<const TfLiteAffineQuantization*>(quant.params);
     float scale = params->scale->data[0];
-    float zero_point = static_cast<float>(params->zero_point->data[0]);
+    float zero_point = params->zero_point
+                           ? static_cast<float>(params->zero_point->data[0])
+                           : 0;
     *min = scale * (static_cast<float>(min_value) - zero_point);
     *max = scale * (static_cast<float>(max_value) - zero_point);
 

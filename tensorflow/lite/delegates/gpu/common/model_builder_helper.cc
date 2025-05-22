@@ -175,7 +175,8 @@ absl::Status PopulateQuantParams(const TfLiteTensor& tensor,
                      std::string(tensor.name)));
   }
   const float scale = params->scale->data[0];
-  const float zero_point = static_cast<float>(params->zero_point->data[0]);
+  const float zero_point =
+      params->zero_point ? static_cast<float>(params->zero_point->data[0]) : 0;
 
   float qmin_value = 0;
   float qmax_value = 0;

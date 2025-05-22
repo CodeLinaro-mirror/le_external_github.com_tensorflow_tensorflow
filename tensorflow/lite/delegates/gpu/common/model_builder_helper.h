@@ -84,7 +84,8 @@ inline void DequantizeConstantTensor(const TfLiteTensor& tensor,
   if (quant_params->scale->size > 1) {
     // Tensor is per-channel quantized.
     PerChannelDequantizationParams op_params;
-    op_params.zero_point = quant_params->zero_point->data;
+    op_params.zero_point =
+        quant_params->zero_point ? quant_params->zero_point->data : 0;
     op_params.scale = quant_params->scale->data;
     op_params.quantized_dimension = quant_params->quantized_dimension;
     reference_ops::PerChannelDequantize(op_params, GetTensorShape(&tensor),

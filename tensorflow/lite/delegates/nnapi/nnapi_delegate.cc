@@ -1865,7 +1865,9 @@ class NNAPIOpBuilder {
             zeroPoint = 0;
           } else if (quantization_params->scale->size == 1) {
             scale = quantization_params->scale->data[0];
-            zeroPoint = quantization_params->zero_point->data[0];
+            zeroPoint = quantization_params->zero_point
+                            ? quantization_params->zero_point->data[0]
+                            : 0;
           }
         }
         if (nn_type != ANEURALNETWORKS_TENSOR_QUANT8_SYMM_PER_CHANNEL) {
@@ -5741,7 +5743,9 @@ TfLiteStatus NNAPIDelegateKernel::AddOpsAndTensors(
             static_cast<TfLiteAffineQuantization*>(tensor.quantization.params);
         if (intermediate_pos == 4) {
           TF_LITE_ENSURE_STATUS(builder.AddScalarInt32Operand(
-              quantization_params->zero_point->data[0]));
+              quantization_params->zero_point
+                  ? quantization_params->zero_point->data[0]
+                  : 0));
         }
         TF_LITE_ENSURE_STATUS(builder.AddScalarFloat32Operand(
             quantization_params->scale->data[0]));
