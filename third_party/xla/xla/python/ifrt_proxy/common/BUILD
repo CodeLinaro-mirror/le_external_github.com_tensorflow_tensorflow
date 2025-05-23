@@ -56,6 +56,22 @@ cc_library(
     alwayslink = True,
 )
 
+cc_library(
+    name = "grpc_credentials_possibly_insecure_wrapper",
+    srcs = [
+        "grpc_credentials_possibly_insecure_wrapper.cc",
+    ],
+    hdrs = [
+        "grpc_credentials_possibly_insecure_wrapper.h",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":grpc_credentials",
+        "@com_github_grpc_grpc//:grpc++",
+        "@com_google_absl//absl/log",
+    ],
+)
+
 tf_proto_library(
     name = "types_proto",
     srcs = ["types.proto"],
