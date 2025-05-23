@@ -111,7 +111,7 @@ endif()
 
 set_target_properties(tensorflowlite_c PROPERTIES
   VERSION ${PROJECT_VERSION}
-  SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
 target_link_libraries(tensorflowlite_c
