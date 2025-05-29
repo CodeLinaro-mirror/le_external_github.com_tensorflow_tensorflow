@@ -35,9 +35,11 @@
 #include "xla/hlo/ir/hlo_print_options.h"
 #include "xla/hlo/tools/hlo_diff/graph/analysis/hlo_value_tracing.h"
 #include "xla/hlo/tools/hlo_diff/graph/hlo_gumgraph_node.h"
+#include "xla/hlo/tools/hlo_diff/graph/utils/cycle_detector.h"
 #include "xla/hlo/tools/hlo_diff/graph/utils/hlo_gumgraph_dfs.h"
 #include "xla/hlo/tools/hlo_diff/utils/hlo_diff_util.h"
 #include "xla/service/call_graph.h"
+#include "xla/status_macros.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "tsl/platform/fingerprint.h"
@@ -50,6 +52,50 @@ namespace {
 void AddEdge(HloInstructionNode* parent, HloInstructionNode* child) {
   parent->children.push_back(child);
   child->parents.push_back(parent);
+}
+
+// Connects the provided callsite instruction to the called computation by
+// connecting the  computation's parameters with the operands of the callsite
+// instructions. This can be thought of as inlining the called computation at
+// the callsite.
+absl::Status ConnectCalledComputation(
+    const HloInstruction::InstructionVector& callsite_operands,
+    const HloInstruction::InstructionVector& called_computation_parameters,
+    HloGumgraph* graph) {
+  TF_RET_CHECK(callsite_operands.size() == called_computation_parameters.size())
+      << "Callsite operands and called computation parameters have different "
+         "sizes";
+
+  for (int i = 0; i < callsite_operands.size(); ++i) {
+    HloInstructionNode* parent =
+        graph->GetNode(called_computation_parameters[i]);
+    HloInstructionNode* child = graph->GetNode(callsite_operands[i]);
+    if (parent == nullptr || child == nullptr) {
+      return absl::InternalError(absl::StrFormat(
+          "Called computation instruction (%s) operand not found "
+          "in the called computation: %s parameters (%dth parameter)",
+          child == nullptr ? "nullptr" : child->GetName(),
+          parent == nullptr ? "nullptr" : parent->GetName(), i));
+    }
+    AddEdge(parent, child);
+  }
+
+  return absl::OkStatus();
+}
+
+// Connects the provided node to its operands.
+absl::Status ConnectOperands(HloInstructionNode* node, HloGumgraph* graph) {
+  for (auto* operand : node->instruction->operands()) {
+    HloInstructionNode* child = graph->GetNode(operand);
+    if (child == nullptr) {
+      return absl::InternalError(
+          absl::StrFormat("Instruction (%s) operand: %s not found in the graph",
+                          node->instruction->name(), operand->name()));
+    }
+    AddEdge(node, child);
+  }
+
+  return absl::OkStatus();
 }
 
 // Creates HloPrintOptions from the given fingerprint options.
@@ -95,26 +141,19 @@ absl::Status HloGumgraph::ConstructGraph(const HloModule& hlo_module) {
       node->props.fingerprint = GetHloInstructionFingerprint(
           instruction, CreateHloPrintOptions(fingerprint_options_));
 
+      bool inline_called_computations = false;
       switch (instruction->opcode()) {
         case HloOpcode::kCall:
         case HloOpcode::kFusion:
         case HloOpcode::kWhile: {
-          // Connect Call, Fusion and While instruction's called computations
-          // parameters with the operands of the caller instructions to inline
-          // the called computation as they should match 1:1.
-          for (auto* called_computation : instruction->called_computations()) {
-            for (int i = 0; i < instruction->operands().size(); ++i) {
-              HloInstructionNode* parent =
-                  GetNode(called_computation->parameter_instruction(i));
-              HloInstructionNode* child = GetNode(instruction->operands()[i]);
-              if (parent == nullptr || child == nullptr) {
-                return absl::InternalError(absl::StrFormat(
-                    "Called computation instruction (%s) operand not found "
-                    "in the called computation: %s parameters (%dth parameter)",
-                    child == nullptr ? "nullptr" : child->GetName(),
-                    parent == nullptr ? "nullptr" : parent->GetName(), i));
-              }
-              AddEdge(parent, child);
+          // Inline Call, Fusion and While instructions called computations only
+          // if the called computation has exactly one callsite.
+          for (auto* computation : instruction->called_computations()) {
+            if (call_graph_->GetComputationCallers(computation).size() == 1) {
+              inline_called_computations = true;
+              TF_RETURN_IF_ERROR(ConnectCalledComputation(
+                  instruction->operands(),
+                  computation->parameter_instructions(), this));
             }
           }
           break;
@@ -133,32 +172,25 @@ absl::Status HloGumgraph::ConstructGraph(const HloModule& hlo_module) {
           // with the operands of the caller instructions to inline the branch
           // computations.
           for (int i = 0; i < instruction->branch_count(); ++i) {
-            HloComputation* branch_computation =
-                instruction->branch_computation(i);
-            HloInstructionNode* parent =
-                GetNode(branch_computation->parameter_instruction(0));
-            HloInstructionNode* child = GetNode(instruction->operands()[i + 1]);
-            if (parent == nullptr || child == nullptr) {
-              return absl::InternalError(absl::StrFormat(
-                  "Branch computation instruction (%s) operand not found "
-                  "in the branch computation: %s parameters",
-                  child->GetName(), parent->GetName()));
+            if (call_graph_
+                    ->GetComputationCallers(instruction->branch_computation(i))
+                    .size() == 1) {
+              inline_called_computations = true;
+              TF_RETURN_IF_ERROR(ConnectCalledComputation(
+                  HloInstruction::InstructionVector(
+                      {instruction->operands()[i + 1]}),
+                  instruction->branch_computation(i)->parameter_instructions(),
+                  this));
             }
-            AddEdge(parent, child);
           }
           break;
         }
-        default: {
-          for (auto* operand : instruction->operands()) {
-            HloInstructionNode* child = GetNode(operand);
-            if (child == nullptr) {
-              return absl::InternalError(absl::StrFormat(
-                  "Instruction (%s) operand: %s not found in the graph",
-                  instruction->name(), operand->name()));
-            }
-            AddEdge(node, child);
-          }
-        }
+        default:
+          break;
+      }
+
+      if (!inline_called_computations) {
+        TF_RETURN_IF_ERROR(ConnectOperands(node, this));
       }
 
       // Connect the root instruction of the called computation with the
@@ -231,7 +263,7 @@ HloGumgraph::PrecomputeGenerations() {
   }
 
   if (!indegrees.empty()) {
-    LOG(WARNING) << "Cycle detected in the graph.";
+    DetectAndLogAllCycles(AllNodes());
     return absl::InternalError("Cycle detected in the graph");
   }
   return init_zero_indegrees;
