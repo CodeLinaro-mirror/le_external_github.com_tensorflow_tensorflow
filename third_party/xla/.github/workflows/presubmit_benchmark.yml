@@ -30,14 +30,17 @@ on:
         - 'yes'
         - 'no'
   pull_request:
-    branches:
-      - main
     types:
       - opened
       - synchronize
       - reopened
       - labeled
       - unlabeled
+    paths:
+      - 'xla/service/gpu/**'
+      - 'xla/service/cpu/**'
+      - 'xla/stream_executor/**'
+      - 'xla/backends/**'
 
 concurrency:
   # Group all jobs for a given PR together, and cancel presubmit if a new commit is pushed.
@@ -53,15 +56,6 @@ jobs:
     # Condition: Run if manually dispatched OR if it's a PR event AND the PR has the 'blocking_presubmit' label.
     # The `github.event.label.name` is only available for 'labeled'/'unlabeled' events.
     # For 'opened'/'reopened'/'synchronize', we need to check `github.event.pull_request.labels`.
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'pull_request' &&
-        (
-          (github.event.action == 'labeled' && github.event.label.name == 'blocking_presubmit') ||
-          contains(github.event.pull_request.labels.*.name, 'blocking_presubmit')
-        )
-      )
     uses: ./.github/workflows/generate_benchmark_matrix.yml
     with:
       workflow_type: 'PRESUBMIT'
