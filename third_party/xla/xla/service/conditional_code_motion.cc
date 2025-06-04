@@ -254,6 +254,13 @@ bool WorthHoisting(HloOpcode op, HloOpcode child_op) {
     case HloOpcode::kConstant:
     case HloOpcode::kReshape:
     case HloOpcode::kBroadcast:
+    case HloOpcode::kSlice:
+    case HloOpcode::kConcatenate:
+    case HloOpcode::kPad:
+    case HloOpcode::kDynamicSlice:
+    case HloOpcode::kDynamicUpdateSlice:
+    case HloOpcode::kGather:
+    case HloOpcode::kScatter:
       return true;
     default:
       if (HloInstruction::IsOpElementwise(op)) {
@@ -1791,18 +1798,22 @@ class GroupConnectedBoundaries {
     }
     return false;
   }
+
+  int64_t CalculateMemorySize(const HloInstruction* hlo) {
+    if (hlo->shape().IsTuple() ||
+        (hlo->opcode() != HloOpcode::kReduce &&
+         absl::c_none_of(hlo->users(), HloPredicateIsOp<HloOpcode::kReduce>))) {
+      return 0;
+    }
+    return ShapeUtil::ByteSizeOf(hlo->shape(), 1) >> 9;
+  }
+
   // This function is reused both for moving the boundary outside or into a
   // conditional. As the result, the readability is somewhat compromised.
   // It might be nice to refactor this function to factor the outside-inside
   // considerations into separate function pointer parameters to improve
   // readability.
   void AddBoundaries(const Boundary& boundary) {
-    auto calc_memory_size = [](const HloInstruction* hlo) -> int64_t {
-      if (hlo->shape().IsTuple()) {
-        return 0;
-      }
-      return ShapeUtil::ByteSizeOf(hlo->shape(), 1) >> 9;
-    };
     BoundaryVisitor visitor;
     visitor.AddToWorkList(boundary);
     int64_t boundary_index = 0;
@@ -1817,7 +1828,7 @@ class GroupConnectedBoundaries {
           WorthHoisting(b.operands()[0], b.GetPosition(), boundary_index)) {
         connected_boundaries_.push_back(b);
         boundary_index++;
-        auto output_size = calc_memory_size(b.operands()[0]);
+        auto output_size = CalculateMemorySize(b.operands()[0]);
         connected_boundaries_memory_increase_ -= output_size;
         VLOG(1) << "memory incr = " << connected_boundaries_memory_increase_
                 << " after subtracting output size.\n";
@@ -1831,7 +1842,7 @@ class GroupConnectedBoundaries {
           VLOG(1) << "Add operand/user " << i << " to visit later\n";
           visitor.AddToWorkList(next_boundary);
           connected_boundaries_memory_increase_ +=
-              calc_memory_size(next_boundary.operands()[0]);
+              CalculateMemorySize(next_boundary.operands()[0]);
           VLOG(1) << "memory incr = " << connected_boundaries_memory_increase_
                   << " after adding shape size of operand " << i << "\n";
         }
@@ -1848,8 +1859,8 @@ class GroupConnectedBoundaries {
         // Try replicate the broadcast inside the conditional branches.
         VLOG(1) << "Replicating multi-use broadcasts:" << b.ToString() << "\n";
         connected_boundaries_.push_back(b);
-        auto output_size = calc_memory_size(b.operands()[0]) -
-                           calc_memory_size(b.operands()[0]->operand(0));
+        auto output_size = CalculateMemorySize(b.operands()[0]) -
+                           CalculateMemorySize(b.operands()[0]->operand(0));
         connected_boundaries_memory_increase_ -= output_size;
         VLOG(1) << "memory incr = " << connected_boundaries_memory_increase_;
         VLOG(1) << "boundary can be moved.";
