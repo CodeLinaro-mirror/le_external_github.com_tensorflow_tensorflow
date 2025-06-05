@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -50,6 +51,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/hlo/transforms/simplifiers/hlo_dce.h"
 #include "xla/hlo/utils/hlo_query.h"
+#include "xla/layout.h"
 #include "xla/layout_util.h"
 #include "xla/service/call_graph.h"
 #include "xla/service/gpu/ir_emission_utils.h"
@@ -59,6 +61,7 @@ limitations under the License.
 #include "xla/service/gpu/model/symbolic_tile_analysis.h"
 #include "xla/service/gpu/model/symbolic_tiled_hlo_instruction.h"
 #include "xla/service/gpu/model/tiled_hlo_computation.h"
+#include "xla/service/hlo_verifier.h"
 #include "xla/service/instruction_fusion.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
@@ -126,8 +129,9 @@ absl::StatusOr<HloInstruction*> FuseInstructionsFromRoot(HloInstruction& root) {
   return fusion;
 }
 
-// Fuses the instructions starting from 'root' for 'consumer'. Other users of
-// 'root' are not affected. Annotates fusion with `kTritonNestedGemmFusionKind`.
+// Fuses the instructions starting from 'root' for 'consumer'. Other consumers
+// of 'root' are not affected. Annotates fusion with
+// `kTritonNestedGemmFusionKind`.
 absl::Status FuseInstructionsForConsumer(HloInstruction& root,
                                          HloInstruction& consumer) {
   CHECK(absl::c_count(consumer.operands(), &root) != 0)
@@ -372,129 +376,170 @@ absl::Status VerifyIsClosedConsumerSet(
                                       &HloInstruction::operands);
 }
 
-bool IsSafeToSinkBitcastBelow(HloInstruction* instruction) {
-  switch (instruction->opcode()) {
-    case HloOpcode::kBitcast:
-      // TODO(b/393299275): Support sinking through broadcast.
-      return true;
-    default:
-      return instruction->IsElementwise();
+absl::Status VerifyDefaultLayout(const Layout& layout) {
+  if (!LayoutUtil::IsMonotonicWithDim0Major(layout)) {
+    // TODO(b/393299275): do we need to support non-default layouts?
+    return absl::UnimplementedError(absl::StrCat(
+        "Only default layouts are supported, got ", layout.ToString()));
   }
+  return absl::OkStatus();
 }
 
-// Parameters to rewrite a
-// reshape(broadcast/tanspose) as broadcast/transpose(reshape).
-struct ReshapeOutputParams {
+// Parameters to rewrite a reshape(broadcast/tanspose) as
+// broadcast/transpose(reshape) and vice versa.
+struct ReshapeParams {
   Shape new_shape;                // The reshape output shape.
   std::vector<int64_t> new_dims;  // The dims of the broadcast/transpose.
 };
+
+// A generalized helper to calculate reshape parameters when swapping a
+// broadcast and a reshape operation. The `is_operand_dims_group` lambda
+// provides the specific logic required to identify which groups of dimensions
+// belong to the original operand and should be preserved in the new shape.
+absl::StatusOr<ReshapeParams> CalculateBroadcastReshape(
+    const HloBroadcastInstruction* broadcast,
+    absl::Span<const int64_t> reshape_dims,
+    absl::Span<const int64_t> broadcast_dims,
+    const std::function<absl::StatusOr<bool>(int, int)>&
+        is_operand_dims_group) {
+  TF_RETURN_IF_ERROR(VerifyDefaultLayout(broadcast->shape().layout()));
+
+  ReshapeParams result;
+  result.new_shape.set_element_type(broadcast->shape().element_type());
+  result.new_dims.reserve(reshape_dims.size());
+
+  auto factors = CommonFactors(broadcast_dims, reshape_dims);
+  for (int64_t i = 1; i < factors.size(); ++i) {
+    auto [broadcast_from, reshape_from] = factors[i - 1];
+    auto [broadcast_to, reshape_to] = factors[i];
+
+    TF_ASSIGN_OR_RETURN(bool is_operand_group,
+                        is_operand_dims_group(broadcast_from, broadcast_to));
+
+    if (!is_operand_group) {
+      continue;  // Broadcast dim groups are handled by the new broadcast.
+    }
+
+    // Update the new shape and broadcast dimensions.
+    for (int64_t j = reshape_from; j < reshape_to; ++j) {
+      result.new_shape.add_dimensions(reshape_dims[j]);
+      result.new_dims.push_back(j);
+    }
+  }
+  return result;
+}
 
 // Returns parameters to rewrite a broadcast + reshape as reshape + broadcast.
 //
 // Example:
 //
 // b = T[...] broadcast(operand)
-// c = T[target_dims] reshape(b)
+// c = T[reshape_dims] reshape(b)
 //
 // to
 //
-// d = [new operand shape] reshape(operand)
-// c = T[target_dims] broadcast(d), dimensions={broadcast dims parameter}.
+// d = T[new_shape] reshape(operand)
+// c = T[reshape_dims] broadcast(d), dimensions={new_dims}.
 //
 // Assumes that:
 // - broadcast does not transpose dimensions (checked by hlo_verifier);
 // - reshape does not mix operand and broadcast dimensions (checks);
-absl::StatusOr<ReshapeOutputParams> CalculateBroadcastOutputReshape(
+absl::StatusOr<ReshapeParams> CalculateBroadcastOutputReshape(
     const HloBroadcastInstruction* broadcast,
-    absl::Span<const int64_t> target_dims) {
-  // The rewrite works by splitting the broadcast output dimensions and the
-  // target dimensions into groups of equal size. Every group is then associated
-  // with either the operand or added broadcast dimensions. A group coming from
-  // the operand is used to construct the new operand shape.
+    absl::Span<const int64_t> reshape_dims) {
   auto broadcast_dims = broadcast->shape().dimensions();
-  QCHECK_EQ(broadcast->dimensions().size(),
-            broadcast->operand(0)->shape().dimensions().size())
-      << absl::StrCat("Broadcast 'dimensions' parameter size ",
-                      broadcast->dimensions().size(),
-                      " does not the match the operand rank ",
-                      broadcast->operand(0)->shape().dimensions().size());
-  if (Product(broadcast_dims) != Product(target_dims)) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Broadcast shape dimensions product ", Product(broadcast_dims), " (",
-        broadcast->shape().ToString(),
-        ") does not match target shape dimensions product ",
-        Product(target_dims), " (", absl::StrJoin(target_dims, ","), ")"));
-  }
-  if (!LayoutUtil::IsMonotonicWithDim0Major(broadcast->shape().layout())) {
-    // TODO(b/393299275): do we need to support non-default layouts?
-    return absl::UnimplementedError(
-        absl::StrCat("Not-default layouts for broadcast is not supported yet: ",
-                     broadcast->shape().layout().ToString()));
-  }
   llvm::SmallVector<bool> is_broadcast_dim(broadcast_dims.size(), true);
   for (const int64_t i : broadcast->dimensions()) {
     is_broadcast_dim[i] = false;
   }
-  ReshapeOutputParams result;
-  std::vector<int64_t> new_operand_dims;
-  absl::InlinedVector<std::pair<int64_t, int64_t>, 8> factors =
-      CommonFactors(broadcast_dims, target_dims);
-  for (int64_t i = 1; i < factors.size(); ++i) {
-    auto [broadcast_from, target_from] = factors[i - 1];
-    auto [broadcast_to, target_to] = factors[i];
+
+  auto checker = [&](int broadcast_from,
+                     int broadcast_to) -> absl::StatusOr<bool> {
     auto subspan = absl::MakeSpan(is_broadcast_dim)
                        .subspan(broadcast_from, broadcast_to - broadcast_from);
     auto identity = [](bool b) { return b; };
     if (absl::c_all_of(subspan, identity)) {
-      // Group of dimensions is coming broadcasted, skip it as it will be simply
-      // introduced by the new broadcast.
-      continue;
+      // All dimensions in this group are new broadcast dimensions.
+      return false;
     }
     if (!absl::c_none_of(subspan, identity)) {
+      // The reshape mixes operand and broadcast dimensions within a group.
       return absl::InvalidArgumentError(
           absl::StrCat("Cannot reshape broadcast for ", broadcast->ToString(),
                        " as it mixes operand and broadcast dimensions."));
     }
-    // Update the expected operand shape.
-    for (int64_t j = target_from; j < target_to; ++j) {
-      result.new_dims.push_back(j);
-      new_operand_dims.push_back(target_dims[j]);
-    }
-  }
-  result.new_shape =
-      ShapeUtil::MakeShape(broadcast->shape().element_type(), new_operand_dims);
-  return std::move(result);
+    // All dimensions in this group are from the original operand.
+    return true;
+  };
+
+  return CalculateBroadcastReshape(broadcast, reshape_dims, broadcast_dims,
+                                   checker);
 }
 
-absl::StatusOr<ReshapeOutputParams> CalculateTransposeOutputReshape(
+// Returns parameters to rewrite a reshape + broadcast as broadcast + reshape.
+//
+// Example:
+//
+// b = T[reshape_dims] reshape(operand)
+// c = T[...] broadcast(b)
+//
+// to
+//
+// d = T[new_shape] broadcast(operand), dimensions={new_dims}.
+// c = T[...] reshape(d)
+//
+// Assumes that:
+// - broadcast does not transpose dimensions (checked by hlo_verifier);
+// - reshape does not mix operand and broadcast dimensions (checks);
+absl::StatusOr<ReshapeParams> CalculateBroadcastInputReshape(
+    const HloBroadcastInstruction* broadcast,
+    absl::Span<const int64_t> reshape_dims) {
+  auto checker = [&](int broadcast_from,
+                     int broadcast_to) -> absl::StatusOr<bool> {
+    auto subspan = broadcast->dimensions().subspan(
+        broadcast_from, broadcast_to - broadcast_from);
+
+    // This check assumes that for a group of dimensions to correspond to the
+    // operand, they must be contiguous.
+    if (subspan.back() - subspan.front() != subspan.size() - 1) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Cannot reshape broadcast for ", broadcast->ToString(),
+                       " as it mixes operand and broadcast dimensions."));
+    }
+    return true;
+  };
+
+  auto broadcast_dims = broadcast->operand(0)->shape().dimensions();
+  return CalculateBroadcastReshape(broadcast, reshape_dims, broadcast_dims,
+                                   checker);
+}
+
+// A generalized helper to calculate reshape and transpose parameters when
+// swapping the two operations. It is parameterized by the dimensions to use for
+// factorization and the permutation to use for checking contiguity. It returns
+// the parameters for the new operation before the final permutation inversion.
+absl::StatusOr<ReshapeParams> CalculateTransposeReshape(
     const HloTransposeInstruction* transpose,
-    absl::Span<const int64_t> target_dims) {
-  absl::Span<const int64_t> transpose_dims = transpose->shape().dimensions();
-  QCHECK_EQ(transpose->dimensions().size(),
-            transpose->operand(0)->shape().dimensions().size())
-      << absl::StrCat("Transpose 'dimensions' parameter size ",
-                      transpose->dimensions().size(),
-                      " does not the match the operand rank ",
-                      transpose->operand(0)->shape().dimensions().size());
-  if (Product(transpose_dims) != Product(target_dims)) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Transpose shape dimensions product ", Product(transpose_dims), " (",
-        transpose->shape().ToString(),
-        ") does not match target shape dimensions product ",
-        Product(target_dims), " (", absl::StrJoin(target_dims, ","), ")"));
-  }
-  if (!LayoutUtil::IsMonotonicWithDim0Major(transpose->shape().layout())) {
-    // TODO(b/393299275): do we need to support non-default layouts?
-    return absl::UnimplementedError(
-        absl::StrCat("Not-default layouts for transpose is not supported yet: ",
-                     transpose->shape().layout().ToString()));
-  }
-  absl::InlinedVector<std::pair<int64_t, int64_t>, 8> factors =
-      CommonFactors(transpose_dims, target_dims);
+    absl::Span<const int64_t> reshape_dims,
+    absl::Span<const int64_t> transpose_dims,
+    absl::Span<const int64_t> permutation) {
+  TF_RETURN_IF_ERROR(VerifyDefaultLayout(transpose->shape().layout()));
+
+  auto factors = CommonFactors(transpose_dims, reshape_dims);
+  struct IntermediateDims {
+    int64_t input_index;   // The index of the first input dimension.
+    int64_t target_index;  // The index of the intermediate dimension.
+    int64_t target_dim;    // The size of the intermediate dimension.
+  };
+  absl::InlinedVector<IntermediateDims, 8> intermediate_dims;
+  intermediate_dims.reserve(reshape_dims.size());
+
+  // Transform adjacent factors into intermediate dimensions, holding the
+  // information to construct the operand shape and permutation of the transpose
+  // after the reshape.
   for (int64_t i = 1; i < factors.size(); ++i) {
-    auto [transpose_from, target_from] = factors[i - 1];
-    auto [transpose_to, target_to] = factors[i];
-    const auto& permutation = transpose->dimensions();
+    auto [transpose_from, reshape_from] = factors[i - 1];
+    auto [transpose_to, reshape_to] = factors[i];
     for (int64_t j = transpose_from + 1; j < transpose_to; ++j) {
       if (permutation[j - 1] + 1 != permutation[j]) {
         return absl::InvalidArgumentError(
@@ -502,54 +547,95 @@ absl::StatusOr<ReshapeOutputParams> CalculateTransposeOutputReshape(
                          " becaues input dimensions are not contiguous."));
       }
     };
-  }
-  struct IntermediateDims {
-    int64_t input_index;   // The index of the first input dimension.
-    int64_t target_index;  // The index of the intermediate dimension.
-    int64_t target_dim;    // The size of the intermediate dimension.
-  };
-  absl::InlinedVector<IntermediateDims, 8> intermediate_dims;
-  intermediate_dims.reserve(target_dims.size());
-  // Transform adjacent factors into intermediate dimensions, holding the
-  // information to construct the operand shape and permutation of the transpose
-  // after the reshape.
-  for (int64_t i = 1; i < factors.size(); ++i) {
-    auto [transpose_from, target_from] = factors[i - 1];
-    auto [transpose_to, target_to] = factors[i];
-    int64_t input_index = transpose->dimensions()[transpose_from];
-    for (int64_t j = target_from; j < target_to; ++j) {
+    int64_t input_index = permutation[transpose_from];
+    for (int64_t j = reshape_from; j < reshape_to; ++j) {
       intermediate_dims.emplace_back(IntermediateDims{
           input_index,
           static_cast<int64_t>(intermediate_dims.size()),
-          target_dims[j],
+          reshape_dims[j],
       });
     }
   }
+
   // Sort by the input index, which is the order after the reshape.
   absl::c_stable_sort(intermediate_dims, [](const auto& a, const auto& b) {
     return a.input_index < b.input_index;
   });
-  std::vector<int64_t> permutation(intermediate_dims.size());
-  absl::InlinedVector<int64_t, 8> reshape_dims;
-  reshape_dims.reserve(intermediate_dims.size());
+
+  ReshapeParams result;
+  result.new_shape.set_element_type(transpose->shape().element_type());
+  result.new_dims.reserve(intermediate_dims.size());
   for (const auto& dim : intermediate_dims) {
-    permutation[dim.target_index] = static_cast<int64_t>(reshape_dims.size());
-    reshape_dims.push_back(dim.target_dim);
+    result.new_shape.add_dimensions(dim.target_dim);
+    result.new_dims.push_back(dim.target_index);
   }
-  return ReshapeOutputParams{
-      ShapeUtil::MakeShape(transpose->shape().element_type(), reshape_dims),
-      std::move(permutation)};
+  return result;
+}
+
+std::vector<int64_t> InversePermutation(absl::Span<const int64_t> permutation) {
+  std::vector<int64_t> result(permutation.size());
+  for (int64_t i = 0; i < permutation.size(); ++i) {
+    result[permutation[i]] = i;
+  }
+  return result;
+}
+
+// Returns parameters to rewrite a transpose + reshape as reshape + transpose.
+//
+// Example:
+//
+// b = T[...] transpose(operand)
+// c = T[reshape_dims] reshape(b)
+//
+// to
+//
+// d = T[new_shape] reshape(operand)
+// c = T[reshape_dims] transpose(d), dimensions={new_dims}.
+//
+// Assumes that:
+// - reshape only mixes contiguous dimensions (checks);
+absl::StatusOr<ReshapeParams> CalculateTransposeOutputReshape(
+    const HloTransposeInstruction* transpose,
+    absl::Span<const int64_t> reshape_dims) {
+  TF_ASSIGN_OR_RETURN(ReshapeParams result,
+                      CalculateTransposeReshape(transpose, reshape_dims,
+                                                transpose->shape().dimensions(),
+                                                transpose->dimensions()));
+  result.new_dims = InversePermutation(result.new_dims);
+  return result;
+}
+
+// Returns parameters to rewrite a reshape + transpose as transpose + reshape.
+//
+// Example:
+//
+// b = T[reshape_dims] reshape(operand)
+// c = T[...] transpose(b)
+//
+// to
+//
+// d = T[new_shape] transpose(operand), dimensions={new_dims}.
+// c = T[...] reshape(d)
+//
+// Assumes that:
+// - reshape only mixes contiguous dimensions (checks);
+absl::StatusOr<ReshapeParams> CalculateTransposeInputReshape(
+    const HloTransposeInstruction* transpose,
+    absl::Span<const int64_t> reshape_dims) {
+  return CalculateTransposeReshape(transpose, reshape_dims,
+                                   transpose->operand(0)->shape().dimensions(),
+                                   InversePermutation(transpose->dimensions()));
 }
 
 // Simulates a rewrite of all producers of a given bitcast, moving the bitcast
 // outside of the computation.
 // Returns the new shapes of affected instructions in order of traversal from
-// users to producers.
+// consumers to producers.
 // Assumes that the bitcast does not covert the type of the operand.
 absl::StatusOr<std::vector<std::pair<HloInstruction*, Shape>>>
-PlanHoistBitcastToCallers(const HloInstruction* bitcast) {
+PlanHoistBitcastUpwardsToCallers(const HloInstruction* bitcast) {
   // Check that all producers only affect the bitcast. If there are any
-  // other users: refuse the hoisting.
+  // other consumers: refuse the hoisting.
   // It is possible to support more cases by sinking the bitcast from such
   // producers downward.
   HloInstructionSetVector producers = GetProducerSet(bitcast);
@@ -582,13 +668,13 @@ PlanHoistBitcastToCallers(const HloInstruction* bitcast) {
   };
   TF_RETURN_IF_ERROR(set_shape(bitcast->operands(), bitcast->shape()));
   std::vector<std::pair<HloInstruction*, Shape>> result;
-  // We want to visit instructions in order from users to producers: we
+  // We want to visit instructions in order from consumers to producers: we
   // hoist the bitcast upwards and having a valid HLO at every rewrite step
   // helps a lot.
   // A simple DFS or BFS over operands will not work in non-tree situations when
-  // there are multiple users of the same producer. Instead of writing a custom
-  // traversal we can simply walk the post-order (producers before users)
-  // list backward and only update the instructions affected.
+  // there are multiple consumers of the same producer. Instead of writing a
+  // custom traversal we can simply walk the post-order (producers before
+  // consumers) list backward and only update the instructions affected.
   // TODO(b/393299275): use MakeInstructionPostOrderFrom(bitcast) - that should
   // be slightly more efficient.
   auto use_before_def = bitcast->parent()->MakeInstructionPostOrder();
@@ -596,13 +682,12 @@ PlanHoistBitcastToCallers(const HloInstruction* bitcast) {
   for (HloInstruction* instruction : use_before_def) {
     auto it = to_update.find(instruction);
     if (it == to_update.end()) {
-      // Not affected.
-      continue;
+      continue;  // Not affected.
     }
     Shape& shape = it->second;
     result.emplace_back(instruction, shape);
     VLOG(2) << absl::StrCat(
-        "updating the shape of ", instruction->ToString(), " from ",
+        "updating the result shape of ", instruction->ToString(), " from ",
         ShapeUtil::HumanStringWithLayout(instruction->shape()), " to ",
         ShapeUtil::HumanStringWithLayout(shape));
     switch (instruction->opcode()) {
@@ -615,7 +700,7 @@ PlanHoistBitcastToCallers(const HloInstruction* bitcast) {
         // its operand.
         break;
       case HloOpcode::kBroadcast: {
-        TF_ASSIGN_OR_RETURN(ReshapeOutputParams params,
+        TF_ASSIGN_OR_RETURN(ReshapeParams params,
                             CalculateBroadcastOutputReshape(
                                 Cast<HloBroadcastInstruction>(instruction),
                                 shape.dimensions()));
@@ -624,7 +709,7 @@ PlanHoistBitcastToCallers(const HloInstruction* bitcast) {
         break;
       }
       case HloOpcode::kTranspose: {
-        TF_ASSIGN_OR_RETURN(ReshapeOutputParams params,
+        TF_ASSIGN_OR_RETURN(ReshapeParams params,
                             CalculateTransposeOutputReshape(
                                 Cast<HloTransposeInstruction>(instruction),
                                 shape.dimensions()));
@@ -644,14 +729,112 @@ PlanHoistBitcastToCallers(const HloInstruction* bitcast) {
   return result;
 }
 
+// Simulates a rewrite of all consumers of a given bitcast, moving the bitcast
+// outside of the computation.
+// Returns the new operand shapes of affected instructions in order of traversal
+// from producers to consumers. Assumes that the bitcast does not convert the
+// type of the operand.
+absl::StatusOr<std::vector<std::pair<HloInstruction*, Shape>>>
+PlanHoistBitcastDownwardsToCallers(const HloInstruction* bitcast) {
+  // Check that all consumers only affect the bitcast. If there are any
+  // other producers: refuse the hoisting.
+  // It is possible to support more cases by hoisting the bitcast from such
+  // consumers upward.
+  HloInstructionSetVector consumers = GetConsumerSet(bitcast);
+  TF_RETURN_IF_ERROR(VerifyIsClosedConsumerSet(consumers, bitcast));
+  if (bitcast->shape().element_type() !=
+      bitcast->operand(0)->shape().element_type()) {
+    return absl::UnimplementedError(
+        absl::StrCat("Hoisting bitcast with type conversion is not supported: ",
+                     bitcast->ToString()));
+  }
+  HloInstructionMap<Shape> to_update;
+
+  auto set_shape = [&](const absl::Span<HloInstruction* const> instructions,
+                       const Shape& shape) -> absl::Status {
+    for (HloInstruction* instruction : instructions) {
+      auto it = to_update.find(instruction);
+      // Only update the dimensions keeping the type intact.
+      Shape updated_shape(shape);
+      updated_shape.set_element_type(instruction->shape().element_type());
+      if (it == to_update.end()) {
+        to_update.emplace(instruction, updated_shape);
+      } else if (it->second != updated_shape) {
+        return absl::FailedPreconditionError(absl::StrCat(
+            "Conflicting shape assignment for ", instruction->ToString(),
+            " got ", ShapeUtil::HumanStringWithLayout(it->second), " and ",
+            ShapeUtil::HumanStringWithLayout(shape)));
+      }
+    }
+    return absl::OkStatus();
+  };
+  TF_RETURN_IF_ERROR(set_shape(bitcast->users(), bitcast->operand(0)->shape()));
+  std::vector<std::pair<HloInstruction*, Shape>> result;
+  // We want to visit instructions in order from producers to consumers: we
+  // hoist the bitcast downwards and having a valid HLO at every rewrite step
+  // helps a lot.
+  // A simple DFS or BFS over results will not work in non-tree situations when
+  // there are multiple producers of the same consumer. Instead of writing a
+  // custom traversal we can simply walk the post-order (producers before
+  // consumers) list and only update the instructions affected.
+  // TODO(b/393299275): use MakeInstructionPostOrderFrom(bitcast) - that should
+  // be slightly more efficient.
+  auto def_before_use = bitcast->parent()->MakeInstructionPostOrder();
+  for (HloInstruction* instruction : def_before_use) {
+    auto it = to_update.find(instruction);
+    if (it == to_update.end()) {
+      continue;  // Not affected.
+    }
+    Shape& shape = it->second;
+    VLOG(2) << absl::StrCat(
+        "updating the operand shape of ", instruction->ToString(), " from ",
+        ShapeUtil::HumanStringWithLayout(instruction->shape()), " to ",
+        ShapeUtil::HumanStringWithLayout(shape));
+    switch (instruction->opcode()) {
+      case HloOpcode::kBitcast:
+        // Other bitcast will be hoisted separately so we don't need to update
+        // its operand.
+        break;
+      case HloOpcode::kBroadcast: {
+        TF_ASSIGN_OR_RETURN(ReshapeParams params,
+                            CalculateBroadcastInputReshape(
+                                Cast<HloBroadcastInstruction>(instruction),
+                                shape.dimensions()));
+        TF_RETURN_IF_ERROR(set_shape(instruction->users(), params.new_shape));
+        result.emplace_back(instruction, shape);
+        break;
+      }
+      case HloOpcode::kTranspose: {
+        TF_ASSIGN_OR_RETURN(ReshapeParams params,
+                            CalculateTransposeInputReshape(
+                                Cast<HloTransposeInstruction>(instruction),
+                                shape.dimensions()));
+        TF_RETURN_IF_ERROR(set_shape(instruction->users(), params.new_shape));
+        result.emplace_back(instruction, shape);
+        break;
+      }
+      default:
+        if (!instruction->IsElementwise()) {
+          return absl::FailedPreconditionError(absl::StrCat(
+              "Cannot hoist bitcast past ", instruction->ToString()));
+        }
+        TF_RETURN_IF_ERROR(set_shape(instruction->users(), shape));
+        result.emplace_back(instruction, shape);
+        break;
+    }
+  }
+  return result;
+}
+
 // Hoists the given 'bitcast' upwards out of its computation, to the parent of
 // each caller.
 absl::Status HoistBitcastUpwardsToCallers(
     HloInstruction* bitcast, const std::vector<HloInstruction*>& callers) {
-  TF_ASSIGN_OR_RETURN(auto rewrite_plan, PlanHoistBitcastToCallers(bitcast));
+  TF_ASSIGN_OR_RETURN(auto rewrite_plan,
+                      PlanHoistBitcastUpwardsToCallers(bitcast));
   for (auto [instruction, shape] : rewrite_plan) {
     VLOG(2) << absl::StrCat(
-        "rewriting shape of ", instruction->ToString(), " from ",
+        "rewriting result shape of ", instruction->ToString(), " from ",
         ShapeUtil::HumanStringWithLayout(instruction->shape()), " to ",
         ShapeUtil::HumanStringWithLayout(shape));
     switch (instruction->opcode()) {
@@ -671,18 +854,18 @@ absl::Status HoistBitcastUpwardsToCallers(
         auto* broadcast = Cast<HloBroadcastInstruction>(instruction);
         auto params =
             CalculateBroadcastOutputReshape(broadcast, shape.dimensions());
-        QCHECK_OK(params);  // This must be OK as we have already ran this in
-                            // AssignShapesToHoistBitcastToCallers.
-        *broadcast->mutable_dimensions() = params.value().new_dims;
+        // Must be OK, already succeeded in PlanHoistBitcasUpwardsToCallers.
+        QCHECK_OK(params);
+        *broadcast->mutable_dimensions() = params->new_dims;
         break;
       }
       case HloOpcode::kTranspose: {
         auto* transpose = Cast<HloTransposeInstruction>(instruction);
         auto params =
             CalculateTransposeOutputReshape(transpose, shape.dimensions());
-        QCHECK_OK(params);  // This must be OK as we have already ran this in
-                            // AssignShapesToHoistBitcastToCallers.
-        *transpose->mutable_dimensions() = params.value().new_dims;
+        // Must be OK, already succeeded in PlanHoistBitcastUpwardsToCallers.
+        QCHECK_OK(params);
+        *transpose->mutable_dimensions() = params->new_dims;
         break;
       }
       default:
@@ -699,30 +882,38 @@ absl::Status HoistBitcastUpwardsToCallers(
 // of each caller.
 absl::Status HoistBitcastDownwardsToCallers(
     HloInstruction* bitcast, const std::vector<HloInstruction*>& callers) {
-  HloInstructionSetVector consumers = GetConsumerSet(bitcast);
-  // Check whether all operands of consumers are within the set of consumers,
-  // or the bitcast itself.
-  TF_RETURN_IF_ERROR(VerifyIsClosedConsumerSet(consumers, bitcast));
-  auto is_root = [](HloInstruction* instr) { return instr->IsRoot(); };
-  CHECK(is_root(bitcast) || absl::c_any_of(consumers, is_root))
-      << "Expected" << bitcast->ToString()
-      << " to be a root or have a root consumer.";
-  if (auto it = absl::c_find_if_not(consumers, IsSafeToSinkBitcastBelow);
-      it != consumers.end()) {
-    return absl::InternalError(
-        absl::StrCat("Cannot hoist bitcast past ", (*it)->ToString()));
-  }
-
-  // Adjust the shape of of every consumer instruction.
-  Shape shape = bitcast->operand(0)->shape();
-  for (HloInstruction* instruction : consumers) {
-    Shape updated_shape(shape);
-    updated_shape.set_element_type(instruction->shape().element_type());
+  TF_ASSIGN_OR_RETURN(auto rewrite_plan,
+                      PlanHoistBitcastDownwardsToCallers(bitcast));
+  for (auto [instruction, shape] : rewrite_plan) {
     VLOG(2) << absl::StrCat(
-        "rewriting shape of ", instruction->ToString(), " from ",
+        "rewriting operand shape of ", instruction->ToString(), " from ",
         ShapeUtil::HumanStringWithLayout(instruction->shape()), " to ",
-        ShapeUtil::HumanStringWithLayout(updated_shape));
-    *instruction->mutable_shape() = updated_shape;
+        ShapeUtil::HumanStringWithLayout(shape));
+    switch (instruction->opcode()) {
+      case HloOpcode::kBroadcast: {
+        auto* broadcast = Cast<HloBroadcastInstruction>(instruction);
+        auto params =
+            CalculateBroadcastInputReshape(broadcast, shape.dimensions());
+        // Must be OK, already succeeded in PlanHoistBitcastDownwardsToCallers.
+        QCHECK_OK(params);
+        *broadcast->mutable_dimensions() = params->new_dims;
+        shape = params->new_shape;
+        break;
+      }
+      case HloOpcode::kTranspose: {
+        auto* transpose = Cast<HloTransposeInstruction>(instruction);
+        auto params =
+            CalculateTransposeInputReshape(transpose, shape.dimensions());
+        // Must be OK, already succeeded in PlanHoistBitcastDownwardsToCallers.
+        QCHECK_OK(params);
+        *transpose->mutable_dimensions() = params->new_dims;
+        shape = params->new_shape;
+        break;
+      }
+      default:
+        break;
+    }
+    *instruction->mutable_shape() = shape;
   }
 
   // Insert new bitcast for each caller's result.
@@ -730,9 +921,9 @@ absl::Status HoistBitcastDownwardsToCallers(
     HloInstruction* new_bitcast = caller->AddInstruction(
         HloInstruction::CreateBitcast(caller->shape(), caller));
     TF_RETURN_IF_ERROR(caller->ReplaceAllUsesWith(new_bitcast));
-    Shape updated_shape(shape);
-    updated_shape.set_element_type(caller->shape().element_type());
-    *caller->mutable_shape() = updated_shape;
+    *caller->mutable_shape() = rewrite_plan.empty()
+                                   ? bitcast->operand(0)->shape()
+                                   : rewrite_plan.back().first->shape();
   }
 
   TF_RETURN_IF_ERROR(
@@ -797,6 +988,10 @@ class NestGemmFusionVisitor : public DfsHloRewriteVisitor {
       return absl::OkStatus();
     }
     DCHECK_EQ(GetDotCount(computation), 1) << "Fusion has more than one dot.";
+    QCHECK_OK([&] {
+      ShapeVerifier verifier({});
+      return computation->Accept(&verifier);
+    }());
     HloDotInstruction* dot = Cast<HloDotInstruction>(instr);
     TF_RETURN_IF_ERROR(
         TryHoistBitcastsInComputationToCallers(instr, call_graph_));

@@ -2077,6 +2077,7 @@ cc_library(
         "//xla/hlo/transforms/simplifiers:hlo_dce",
         "//xla/hlo/utils:hlo_query",
         "//xla/service:call_graph",
+        "//xla/service:hlo_verifier",
         "//xla/service:instruction_fusion",
         "//xla/service/gpu:ir_emission_utils",
         "//xla/service/gpu:matmul_indexing_utils",
