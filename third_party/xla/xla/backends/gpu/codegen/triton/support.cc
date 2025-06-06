@@ -610,6 +610,9 @@ CodegenDecision IsTritonSupportedInstructionImpl(
     }
     case HloOpcode::kParameter:
       return CodegenDecision::Allow();
+    case HloOpcode::kDynamicSlice:
+      // TODO(b/417172838): do we need to have any restrictions here?
+      return CodegenDecision::Allow();
     case HloOpcode::kBitcast:
     case HloOpcode::kBroadcast:
     case HloOpcode::kReshape:
@@ -650,7 +653,6 @@ namespace internal {
 bool IsTritonUnsupportedOpcode(HloOpcode opcode) {
   switch (opcode) {
     case HloOpcode::kDynamicReshape:
-    case HloOpcode::kDynamicSlice:
     case HloOpcode::kDynamicUpdateSlice:
     case HloOpcode::kGather:
     case HloOpcode::kPad:
