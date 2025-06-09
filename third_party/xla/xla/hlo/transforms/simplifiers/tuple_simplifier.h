@@ -61,7 +61,7 @@ class TupleSimplifier : public HloModulePass {
   //         |
   //       Tuple
   //
-  absl::StatusOr<bool> RemoveWholeTuple(HloInstruction* tuple);
+  absl::StatusOr<HloInstruction*> RemoveWholeTuple(HloInstruction* tuple);
 };
 
 }  // namespace xla
