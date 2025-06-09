@@ -40,7 +40,8 @@ PjRtCpuDevice::PjRtCpuDevice(int process_id, int local_device_id,
     : description_(process_id, local_device_id),
       max_inflight_computations_semaphore_(
           /*capacity=*/max_inflight_computations),
-      async_execution_tracker_(std::make_unique<CpuAsyncExecutionTracker>()) {}
+      async_execution_tracker_(std::make_unique<CpuAsyncExecutionTracker>()),
+      stream_event_map_(std::make_unique<ExecutionStreamEventMap>()) {}
 
 absl::Status PjRtCpuDevice::TransferToInfeed(const LiteralSlice& literal) {
   return TransferLiteralToInfeedOnCpu(local_hardware_id().value(), literal);

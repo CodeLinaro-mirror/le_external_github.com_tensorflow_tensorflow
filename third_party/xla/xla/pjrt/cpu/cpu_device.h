@@ -36,6 +36,35 @@ limitations under the License.
 
 namespace xla {
 
+class ExecutionStreamEventMap {
+ public:
+  tsl::AsyncValueRef<CpuEvent> GetLastEnqueueEvent(
+      int64_t execution_stream_id) {
+    absl::MutexLock lock(&lock_);
+    auto iter = map_.find(execution_stream_id);
+    if (iter != map_.end()) {
+      return iter->second;
+    }
+    return tsl::MakeAvailableAsyncValueRef<CpuEvent>();
+  }
+
+  void SetLastEnqueueEvent(int64_t execution_stream_id,
+                           tsl::AsyncValueRef<CpuEvent> event) {
+    absl::MutexLock lock(&lock_);
+    map_[execution_stream_id] = std::move(event);
+  }
+
+  void Clear(int64_t execution_stream_id) {
+    absl::MutexLock lock(&lock_);
+    map_.erase(execution_stream_id);
+  }
+
+ private:
+  absl::Mutex lock_;
+  absl::flat_hash_map<int64_t, tsl::AsyncValueRef<CpuEvent>> map_
+      ABSL_GUARDED_BY(lock_);
+};
+
 class PjRtCpuDevice final : public PjRtDevice {
  public:
   explicit PjRtCpuDevice(int process_id, int local_device_id,
@@ -96,6 +125,10 @@ class PjRtCpuDevice final : public PjRtDevice {
     return async_execution_tracker_.get();
   }
 
+  ExecutionStreamEventMap* stream_event_map() const {
+    return stream_event_map_.get();
+  }
+
  private:
   PjRtClient* client_ = nullptr;
   CpuDeviceDescription description_;
@@ -108,6 +141,8 @@ class PjRtCpuDevice final : public PjRtDevice {
   Semaphore max_inflight_computations_semaphore_;
 
   std::unique_ptr<CpuAsyncExecutionTracker> async_execution_tracker_;
+
+  std::unique_ptr<ExecutionStreamEventMap> stream_event_map_;
 };
 
 }  // namespace xla
