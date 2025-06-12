@@ -160,18 +160,18 @@ def _tf_repositories():
     # LINT.IfChange(xnnpack)
     tf_http_archive(
         name = "XNNPACK",
-        sha256 = "361b8e4b914e53c6aef161cb36550a8059bd79330c7aa8f200896761bfc0d39d",
-        strip_prefix = "XNNPACK-800ffc1792873f09af89518a1578a53fdaf78219",
-        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/800ffc1792873f09af89518a1578a53fdaf78219.zip"),
+        sha256 = "5bc345ad17ba116da01f5eea24f4c80eb842a21e60cd2b470b59458ab171c45c",
+        strip_prefix = "XNNPACK-5b359bf7602bf695736ed403452f0c7c574a4d54",
+        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/5b359bf7602bf695736ed403452f0c7c574a4d54.zip"),
     )
     # LINT.ThenChange(//tensorflow/lite/tools/cmake/modules/xnnpack.cmake)
 
     # XNNPack dependency.
     tf_http_archive(
         name = "KleidiAI",
-        sha256 = "cb6af19d3ef21a0c683bd0c7c5b455c386dee0b7d0d4bc2cc0e14503019ff1e8",
-        strip_prefix = "kleidiai-1.4.0",
-        urls = tf_mirror_urls("https://github.com/ARM-software/kleidiai/archive/refs/tags/v1.4.0.zip"),
+        sha256 = "5a44173cac3acbc3321663ee8df7dcc9f28a1139e834ebac6831a8c4af35f892",
+        strip_prefix = "kleidiai-247088200c679f30b1b4a680bd12fee18457a100",
+        urls = tf_mirror_urls("https://github.com/ARM-software/kleidiai/archive/247088200c679f30b1b4a680bd12fee18457a100.zip"),
     )
 
     tf_http_archive(
@@ -192,10 +192,10 @@ def _tf_repositories():
 
     tf_http_archive(
         name = "cpuinfo",
-        sha256 = "ae356c4c0c841e20711b5e111a1ccdec9c2f3c1dd7bde7cfba1bed18d6d02459",
-        strip_prefix = "cpuinfo-de0ce7c7251372892e53ce9bc891750d2c9a4fd8",
+        sha256 = "5a44173cac3acbc3321663ee8df7dcc9f28a1139e834ebac6831a8c4af35f892",
+        strip_prefix = "cpuinfo-d7427551d6531037da216d20cd36feb19ed4905f",
         patch_file = ["//third_party/cpuinfo:cpuinfo_ppc64le_support.patch"],
-        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/de0ce7c7251372892e53ce9bc891750d2c9a4fd8.zip"),
+        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/d7427551d6531037da216d20cd36feb19ed4905f.zip"),
     )
 
     tf_http_archive(
