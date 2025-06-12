@@ -49,3 +49,9 @@ cc_library(
     ],
     alwayslink = 1,
 )
+
+cc_library(
+    name = "safe_cast",
+    hdrs = ["safe_cast.h"],
+    compatible_with = ["//buildenv/target:non_prod"],
+)
