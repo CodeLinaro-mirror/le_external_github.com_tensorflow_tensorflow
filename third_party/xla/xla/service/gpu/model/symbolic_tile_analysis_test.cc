@@ -16,6 +16,7 @@ limitations under the License.
 #include "xla/service/gpu/model/symbolic_tile_analysis.h"
 
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -57,7 +58,7 @@ namespace xla {
 namespace gpu {
 namespace {
 
-using detail::GetGoodTilings;
+using detail::GetFlatTilingsForInputSpace;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::ExplainMatchResult;
@@ -66,7 +67,7 @@ using ::testing::Matcher;
 using ::testing::Not;
 using ::tsl::testing::IsOkAndHolds;
 using ::tsl::testing::StatusIs;
-using TilingVector = std::vector<SymbolicTileAnalysis::Tiling>;
+using TilingVector = std::vector<FlatTiling>;
 
 MATCHER_P3(MatchTiledHloInstructionImpl, tile_sizes, tile_strides,
            tile_offsets_indexing, "") {
@@ -932,6 +933,9 @@ ENTRY main {
 })"));
   std::optional<SymbolicTileAnalysis> analysis = TryAnalyzeModule(module.get());
   ASSERT_TRUE(analysis.has_value());
+  const HloInstruction* fusion_root =
+      module->entry_computation()->root_instruction()->fused_expression_root();
+
   const ConstraintExpression& constraints =
       analysis->GetTilingSpecification().constraints();
   EXPECT_THAT(constraints, MatchConstraintExpressionString(
@@ -946,19 +950,20 @@ ENTRY main {
   //    8 mod d1 in [0, 0] && d0 mod 6 in [0, 0] ||
   //    d0 mod 6 in [0, 0] && d1 mod 8 in [0, 0],
   // Tile sizes {6, 8} satisfy these constraints.
-  std::vector<int64_t> possible_tile_parameters({6, 8});
+  Tiling possible_tile_parameters({{fusion_root, FlatTiling({6, 8})}});
   EXPECT_THAT(analysis->ParametersSatisfyConstraints(possible_tile_parameters),
               IsOkAndHolds(true));
 
   // However, tile sizes {6, 7} do not satisfy these constraints.
-  std::vector<int64_t> impossible_tile_parameters({6, 7});
+  Tiling impossible_tile_parameters({{fusion_root, FlatTiling({6, 7})}});
   EXPECT_THAT(
       analysis->ParametersSatisfyConstraints(impossible_tile_parameters),
       IsOkAndHolds(false));
 
   // Passing too few tile parameters results in an error since constraints can
   // not be properly evaluated.
-  EXPECT_THAT(analysis->ParametersSatisfyConstraints(/*tile_parameters==*/{6}),
+  EXPECT_THAT(analysis->ParametersSatisfyConstraints(
+                  Tiling({{fusion_root, FlatTiling({6})}})),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 
   // Passing tile parameters that satisfy the constraints should let us compute
@@ -988,20 +993,22 @@ TEST_F(SymbolicTileAnalysisTest, EmitterSpecificConstraintsAreUsedCorrectly) {
     p0 = f32[16,32] parameter(0)
     ROOT fusion = f32[16,32] fusion(p0), kind=kLoop, calls=fusion
   })"));
-
   std::optional<SymbolicTileAnalysis> analysis = TryAnalyzeModule(
       module.get(), FakeEmitterSpecificConstraints::GetBuilder());
-
   ASSERT_TRUE(analysis.has_value());
+  const HloInstruction* fusion_root =
+      module->entry_computation()->root_instruction()->fused_expression_root();
 
   // FakeEmitterSpecificConstraints require that the tile size along the first
   // dimension is exactly half the size of the axis. Tile sizes {5, 32} do not
   // satisfy emitter-specific constraints.
-  EXPECT_THAT(analysis->ParametersSatisfyConstraints({5, 32}),
+  EXPECT_THAT(analysis->ParametersSatisfyConstraints(
+                  Tiling({{fusion_root, FlatTiling({5, 32})}})),
               IsOkAndHolds(false));
 
   // However, tile sizes {8, 32} do satisfy emitter-specific constraints.
-  EXPECT_THAT(analysis->ParametersSatisfyConstraints({8, 32}),
+  EXPECT_THAT(analysis->ParametersSatisfyConstraints(
+                  Tiling({{fusion_root, FlatTiling({8, 32})}})),
               IsOkAndHolds(true));
 }
 
@@ -1034,26 +1041,23 @@ ENTRY main {
                                "d0 mod 6 in [0, 0] && d1 mod 8 in [0, 0]"));
 }
 
-bool AlwaysValid(absl::Span<const int64_t>) { return true; }
-
-TEST(GetGoodTilingsTest, ReturnsOneTilingWhenRankIsZero) {
-  EXPECT_EQ(GetGoodTilings({}, AlwaysValid),
-            TilingVector{SymbolicTileAnalysis::Tiling{}});
+TEST(GetValidTilingsTest, ReturnsOneTilingWhenRankIsZero) {
+  EXPECT_EQ(GetFlatTilingsForInputSpace({}), TilingVector{FlatTiling{}});
 }
 
-TEST(GetGoodTilingsTest, ReturnsPowersOfTwoAndTheDimSizeForRankOne) {
-  EXPECT_EQ(GetGoodTilings({1}, AlwaysValid), TilingVector{{1}});
-  EXPECT_EQ(GetGoodTilings({2}, AlwaysValid), TilingVector({{1}, {2}}));
-  EXPECT_EQ(GetGoodTilings({3}, AlwaysValid), TilingVector({{1}, {2}, {3}}));
-  EXPECT_EQ(GetGoodTilings({4}, AlwaysValid), TilingVector({{1}, {2}, {4}}));
-  EXPECT_EQ(GetGoodTilings({5}, AlwaysValid),
+TEST(GetValidTilingsTest, ReturnsPowersOfTwoAndTheDimSizeForRankOne) {
+  EXPECT_EQ(GetFlatTilingsForInputSpace({1}), TilingVector{{1}});
+  EXPECT_EQ(GetFlatTilingsForInputSpace({2}), TilingVector({{1}, {2}}));
+  EXPECT_EQ(GetFlatTilingsForInputSpace({3}), TilingVector({{1}, {2}, {3}}));
+  EXPECT_EQ(GetFlatTilingsForInputSpace({4}), TilingVector({{1}, {2}, {4}}));
+  EXPECT_EQ(GetFlatTilingsForInputSpace({5}),
             TilingVector({{1}, {2}, {4}, {5}}));
-  EXPECT_EQ(GetGoodTilings({11}, AlwaysValid),
+  EXPECT_EQ(GetFlatTilingsForInputSpace({11}),
             TilingVector({{1}, {2}, {4}, {8}, {11}}));
 }
 
-TEST(GetGoodTilingsTest, CreatesCartesianProductForRankTwo) {
-  EXPECT_EQ(GetGoodTilings({3, 4}, AlwaysValid), TilingVector({{1, 1},
+TEST(GetValidTilingsTest, CreatesCartesianProductForRankTwo) {
+  EXPECT_EQ(GetFlatTilingsForInputSpace({3, 4}), TilingVector({{1, 1},
                                                                {1, 2},
                                                                {1, 4},
                                                                {2, 1},
@@ -1064,8 +1068,8 @@ TEST(GetGoodTilingsTest, CreatesCartesianProductForRankTwo) {
                                                                {3, 4}}));
 }
 
-TEST(GetGoodTilingsTest, CreatesCartesianProductForRankThree) {
-  EXPECT_EQ(GetGoodTilings({3, 4, 2}, AlwaysValid), TilingVector({{1, 1, 1},
+TEST(GetValidTilingsTest, CreatesCartesianProductForRankThree) {
+  EXPECT_EQ(GetFlatTilingsForInputSpace({3, 4, 2}), TilingVector({{1, 1, 1},
                                                                   {1, 1, 2},
                                                                   {1, 2, 1},
                                                                   {1, 2, 2},
@@ -1085,26 +1089,23 @@ TEST(GetGoodTilingsTest, CreatesCartesianProductForRankThree) {
                                                                   {3, 4, 2}}));
 }
 
-TEST(GetGoodTilingsTest, FiltersTheTilingsUsingThePredicate) {
-  auto all_even = [](absl::Span<const int64_t> tile_sizes) {
-    return absl::c_all_of(tile_sizes,
-                          [](int64_t tile_size) { return tile_size % 2 == 0; });
-  };
+// Helper to transform a sequence of `Tiling`s into a sequence of equivalent
+// `FlatTiling`s.
+std::vector<FlatTiling> FlattenTilings(
+    absl::Span<const Tiling> tilings,
+    const TilingSpecification& tiling_specification) {
+  std::vector<FlatTiling> flat_tilings;
+  flat_tilings.reserve(tilings.size());
 
-  EXPECT_EQ(GetGoodTilings({3, 4}, all_even), TilingVector({{2, 2}, {2, 4}}));
-
-  auto all_equal = [](absl::Span<const int64_t> tile_sizes) {
-    return absl::c_all_of(tile_sizes, [&](int64_t tile_size) {
-      return tile_size == tile_sizes.at(0);
-    });
-  };
-
-  EXPECT_EQ(GetGoodTilings({3, 3, 3}, all_equal),
-            TilingVector({{1, 1, 1}, {2, 2, 2}, {3, 3, 3}}));
+  absl::c_transform(tilings, std::back_inserter(flat_tilings),
+                    [&](const Tiling& tiling) {
+                      return tiling.Flatten(tiling_specification).value();
+                    });
+  return flat_tilings;
 }
 
 TEST_F(SymbolicTileAnalysisTest,
-       GetGoodTilingsWorksTakingConstraintsIntoAccount) {
+       GetValidTilingsWorksTakingConstraintsIntoAccount) {
   // The module was chosen (from SymbolicTileTest) because it has a constraint
   // on the tile sizes.
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
@@ -1124,16 +1125,15 @@ ENTRY main {
   ASSERT_TRUE(opt_analysis.has_value());
 
   const SymbolicTileAnalysis& analysis = opt_analysis.value();
-  TF_ASSERT_OK_AND_ASSIGN(
-      std::vector<SymbolicTileAnalysis::Tiling> good_tilings,
-      analysis.GetGoodTilings());
+  TF_ASSERT_OK_AND_ASSIGN(std::vector<Tiling> valid_tilings,
+                          analysis.GetValidTilings());
   // The constraint on the 1st dimension is
   //   6 mod d0 in [0, 0] || d0 mod 6 in [0, 0],
   // and only 48, 1, and 2 fulfill it from the set of possible tile sizes
   // (1, 2, 4, 8, 16, 32, 48).
   // There is no constraint on the 2nd dimension.
-  EXPECT_EQ(good_tilings, std::vector<SymbolicTileAnalysis::Tiling>(
-                              {{1, 1}, {2, 1}, {48, 1}}));
+  EXPECT_EQ(FlattenTilings(valid_tilings, analysis.GetTilingSpecification()),
+            std::vector<FlatTiling>({{1, 1}, {2, 1}, {48, 1}}));
 }
 
 // Logs the tilings if VLOG level 1 is enabled.
@@ -1142,17 +1142,19 @@ ENTRY main {
 // --test_output=all
 // --test_arg=--logtostderr
 // --test_arg=--vmodule=symbolic_tile_analysis_test=1
-void LogTilingsIfVlog1(absl::Span<const SymbolicTileAnalysis::Tiling> tilings) {
+void LogTilingsIfVlog1(absl::Span<const Tiling> tilings,
+                       const TilingSpecification& tiling_specification) {
   if (VLOG_IS_ON(1)) {
     LOG(INFO) << "Tilings: {";
-    for (const SymbolicTileAnalysis::Tiling& tiling : tilings) {
-      LOG(INFO) << "{" << absl::StrJoin(tiling, ",") << "},";
+    for (const FlatTiling& flattened_tiling :
+         FlattenTilings(tilings, tiling_specification)) {
+      LOG(INFO) << "{" << absl::StrJoin(flattened_tiling, ",") << "},";
     }
     LOG(INFO) << "}";
   }
 }
 
-TEST_F(SymbolicTileAnalysisTest, GetGoodTilingsWorksForSoftmaxExample) {
+TEST_F(SymbolicTileAnalysisTest, GetValidTilingsWorksForSoftmaxExample) {
   // The example is from
   // https://github.com/google/paxml/blob/91893818862645f5e9f23b84f530e611551745f6/paxml/contrib/gpu/scripts_gpu/configs.py#L107-L120.
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
@@ -1198,15 +1200,14 @@ ENTRY entry_computation {
   ASSERT_TRUE(opt_analysis.has_value());
   const SymbolicTileAnalysis& analysis = opt_analysis.value();
 
-  TF_ASSERT_OK_AND_ASSIGN(
-      std::vector<SymbolicTileAnalysis::Tiling> good_tilings,
-      analysis.GetGoodTilings());
-  EXPECT_THAT(good_tilings, Not(IsEmpty()));
-  LogTilingsIfVlog1(good_tilings);
+  TF_ASSERT_OK_AND_ASSIGN(std::vector<Tiling> valid_tilings,
+                          analysis.GetValidTilings());
+  EXPECT_THAT(valid_tilings, Not(IsEmpty()));
+  LogTilingsIfVlog1(valid_tilings, analysis.GetTilingSpecification());
 }
 
 TEST_F(SymbolicTileAnalysisTest,
-       GetGoodTilingsWorksForSoftmaxAndReduceExample) {
+       GetValidTilingsWorksForSoftmaxAndReduceExample) {
   // The example is from
   // https://github.com/google/paxml/blob/91893818862645f5e9f23b84f530e611551745f6/paxml/contrib/gpu/scripts_gpu/configs.py#L107-L120.
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
@@ -1262,11 +1263,10 @@ ENTRY entry_computation {
   ASSERT_TRUE(opt_analysis.has_value());
   const SymbolicTileAnalysis& analysis = opt_analysis.value();
 
-  TF_ASSERT_OK_AND_ASSIGN(
-      std::vector<SymbolicTileAnalysis::Tiling> good_tilings,
-      analysis.GetGoodTilings());
-  EXPECT_THAT(good_tilings, Not(IsEmpty()));
-  LogTilingsIfVlog1(good_tilings);
+  TF_ASSERT_OK_AND_ASSIGN(std::vector<Tiling> valid_tilings,
+                          analysis.GetValidTilings());
+  EXPECT_THAT(valid_tilings, Not(IsEmpty()));
+  LogTilingsIfVlog1(valid_tilings, analysis.GetTilingSpecification());
 }
 
 // This test means to catch integer overflow errors when run with ASan build.
