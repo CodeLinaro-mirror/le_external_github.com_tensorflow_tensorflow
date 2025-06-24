@@ -2249,9 +2249,7 @@ xla_test(
     backends = ["gpu"],
     deps = [
         ":gpu_compiler",
-        ":gpu_device_info_for_tests",
         ":gpu_hlo_schedule",
-        "//xla:literal_util",
         "//xla:shape_util",
         "//xla/hlo/analysis:hlo_ordering",
         "//xla/hlo/ir:hlo",
