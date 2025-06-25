@@ -2008,6 +2008,10 @@ absl::StatusOr<TritonWrapperResult> CompileTritonToLLVM(
     }
   }
 
+  if (is_xla_fusion) {
+    pm.addPass(mlir::triton::xla::CreateInt4ToPackedInt4RewritePass());
+  }
+
   pm.addPass(mlir::triton::xla::CreateTritonXLAExtractInsertToTritonPass(
       device_info,
       hlo_config.debug_options().xla_gpu_experimental_enable_triton_tma()));
@@ -2031,7 +2035,7 @@ absl::StatusOr<TritonWrapperResult> CompileTritonToLLVM(
 
   mlir::triton::nvidia_gpu::ClusterInfo cluster_info;
   if (!CreateTritonPipeline(&pm, arch_name, num_warps, num_ctas, num_stages,
-                            cluster_info, is_xla_fusion)
+                            cluster_info)
            .ok()) {
     return Internal("Failed to create Triton pipeline.");
   }

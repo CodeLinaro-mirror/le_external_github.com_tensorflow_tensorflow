@@ -2691,22 +2691,22 @@ ENTRY entry_computation {
   EXPECT_TRUE(RunAndCompareNoHloPasses(std::move(module), kExactMatch));
 }
 
-TEST_F(TritonEmitterTest, ConvertS4ToS8Exhaustive) {
+TEST_P(TmaParameterizedTritonEmitterTest, ConvertS4ToS8Exhaustive) {
   constexpr absl::string_view kHloText = R"(
 computation {
-  p0 = s4[16] parameter(0)
-  ROOT convert = s8[16] convert(p0)
+  p0 = s4[32] parameter(0)
+  ROOT convert = s8[32] convert(p0)
 }
 
 ENTRY entry_computation {
-  p0 = s4[16] parameter(0)
-  ROOT fusion = s8[16] fusion(p0), kind=kCustom,
+  p0 = s4[32] parameter(0)
+  ROOT fusion = s8[32] fusion(p0), kind=kCustom,
     calls=computation,
     backend_config={
       "fusion_backend_config":{
         "kind":"__triton",
         "block_level_fusion_config":{
-          "output_tiles":[{"sizes":["16"]}],
+          "output_tiles":[{"sizes":["32"]}],
           "num_warps":"1",
           "num_ctas":"1",
           "num_stages":"1"}}}
@@ -2714,8 +2714,11 @@ ENTRY entry_computation {
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
                           ParseAndReturnVerifiedModule(kHloText));
 
-  auto values = {s4(-8), s4(-7), s4(-6), s4(-5), s4(-4), s4(-3), s4(-2), s4(-1),
-                 s4(0),  s4(1),  s4(2),  s4(3),  s4(4),  s4(5),  s4(6),  s4(7)};
+  auto values = {s4(-8), s4(-7), s4(-6), s4(-5), s4(-4), s4(-3), s4(-2),
+                 s4(-1), s4(0),  s4(1),  s4(2),  s4(3),  s4(4),  s4(5),
+                 s4(6),  s4(7),  s4(8),  s4(9),  s4(10), s4(11), s4(12),
+                 s4(13), s4(14), s4(15), s4(16), s4(17), s4(18), s4(19),
+                 s4(20), s4(21), s4(22), s4(23)};
   Literal literal = LiteralUtil::CreateR1<s4>(values);
   EXPECT_TRUE(
       RunAndCompareNoHloPasses(std::move(module), {&literal}, kExactMatch));

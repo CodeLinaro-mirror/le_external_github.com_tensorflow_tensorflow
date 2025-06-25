@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <iterator>
@@ -25,6 +26,7 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/SCF/Transforms/Patterns.h"
 #include "mlir/IR/Block.h"
@@ -32,6 +34,7 @@ limitations under the License.
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
@@ -39,11 +42,13 @@ limitations under the License.
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "xla/backends/gpu/codegen/triton/ir/triton_xla_ops.h"
 #include "xla/service/llvm_ir/llvm_util.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 #include "triton/Dialect/Triton/IR/Types.h"
@@ -54,6 +59,7 @@ using ::xla::llvm_ir::DumpToString;
 
 namespace mt = ::mlir::triton;
 namespace ma = ::mlir::arith;
+namespace mtx = ::mlir::triton::xla;
 
 #define GEN_PASS_DEF_LOADINT4REWRITEPASS
 #include "xla/backends/gpu/codegen/triton/transforms/passes.h.inc"
@@ -176,6 +182,66 @@ std::optional<int64_t> GetConstValue(Value value) {
   return std::nullopt;
 }
 
+class TritonXlaExtractOpConversionPattern
+    : public OpConversionPattern<mtx::ExtractOp> {
+ public:
+  using OpConversionPattern<mtx::ExtractOp>::OpConversionPattern;
+
+  TritonXlaExtractOpConversionPattern(const I4ToI8Converter &converter,
+                                      MLIRContext *context)
+      : OpConversionPattern<mtx::ExtractOp>(converter, context),
+        converter_(converter) {}
+
+  LogicalResult matchAndRewrite(
+      mtx::ExtractOp op, OpConversionPattern<mtx::ExtractOp>::OpAdaptor adaptor,
+      ConversionPatternRewriter &r) const override {
+    // Convert the tensor type using the TypeConverter
+    auto new_src_type = mlir::dyn_cast<mlir::RankedTensorType>(
+        getTypeConverter()->convertType(op.getSrcType()));
+    if (op.getSrcType() == new_src_type) {
+      return r.notifyMatchFailure(op, "no conversion needed");
+    }
+
+    ImplicitLocOpBuilder builder(op.getLoc(), r);
+    SmallVector<int64_t, 2> tile_sizes(adaptor.getStaticSizes());
+    SmallVector<int64_t, 2> new_strides(adaptor.getStaticStrides());
+    SmallVector<int64_t, 2> new_offsets(adaptor.getStaticOffsets());
+    if (mlir::ShapedType::isDynamicShape(tile_sizes) ||
+        mlir::ShapedType::isDynamicShape(new_strides) ||
+        mlir::ShapedType::isDynamicShape(new_offsets)) {
+      return r.notifyMatchFailure(op, "dynamic shape not supported");
+    }
+
+    int packed_dimension = converter_.packed_dimension();
+    // The shape of the i8 tensor is half of the i4 tensor but at least 1.
+    tile_sizes[packed_dimension] = ceil(tile_sizes[packed_dimension] / 2.0);
+
+    // The stride of the i8 tensor is half of the i4 tensor but at least 1.
+    SmallVector<Value, 2> new_strides_values;
+    for (int i = 0; i < new_strides.size(); ++i) {
+      new_strides[i] = ceil(new_strides[i] / 2.0);
+      new_strides_values.push_back(builder.create<ma::ConstantOp>(
+          builder.getLoc(), builder.getI64IntegerAttr(new_strides[i])));
+    };
+
+    SmallVector<Value, 2> new_offsets_values;
+    for (int i = 0; i < new_offsets.size(); ++i) {
+      new_offsets_values.push_back(builder.create<ma::ConstantOp>(
+          builder.getLoc(), builder.getI64IntegerAttr(new_offsets[i])));
+    }
+
+    r.replaceOpWithNewOp<mtx::ExtractOp>(op, new_src_type, adaptor.getSrc(),
+                                         new_offsets_values, new_strides_values,
+                                         adaptor.getLayout());
+    return success();
+  }
+
+ private:
+  const I4ToI8Converter &converter_;
+};
+
+// TODO(manany): Would this be needed with the new emitter? If not, we can add a
+// TODO to remove this once the migration is complete.
 class MakeTensorPtrOpConversionPattern
     : public OpConversionPattern<MakeTensorPtrOp> {
  public:
@@ -218,6 +284,8 @@ class MakeTensorPtrOpConversionPattern
   const I4ToI8Converter &converter_;
 };
 
+// TODO(manany): Would this be needed with the new emitter? If not, we can add a
+// TODO to remove this once the migration is complete.
 class AddPtrOpConversionPattern : public OpConversionPattern<AddPtrOp> {
  public:
   using OpConversionPattern<AddPtrOp>::OpConversionPattern;
@@ -243,6 +311,8 @@ class AddPtrOpConversionPattern : public OpConversionPattern<AddPtrOp> {
   }
 };
 
+// TODO(manany): Would this be needed with the new emitter? If not, we can add a
+// TODO to remove this once the migration is complete.
 class AdvanceOpConversionPattern : public OpConversionPattern<AdvanceOp> {
  public:
   using OpConversionPattern<AdvanceOp>::OpConversionPattern;
@@ -412,29 +482,52 @@ std::vector<Operation *> FindInt4ExtSIOp(const ModuleOp &module) {
   return result;
 }
 
-// Finds the packed dimension from the MakeTensorPtrOp.
+// Finds the packed dimension from MakeTensorPtrOp or mtx::ExtractOp.
 // The tensor is packed along the minor dimension. Minor dimension is the one
 // that has a stride of 1 but a shape that is not 1. For a shape dimension of 1
 // the stride can be any value.
+// TODO(manany): Remove the logic for MakeTensorPtrOp once the migration from
+// the old emitter is done.
 int GetPackedDimension(MLIRContext *ctx, const std::vector<Operation *> &ops) {
   for (auto *op : ops) {
-    auto make_tensor_ptr = dyn_cast<MakeTensorPtrOp>(op);
-    if (!make_tensor_ptr) {
+    auto make_tensor_ptr_op = dyn_cast<MakeTensorPtrOp>(op);
+    auto extract_op = dyn_cast<mtx::ExtractOp>(op);
+    if (!make_tensor_ptr_op && !extract_op) {
       continue;
     }
-    // The order attribute is ignored in Triton, check for default order here.
-    CHECK(absl::c_is_sorted(make_tensor_ptr.getOrder(), std::greater<int>()))
-        << "Not default order: " << DumpToString(op);
-    auto shape = make_tensor_ptr.getShape();
-    auto strides = make_tensor_ptr.getStrides();
-    for (auto dim : make_tensor_ptr.getOrder()) {
-      if (GetConstValue(strides[dim]).value_or(1) == 1 &&
-          GetConstValue(shape[dim]).value_or(0) != 1) {
-        return dim;
+
+    if (make_tensor_ptr_op) {
+      // The order attribute is ignored in Triton, check for default order here.
+      CHECK(
+          absl::c_is_sorted(make_tensor_ptr_op.getOrder(), std::greater<int>()))
+          << "Not default order: " << DumpToString(op);
+      auto shape = make_tensor_ptr_op.getShape();
+      auto strides = make_tensor_ptr_op.getStrides();
+      for (auto dim : make_tensor_ptr_op.getOrder()) {
+        if (GetConstValue(strides[dim]).value_or(1) == 1 &&
+            GetConstValue(shape[dim]).value_or(0) != 1) {
+          return dim;
+        }
+      }
+    }
+
+    if (extract_op) {
+      // TODO(manany): We do propagate layouts through triton_xla.extract, so
+      // this might be non-normal. What to do?
+      CHECK(absl::c_is_sorted(extract_op.getLayout(), std::greater<int>()))
+          << "Not default layout: " << DumpToString(op);
+      auto shape = extract_op.getStaticSizes();
+      auto strides = extract_op.getStaticStrides();
+      // TODO(manany): I believe that this is the same behavior as above?
+      for (auto dim : extract_op.getLayout()) {
+        if ((mlir::ShapedType::isDynamic(strides[dim]) || strides[dim] == 1) &&
+            (mlir::ShapedType::isDynamic(shape[dim]) || shape[dim] != 1)) {
+          return dim;
+        }
       }
     }
   }
-  LOG(FATAL) << "No MakeTensorPtrOp found";
+  LOG(FATAL) << "No MakeTensorPtrOp or mlir::triton::xla::ExtractOp found";
 }
 
 LogicalResult SitofpInt4ToInt8Rewrite(ma::SIToFPOp op, PatternRewriter &r) {
@@ -468,8 +561,8 @@ struct PlainInt4ToPackedInt4RewritePass
   // accepts twice smaller i8 tensor and converts it to the twice bigger i8
   // tensor where every i4 element uses i8 space. At the end the module accepts
   // the tt.ptr<i8> to the packed i4 tensor, and unpacks it to the i8 tensor for
-  // further processing. It gets the packed dimension from the MakeTensorPtrOp
-  // attribute.
+  // further processing. It gets the packed dimension from MakeTensorPtrOp or
+  // mtx::ExtractOp.
   void runOnOperation() override {
     auto *ctx = &getContext();
     auto module = getOperation();
@@ -495,7 +588,7 @@ struct PlainInt4ToPackedInt4RewritePass
     ConversionTarget target(*ctx);
     I4ToI8Converter converter(packed_dimension);
     target.markUnknownOpDynamicallyLegal([&](Operation *op) {
-      if (auto func_op = dyn_cast<FuncOp>(op)) {
+      if (auto func_op = dyn_cast<mlir::FunctionOpInterface>(op)) {
         VLOG(2) << "check funcOp: " << DumpToString(func_op);
         if (func_op.getFunctionType() !=
             converter.convertType(func_op.getFunctionType())) {
@@ -514,8 +607,12 @@ struct PlainInt4ToPackedInt4RewritePass
     patterns.add<AdvanceOpConversionPattern>(converter, ctx);
     patterns.add<AddPtrOpConversionPattern>(converter, ctx);
     patterns.add<MakeTensorPtrOpConversionPattern>(converter, ctx);
-    populateFunctionOpInterfaceTypeConversionPattern<FuncOp>(patterns,
-                                                             converter);
+    // TODO(manany): I think we don't need to do this for insert, do we?
+    patterns.add<TritonXlaExtractOpConversionPattern>(converter, ctx);
+    populateFunctionOpInterfaceTypeConversionPattern<mt::FuncOp>(patterns,
+                                                                 converter);
+    populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(
+        patterns, converter);
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       VLOG(2) << "failed to apply partial conversion";
       signalPassFailure();
