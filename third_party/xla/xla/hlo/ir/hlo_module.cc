@@ -379,6 +379,9 @@ void HloModule::ReplaceComputations(
 }
 
 void HloModule::Print(Printer* printer, const HloPrintOptions& options) const {
+  const std::string tab(2 * options.indent_amount(), ' ');
+
+  printer->Append(tab);
   printer->Append("HloModule ");
   if (options.print_ids()) {
     // When print_ids() is false, exclude module's name because it includes and
@@ -441,6 +444,7 @@ void HloModule::Print(Printer* printer, const HloPrintOptions& options) const {
               FrontendAttributesToString(frontend_attributes_));
   }
   printer->Append("\n\n");
+  printer->Append(tab);
   // We use a DFS postorder traversal to ensure that computations are printed
   // more consistently run to run. Even thet non-dfs postorder is deterministic,
   // but exactly which topological ordering it yields depends on the order in

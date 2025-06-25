@@ -45,11 +45,17 @@ class HloPrintOptions {
                            // not in a sequential context.
   };
 
+  enum class PrintComputationMode {
+    kStandalone,  // Print a standalone computation.
+    kModule,      // Print a computation within a module.
+  };
+
   // Constructs the default print options: don't print large constants, don't
   // compact operands, no indentation.
   constexpr HloPrintOptions()
       : print_operand_index_annotation_interval_(5),
         print_subcomputation_mode_(PrintSubcomputationMode::kNameOnly),
+        print_computation_mode_(PrintComputationMode::kStandalone),
         indent_amount_(0),
         print_large_constants_(false),
         print_only_essential_constants_(false),
@@ -165,6 +171,11 @@ class HloPrintOptions {
   HloPrintOptions& set_print_subcomputation_mode(
       PrintSubcomputationMode value) {
     print_subcomputation_mode_ = value;
+    return *this;
+  }
+
+  HloPrintOptions& set_print_computation_mode(PrintComputationMode value) {
+    print_computation_mode_ = value;
     return *this;
   }
 
@@ -370,6 +381,9 @@ class HloPrintOptions {
   PrintSubcomputationMode print_subcomputation_mode() const {
     return print_subcomputation_mode_;
   }
+  PrintComputationMode print_computation_mode() const {
+    return print_computation_mode_;
+  }
   bool print_original_value() const { return print_original_value_; }
   bool print_metadata() const { return print_metadata_; }
   bool print_metadata_only_op_name() const {
@@ -415,6 +429,7 @@ class HloPrintOptions {
   // the annotation, 1 means print annotation for every operand.
   int64_t print_operand_index_annotation_interval_;
   PrintSubcomputationMode print_subcomputation_mode_;
+  PrintComputationMode print_computation_mode_;
   int indent_amount_;
   bool print_large_constants_;
   bool print_only_essential_constants_;

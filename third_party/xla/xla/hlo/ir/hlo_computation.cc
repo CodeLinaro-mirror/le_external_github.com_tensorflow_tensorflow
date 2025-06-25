@@ -1115,7 +1115,11 @@ void HloComputation::Print(
     absl::Span<const HloInstruction* const> instruction_order) const {
   const std::string tab(2 * options.indent_amount(), ' ');
 
-  printer->Append(tab);
+  if (options.print_computation_mode() !=
+          HloPrintOptions::PrintComputationMode::kModule ||
+      !IsEntryComputation()) {
+    printer->Append(tab);
+  }
 
   if (!options.is_in_nested_computation()) {
     if (options.print_percent()) {
