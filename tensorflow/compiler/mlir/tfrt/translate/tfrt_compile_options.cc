@@ -72,7 +72,9 @@ std::ostream& operator<<(std::ostream& os, const TfrtCompileOptions& options) {
             << options.merge_inter_dependent_streams
             << ", decompose_resource_ops = " << options.decompose_resource_ops
             << ", compile_to_sync_tfrt_dialect = "
-            << options.compile_to_sync_tfrt_dialect << "}";
+            << options.compile_to_sync_tfrt_dialect
+            << ", global_prioritization_num_threads = "
+            << options.global_prioritization_num_threads << "}";
 }
 
 }  // namespace tensorflow

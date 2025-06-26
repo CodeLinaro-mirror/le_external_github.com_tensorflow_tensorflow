@@ -133,6 +133,8 @@ void CreateTFExecutorToTFPreInvariantOptimizationPipelineHelper(
       .batch_timeout_micros = options.batch_timeout_micros,
       .allowed_batch_sizes = options.allowed_batch_sizes,
       .max_enqueued_batches = options.max_enqueued_batches,
+      .global_prioritization_num_threads =
+          options.global_prioritization_num_threads,
   }));
 
   // Deduplicate functions invoked by tf.BatchFunction with the same
