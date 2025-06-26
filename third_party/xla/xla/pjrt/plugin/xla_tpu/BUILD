@@ -24,6 +24,7 @@ cc_library(
         "//xla/pjrt/c:pjrt_c_api_tpu_hdrs",
         "//xla/pjrt/distributed:key_value_store_interface",
         "//xla/pjrt/plugin:plugin_names",
+        "//xla/pjrt/plugin/xla_tpu:tpu_dynamic_registration",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status:statusor",
     ],
@@ -37,6 +38,17 @@ cc_library(
         "//xla/pjrt/c:pjrt_c_api_tpu_internal",
         "//xla/pjrt/plugin:plugin_names",
         "//xla/pjrt/plugin:static_registration",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "tpu_dynamic_registration",
+    srcs = ["tpu_dynamic_registration.cc"],
+    compatible_with = get_compatible_with_libtpu_portable(),
+    deps = [
+        "//xla/pjrt/plugin:dynamic_registration",
+        "//xla/pjrt/plugin:plugin_names",
     ],
     alwayslink = True,
 )
