@@ -4342,7 +4342,6 @@ cc_library(
     hdrs = ["hlo_runner.h"],
     deps = [
         ":backend",
-        ":compiler",
         ":computation_layout",
         ":computation_placer",
         ":executable",
