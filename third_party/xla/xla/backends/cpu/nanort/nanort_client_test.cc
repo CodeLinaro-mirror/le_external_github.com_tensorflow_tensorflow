@@ -405,6 +405,34 @@ TEST(NanoRtClientTest, CustomCallTest) {
   EXPECT_EQ(result, 3.0f);
 }
 
+TEST(NanoRtClientTest, ProgramShapeTestInt4) {
+  constexpr absl::string_view kModuleStr = R"(
+    HloModule int4_function
+
+    ENTRY %main.4 (Arg_0.1: s4[4], Arg_1.2: s4[4]) -> s4[4] {
+      %Arg_0.1 = s4[4]{0} parameter(0)
+      %Arg_1.2 = s4[4]{0} parameter(1)
+      ROOT %add.3 = s4[4]{0} add(%Arg_0.1, %Arg_1.2)
+  }
+  )";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnUnverifiedModule(kModuleStr));
+  XlaComputation computation(module->ToProto());
+
+  NanoRtClient client;
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<NanoRtExecutable> executable,
+                          client.Compile(computation));
+  ASSERT_TRUE(executable->program_shape().has_value());
+
+  for (const auto& parameter : executable->program_shape()->parameters()) {
+    EXPECT_EQ(parameter.layout().element_size_in_bits(), 4);
+  }
+
+  EXPECT_EQ(
+      executable->program_shape()->result().layout().element_size_in_bits(), 4);
+}
+
 //===----------------------------------------------------------------------===//
 // Performance benchmarks below
 //===----------------------------------------------------------------------===//
