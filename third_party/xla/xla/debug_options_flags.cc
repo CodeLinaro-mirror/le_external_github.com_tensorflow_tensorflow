@@ -212,7 +212,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
       DebugOptions::PARTITIONING_ALGORITHM_NOOP);
 
   opts.set_xla_gpu_enable_triton_gemm(true);
-  opts.set_xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms(false);
+  opts.clear_xla_gpu_unsupported_generic_triton_emitter_features();
   opts.set_xla_gpu_unsupported_enable_triton_multi_output_fusion(true);
   opts.set_xla_gpu_enable_cudnn_int8x32_convolution_reordering(true);
   opts.set_xla_gpu_triton_gemm_any(true);
@@ -791,6 +791,35 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
           return false;
         }
         debug_options->set_xla_gpu_pgle_accuracy_checker(strictness_level);
+        return true;
+      };
+
+  auto setter_for_xla_gpu_unsupported_generic_triton_emitter_features =
+      [debug_options](std::string comma_separated_values) {
+        for (const std::string& value : std::vector<std::string>(
+                 absl::StrSplit(comma_separated_values, ','))) {
+          DebugOptions::GenericTritonEmitterFeature feature;
+          if (!DebugOptions::GenericTritonEmitterFeature_Parse(
+                  absl::AsciiStrToUpper(value), &feature) &&
+              !DebugOptions::GenericTritonEmitterFeature_Parse(
+                  absl::AsciiStrToUpper("GENERIC_TRITON_EMITTER_" + value),
+                  &feature)) {
+            LOG(ERROR) << absl::StreamFormat(
+                "Illegal value for "
+                "--xla_gpu_unsupported_generic_triton_emitter_features "
+                "'%s'",
+                value);
+            return false;
+          }
+          if (feature == DebugOptions::GENERIC_TRITON_EMITTER_CLEAR) {
+            debug_options
+                ->clear_xla_gpu_unsupported_generic_triton_emitter_features();
+            continue;
+          }
+          debug_options
+              ->add_xla_gpu_unsupported_generic_triton_emitter_features(
+                  feature);
+        }
         return true;
       };
 
@@ -1756,14 +1785,12 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
                 debug_options->xla_gpu_enable_triton_gemm(),
                 "Use Triton-based matrix multiplication."));
   flag_list->push_back(tsl::Flag(
-      "xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms",
-      bool_setter_for(
-          &DebugOptions::
-              set_xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms),
-      debug_options
-          ->xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms(),
-      "Enable lowering Triton GEMM fusions through the generic Triton "
-      "emitter."));
+      "xla_gpu_unsupported_generic_triton_emitter_features",
+      setter_for_xla_gpu_unsupported_generic_triton_emitter_features, "",
+      "Individual features of generic Triton emitter that are progressively "
+      "being rolled out. Accepts values with and without the "
+      "'generic_triton_emitter_' prefix. Use a special 'clear' value to reset "
+      "to the empty list."));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_unsupported_enable_triton_multi_output_fusion",
       bool_setter_for(

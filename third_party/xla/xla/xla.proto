@@ -240,10 +240,21 @@ message DebugOptions {
   // XLA:GPU options.
   //--------------------------------------------------------------------------//
   // clang-format off
-  // go/keep-sorted start newline_separated=yes skip_lines=2 ignore_prefixes=["optional AutotuneCacheMode","optional bool","optional float","optional int32","optional int64","optional LibNvJitLinkMode","map<string, string>","optional PGLEStrictnessLevel","optional PipelineParallelismOptLevel","repeated CollectiveOpType","repeated CommandBufferCmdType","repeated string","optional ShapeChecks","optional string","optional WhileLoopUnrolling","reserved"] // NOLINT
+  // go/keep-sorted start newline_separated=yes skip_lines=2 ignore_prefixes=["optional AutotuneCacheMode","optional bool","optional float","optional int32","optional int64","optional LibNvJitLinkMode","map<string, string>","optional PGLEStrictnessLevel","optional PipelineParallelismOptLevel","repeated CollectiveOpType","repeated CommandBufferCmdType","repeated string","optional ShapeChecks","optional string","optional WhileLoopUnrolling","reserved","repeated GenericTritonEmitterFeature"] // NOLINT
   // clang-format on
 
   reserved 160;  // Was xla_gpu_enable_cudnn_frontend
+
+  // Options for the generic Triton emitter.
+  // Set with the --xla_gpu_unsupported_generic_triton_emitter_opts flag.
+  enum GenericTritonEmitterFeature {
+    // Special value to clear the list of enabled features.
+    GENERIC_TRITON_EMITTER_CLEAR = 0;
+    GENERIC_TRITON_EMITTER_ENABLE_NESTED_GEMM = 1;
+    GENERIC_TRITON_EMITTER_DISABLE_LEGACY_GEMM = 2;
+    GENERIC_TRITON_EMITTER_ALLOW_ALL_OPS_IN_GEMM_FUSION = 3;
+    GENERIC_TRITON_EMITTER_ALLOW_ALL_GEMM_SHAPES = 4;
+  }
 
   // Experimental optimizations for SPMD-based pipeline parallelism on GPU.
   enum PipelineParallelismOptLevel {
@@ -443,8 +454,9 @@ message DebugOptions {
   // If enabled, uses the libnvptxcompiler library to compile PTX to cuBIN.
   optional bool xla_gpu_enable_libnvptxcompiler = 269;
 
-  // Overrides normal multi-threaded compilation setting to use this many
-  // threads. Setting to 0 (the default value) means no enforcement.
+  // Indicates whether to do LLVM module compilation in a parallelised way. When
+  // set, the number of threads depends on
+  // `xla_gpu_force_compilation_parallelism`.
   optional bool xla_gpu_enable_llvm_module_compilation_parallelism = 268;
 
   // DEPRECATED: This flag is a no-op.
@@ -804,11 +816,6 @@ message DebugOptions {
   // Internal testing flag to switch AllReduceDecomposer on or off.
   optional bool xla_gpu_unsupported_enable_all_reduce_decomposer = 384;
 
-  // Enable experimental tiling for Triton GEMM fusions.
-  // TODO(b/393299275): remove the flag once the feature is stable.
-  optional bool xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms =
-      367;
-
   // Internal testing flag to switch RaggedAllToAllDecomposer on or off.
   optional bool xla_gpu_unsupported_enable_ragged_all_to_all_decomposer = 350;
 
@@ -818,6 +825,14 @@ message DebugOptions {
   // Enable experimental triton multi-output fusion.
   // TODO(b/390559452): Remove the flag once the feature is stable.
   optional bool xla_gpu_unsupported_enable_triton_multi_output_fusion = 382;
+
+  // Controls smaller knobs of the generic Triton emitter.
+  // Do not rely on this flag currently supported values as they are subject to
+  // change. Check 'debug_option_flags' for description.
+  // TODO(b/393299275): remove the flag once we fully switched to the new
+  // emitter.
+  repeated GenericTritonEmitterFeature
+      xla_gpu_unsupported_generic_triton_emitter_features = 398;
 
   // Internal testing flag to enable one-shot kernel for single-host
   // all-reduce operations.
@@ -847,6 +862,8 @@ message DebugOptions {
   reserved 276;  // xla_gpu_enable_nccl_per_stream_comms
   reserved 226;  // xla_gpu_triton_gemm_disable_reduced_precision_reduction
   reserved 385;  // xla_gpu_experimental_enable_dynamic_dot_search_space
+  reserved "xla_gpu_unsupported_enable_generic_triton_emitter_for_gemms";
+  reserved 367;
 
   //--------------------------------------------------------------------------//
   // XLA:TPU options.
@@ -1245,7 +1262,7 @@ message DebugOptions {
   // Note: when adding a new flag, please add it to one of the hardware-specific
   // or hardware-agnostic sections at the top of this proto message.
 
-  // Next id: 398
+  // Next id: 399
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.
