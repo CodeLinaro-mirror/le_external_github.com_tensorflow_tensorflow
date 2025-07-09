@@ -405,10 +405,12 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/base:dynamic_annotations",
         "@local_xla//xla/service:custom_call_status_internal",
         # Keep dependencies to a minimum here; this library is used in every AOT
         # binary produced by tfcompile.
         "@local_xla//xla/backends/cpu/runtime:rng_state_lib",
+        "@local_xla//xla/backends/cpu:alignment",
         "@local_xla//xla:cpu_function_runtime",
         "@local_xla//xla:executable_run_options",
         "//tensorflow/core/platform:types",
