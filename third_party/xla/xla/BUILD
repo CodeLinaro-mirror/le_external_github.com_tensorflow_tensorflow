@@ -42,10 +42,7 @@ filegroup(
 
 filegroup(
     name = "cpu_runtime_srcs",
-    srcs = [
-        "cpu_function_runtime.cc",
-        "executable_run_options.cc",
-    ],
+    srcs = ["executable_run_options.cc"],
     visibility = internal_visibility([":friends"]),
 )
 
@@ -1231,13 +1228,13 @@ xla_cc_test(
 
 cc_library(
     name = "cpu_function_runtime",
-    srcs = ["cpu_function_runtime.cc"],
     hdrs = ["cpu_function_runtime.h"],
     compatible_with = get_compatible_with_portable(),
     visibility = internal_visibility([":friends"]),
     deps = [
         "//xla/backends/cpu:alignment",
         "//xla/tsl/util:safe_reinterpret_cast",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:dynamic_annotations",
     ],
 )
