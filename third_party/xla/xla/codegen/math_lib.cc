@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "xla/codegen/math_lib.h"
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -61,7 +62,9 @@ limitations under the License.
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "xla/codegen/math/exp.h"
 #include "xla/codegen/math/fptrunc.h"
+#include "xla/codegen/math/intrinsic.h"
 #include "xla/codegen/math/ldexp.h"
+#include "xla/codegen/math/log1p.h"
 #include "xla/codegen/math/string_interner.h"
 #include "xla/codegen/math/vec_name_mangler.h"
 #include "xla/service/llvm_ir/llvm_util.h"
@@ -223,10 +226,54 @@ class FpextF32ToBf16MathFunction final : public MathFunction {
   }
 };
 
+template <PrimitiveType Type>
+class Log1pMathFunction final : public MathFunction {
+ public:
+  absl::string_view FunctionName() const override { return function_name_; }
+
+  std::vector<std::string> TargetFunctions() const override {
+    return {function_name_};
+  }
+
+  std::vector<VectorType> SupportedVectorTypes() const override {
+    std::vector<VectorType> vector_types;
+    for (size_t width : {1, 2, 4, 8}) {
+      vector_types.push_back({Type, width});
+    }
+    return vector_types;
+  }
+
+  std::string GenerateVectorizedFunctionName(
+      VectorType vector_type) const override {
+    return math::Log1pFunctionName(vector_type.width, vector_type.dtype);
+  }
+
+  std::string GenerateMangledSimdName(VectorType vector_type) const override {
+    return math::GetMangledNamePrefix(/*is_masked=*/false, vector_type.width,
+                                      {math::VecParamCardinality::kVector});
+  }
+
+  llvm::Function* CreateDefinition(llvm::Module& module, absl::string_view name,
+                                   VectorType vector_type) const override {
+    llvm::Type* float_type =
+        llvm_ir::PrimitiveTypeToIrType(vector_type.dtype, module.getContext());
+    llvm::Type* vec_type = float_type;
+    if (vector_type.width > 1) {
+      vec_type = llvm::VectorType::get(float_type, vector_type.width, false);
+    }
+    return math::CreateLog1p(&module, vec_type);
+  }
+
+ private:
+  std::string function_name_ = Intrinsic::Log1p::Name(Type);
+};
+
 MathFunctionLib::MathFunctionLib() {
   math_functions_.push_back(std::make_unique<LdexpF64MathFunction>());
   math_functions_.push_back(std::make_unique<ExpF64MathFunction>());
   math_functions_.push_back(std::make_unique<FpextF32ToBf16MathFunction>());
+  math_functions_.push_back(std::make_unique<Log1pMathFunction<F32>>());
+  math_functions_.push_back(std::make_unique<Log1pMathFunction<F64>>());
 }
 
 std::vector<llvm::VecDesc> MathFunctionLib::Vectorizations() {
