@@ -951,6 +951,8 @@ class NanoExecutable final
     return client_->addressable_devices();
   }
 
+  const ifrt::DeviceListRef& devices() const override { return devices_; }
+
   static char ID;  // NOLINT
 
  private:
@@ -960,6 +962,7 @@ class NanoExecutable final
                  std::vector<ifrt::ShardingRef> input_shardings,
                  std::vector<ifrt::ShardingRef> output_shardings)
       : client_(client),
+        devices_(ifrt::BasicDeviceList::Create(client->devices())),
         program_(std::move(program)),
         program_shape_(std::move(program_shape)),
         executable_(std::move(executable)),
@@ -1102,6 +1105,7 @@ class NanoExecutable final
   }
 
   NanoIfrtClient* client_;
+  ifrt::DeviceListRef devices_;
   XlaComputation program_;
   ProgramShape program_shape_;
   std::unique_ptr<NanoRtExecutable> executable_;
