@@ -27,6 +27,7 @@ cc_library(
     deps = [
         "//xla:shape_util",
         "//xla:xla_data_proto_cc",
+        "//xla/service/llvm_ir:llvm_util",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@llvm-project//llvm:Core",
@@ -246,10 +247,13 @@ cc_library(
     srcs = ["rsqrt.cc"],
     hdrs = ["rsqrt.h"],
     deps = [
+        ":intrinsic",
         "//xla:xla_data_proto_cc",
         "//xla/service/llvm_ir:llvm_util",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@llvm-project//llvm:Core",  # buildcleaner: keep
         "@llvm-project//llvm:Support",
@@ -261,6 +265,7 @@ xla_cc_test(
     name = "rsqrt_test",
     srcs = ["rsqrt_test.cc"],
     deps = [
+        ":intrinsic",
         ":rsqrt",
         ":simple_jit_runner",
         ":test_matchers",
@@ -280,6 +285,7 @@ xla_cc_test(
     fail_if_no_test_linked = False,  # NOLINT=This contains benchmarks only, no tests.
     fail_if_no_test_selected = False,  # NOLINT=This contains benchmarks only, no tests.
     deps = [
+        ":intrinsic",
         ":rsqrt",
         ":simple_jit_runner",
         "//xla:shape_util",
