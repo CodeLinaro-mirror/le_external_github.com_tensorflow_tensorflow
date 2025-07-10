@@ -4857,6 +4857,11 @@ void MsaAlgorithm::FinalizeAllocations(
           size_t index = it->second;
           colocation_vector[index].second.push_back(inserted_allocation);
         }
+        // Register the allocation start time - 1 and end time + 1 as the edge
+        // time indices for the allocation. Evict uses this to bypass some of
+        // the redundant calls to FindChunkCandidate.
+        edge_time_indices_.insert(inserted_allocation->start_time() - 1);
+        edge_time_indices_.insert(inserted_allocation->end_time() + 1);
       }
     }
   }
@@ -5876,14 +5881,20 @@ AllocationResult MsaAlgorithm::Evict(const AllocationRequest& request,
   VLOG(3) << "Considering eviction after" << eviction_exclusive_start_time
           << ", with preferred end time = " << eviction_mem_interval.end;
 
-  for (; eviction_mem_interval.end > eviction_end_time;
-       --eviction_mem_interval.end) {
+  while (eviction_mem_interval.end > eviction_end_time) {
     Chunk chunk_candidate =
         FindChunkCandidate(eviction_mem_interval, preferred_offset);
     if (chunk_candidate.offset == preferred_offset) {
       AddToPendingChunks(eviction_mem_interval, chunk_candidate);
       break;
     }
+    // Only call FindChunkCandidate if the index is an edge time (where there is
+    // another allocation that starts or ends at this time index). This reduces
+    // redundant calls to FundChunkCandidate and so reduces compilation time.
+    do {
+      --eviction_mem_interval.end;
+    } while (eviction_mem_interval.end > eviction_end_time &&
+             !edge_time_indices_.contains(eviction_mem_interval.end));
   }
   eviction_end_time = eviction_mem_interval.end;
 
