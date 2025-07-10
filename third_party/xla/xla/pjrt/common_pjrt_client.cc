@@ -425,36 +425,46 @@ CommonPjRtBufferImpl::DirectCopyToMemorySpace(
     return absl::OkStatus();
   }();
   if (!status.ok()) {
+    if (allocation_event) {
+      allocation_event.SetError(status);
+    }
     definition_event_promise->SetError(status);
     return status;
   }
 
-  absl::Span<const tsl::RCReference<tsl::AsyncValue>> definition_events_span =
-      definition_events;
-  src_client->async_work_runner()->ScheduleWhenReady(
-      definition_events_span,
-      [src_raw_buffer = std::move(src_raw_buffer),
-       dst_raw_buffer = std::move(dst_raw_buffer),
-       definition_events = std::move(definition_events),
-       definition_event_promise = std::move(definition_event_promise),
-       src_usage_event_promise = std::move(src_usage_event_promise),
-       allocation_event = std::move(allocation_event)]() {
-        for (const auto& av : definition_events) {
-          if (auto* error = av->GetErrorIfPresent()) {
-            auto status = *error;
+  if (src_raw_buffer) {
+    src_raw_buffer->ScheduleCopyTo(
+        src_client->async_work_runner(), std::move(definition_events),
+        std::move(dst_raw_buffer), std::move(definition_event_promise),
+        std::move(src_usage_event_promise), std::move(allocation_event));
+  } else {
+    absl::Span<const tsl::RCReference<tsl::AsyncValue>> definition_events_span =
+        definition_events;
+    src_client->async_work_runner()->ScheduleWhenReady(
+        definition_events_span,
+        [dst_raw_buffer = std::move(dst_raw_buffer),
+         definition_events = std::move(definition_events),
+         definition_event_promise = std::move(definition_event_promise),
+         src_usage_event_promise = std::move(src_usage_event_promise),
+         allocation_event = std::move(allocation_event)]() {
+          auto set_error = [&](absl::Status status) {
             if (allocation_event) {
               allocation_event.SetError(status);
             }
             definition_event_promise->SetError(status);
             src_usage_event_promise->SetError(status);
-            return;
+          };
+          for (const auto& av : definition_events) {
+            if (auto* error = av->GetErrorIfPresent()) {
+              set_error(*error);
+              return;
+            }
           }
-        }
-
-        src_raw_buffer->CopyTo(
-            std::move(dst_raw_buffer), std::move(definition_event_promise),
-            std::move(src_usage_event_promise), std::move(allocation_event));
-      });
+          set_error(
+              absl::InternalError("src_raw_buffer is nullptr for copy but no "
+                                  "definition events were errors."));
+        });
+  }
 
   return dst_buffer;
 }

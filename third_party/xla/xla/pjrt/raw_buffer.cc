@@ -60,6 +60,41 @@ PjRtFuture<> CommonPjRtRawBuffer::CopyRawDeviceToHost(void* dst, int64_t offset,
   return (*event)->GetReadyFuture();
 }
 
+void CommonPjRtRawBuffer::ScheduleCopyTo(
+    AsyncWorkRunner* async_work_runner,
+    std::vector<tsl::RCReference<tsl::AsyncValue>> transfer_dependency_avs,
+    tsl::RCReference<CommonPjRtRawBuffer> dst_raw_buffer,
+    tsl::RCReference<PjRtDeviceEventPromise> definition_event_promise,
+    tsl::RCReference<PjRtDeviceEventPromise> src_usage_event_promise,
+    ::tsl::AsyncValueRef<bool> allocation_event) {
+  absl::Span<const tsl::RCReference<tsl::AsyncValue>> definition_events_span =
+      transfer_dependency_avs;
+  async_work_runner->ScheduleWhenReady(
+      definition_events_span,
+      [src_raw_buffer = tsl::FormRef(this),
+       dst_raw_buffer = std::move(dst_raw_buffer),
+       transfer_dependency_avs = std::move(transfer_dependency_avs),
+       definition_event_promise = std::move(definition_event_promise),
+       src_usage_event_promise = std::move(src_usage_event_promise),
+       allocation_event = std::move(allocation_event)]() {
+        for (const auto& av : transfer_dependency_avs) {
+          if (auto* error = av->GetErrorIfPresent()) {
+            auto status = *error;
+            if (allocation_event) {
+              allocation_event.SetError(status);
+            }
+            definition_event_promise->SetError(status);
+            src_usage_event_promise->SetError(status);
+            return;
+          }
+        }
+
+        src_raw_buffer->CopyTo(
+            std::move(dst_raw_buffer), std::move(definition_event_promise),
+            std::move(src_usage_event_promise), std::move(allocation_event));
+      });
+}
+
 absl::StatusOr<tsl::RCReference<PjRtRawBuffer>>
 PjRtRawBuffer::CreateRawAliasOfBuffer(PjRtBuffer* buffer) {
   for (auto* func : GetFactoryFuncs()) {

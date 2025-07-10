@@ -1234,6 +1234,7 @@ cc_library(
     srcs = ["raw_buffer.cc"],
     hdrs = ["raw_buffer.h"],
     deps = [
+        ":async_work_runner",
         ":device_event",
         ":pjrt_client",
         ":pjrt_future",
