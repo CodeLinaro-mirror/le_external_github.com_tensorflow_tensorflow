@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -384,19 +385,14 @@ class ExtSIInt4ToInt8Pattern : public OpConversionPattern<ma::ExtSIOp> {
 
   using OpConversionPattern<ma::ExtSIOp>::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(ma::ExtSIOp op, OpAdaptor adaptor,
-                                ConversionPatternRewriter &r) const override {
-    VLOG(2) << "ExtSIInt4ToInt8Pattern: matching\n"
-            << DumpToString(op.getOperation());
-    auto input_type = cast<RankedTensorType>(op.getIn().getType());
+  LogicalResult RewriteI4ToI8(
+      ma::ExtSIOp ext_si_op,
+      OpConversionPattern<ma::ExtSIOp>::OpAdaptor adaptor,
+      ConversionPatternRewriter &r) const {
+    auto loc = ext_si_op.getLoc();
+    auto input_type = cast<RankedTensorType>(ext_si_op.getIn().getType());
     auto packed_type = converter_.convertType(input_type);
-    if (input_type == packed_type) {
-      return r.notifyMatchFailure(op, "no conversion needed");
-    }
-
-    // Make a new i8 tensor with the shape that is half of the int4 tensor.
-    auto loc = op.getLoc();
-
+    VLOG(2) << "ExtSIInt4ToInt8Pattern: Regular int4 to int8 conversion";
     Value shift4_const =
         r.create<ma::ConstantOp>(loc, r.getIntegerAttr(r.getI8Type(), 4));
     Value shift4 = r.create<mt::SplatOp>(loc, packed_type, shift4_const);
@@ -415,9 +411,99 @@ class ExtSIInt4ToInt8Pattern : public OpConversionPattern<ma::ExtSIOp> {
       hi_lo = r.create<mt::TransOp>(loc, hi_lo, trans_attr);
     }
     auto unpacked_type = input_type.clone(r.getI8Type());
-    r.replaceOpWithNewOp<mt::ReshapeOp>(op, unpacked_type, hi_lo,
+    r.replaceOpWithNewOp<mt::ReshapeOp>(ext_si_op, unpacked_type, hi_lo,
+                                        /*allow_reorder=*/false);
+
+    return success();
+  }
+
+  LogicalResult RewriteI4ToBf16(
+      ma::ExtSIOp ext_si_op, ma::SIToFPOp si_to_fp_op,
+      OpConversionPattern<ma::ExtSIOp>::OpAdaptor adaptor,
+      ConversionPatternRewriter &r) const {
+    VLOG(2) << "RewriteI4ToBf16: Using inline asm i4 to bf16 conversion";
+    auto loc = ext_si_op.getLoc();
+    auto input_type = cast<RankedTensorType>(ext_si_op.getIn().getType());
+    auto packed_type = converter_.convertType(input_type);
+    Type bf16_type = input_type.clone(r.getBF16Type());
+    Type bf16_packed_type =
+        dyn_cast<RankedTensorType>(packed_type).clone(r.getBF16Type());
+    constexpr absl::string_view kInt4ToBF16Asm = R"(
+      {
+        .reg .s32 src_shifted;
+        .reg .b32 bias;
+
+        mov.b32 bias, 0x43084308;
+
+        shr.s32 src_shifted, $4, 4;
+
+        // vectorized interleaved ordering:
+        prmt.b32 $0, $4, src_shifted, 0xF4F0;
+        prmt.b32 $1, $4, src_shifted, 0xF6F2;
+        prmt.b32 $2, $4, src_shifted, 0xF5F1;
+        prmt.b32 $3, $4, src_shifted, 0xF7F3;
+
+        lop3.b32 $0, $0, 0x000F000F, bias, 0x6a;
+        lop3.b32 $1, $1, 0x000F000F, bias, 0x6a;
+        lop3.b32 $2, $2, 0x000F000F, bias, 0x6a;
+        lop3.b32 $3, $3, 0x000F000F, bias, 0x6a;
+
+        sub.bf16x2 $0, $0, bias;
+        sub.bf16x2 $1, $1, bias;
+        sub.bf16x2 $2, $2, bias;
+        sub.bf16x2 $3, $3, bias;
+      }
+    )";
+    auto elementwise_op = r.create<ElementwiseInlineAsmOp>(
+        loc, std::vector<Type>{bf16_packed_type, bf16_packed_type},
+        kInt4ToBF16Asm, "=r,=r,=r,=r,r",
+        /*pure=*/true, /*pack_result=*/4, adaptor.getOperands());
+    Value lo = elementwise_op->getResult(0);
+    Value hi = elementwise_op->getResult(1);
+    Value hi_lo = r.create<mt::JoinOp>(loc, lo, hi);
+    if (converter_.packed_dimension() + 1 != input_type.getRank()) {
+      // Move the minor (joined) dimension to just after the packed dimension.
+      SmallVector<int32_t> trans_order(input_type.getRank() + 1);
+      absl::c_iota(trans_order, 0);
+      std::rotate(trans_order.begin() + converter_.packed_dimension() + 1,
+                  std::prev(trans_order.end()), trans_order.end());
+      auto trans_attr = r.getDenseI32ArrayAttr(trans_order);
+      hi_lo = r.create<mt::TransOp>(loc, hi_lo, trans_attr);
+    }
+
+    r.replaceOpWithNewOp<mt::ReshapeOp>(si_to_fp_op, bf16_type, hi_lo,
                                         /*allow_reorder=*/false);
     return success();
+  }
+
+  LogicalResult matchAndRewrite(ma::ExtSIOp ext_si_op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &r) const override {
+    VLOG(2) << "ExtSIInt4ToInt8Pattern: matching\n"
+            << DumpToString(ext_si_op.getOperation());
+    auto input_type = dyn_cast<RankedTensorType>(ext_si_op.getIn().getType());
+    if (!input_type) {
+      return r.notifyMatchFailure(ext_si_op, "not a ranked tensor");
+    }
+    auto packed_type = converter_.convertType(input_type);
+    if (input_type == packed_type) {
+      return r.notifyMatchFailure(ext_si_op, "no conversion needed");
+    }
+
+    for (auto user : ext_si_op->getUsers()) {
+      if (auto si_to_fp_op = dyn_cast<ma::SIToFPOp>(user)) {
+        auto result_type = si_to_fp_op->getResultTypes()[0];
+        auto tensor_type = dyn_cast<RankedTensorType>(result_type);
+        if (!tensor_type || !tensor_type.getElementType().isBF16()) {
+          VLOG(2) << "ExtSIInt4ToInt8Pattern: no conversion needed for "
+                  << DumpToString(static_cast<Operation *>(si_to_fp_op));
+          continue;
+        }
+        if (RewriteI4ToBf16(ext_si_op, si_to_fp_op, adaptor, r).failed()) {
+          continue;
+        }
+      }
+    }
+    return RewriteI4ToI8(ext_si_op, adaptor, r);
   }
 
  private:
@@ -557,6 +643,51 @@ LogicalResult TruncfSitofpToSitofpRewrite(ma::TruncFOp trunc_op,
   return success();
 }
 
+bool elementTypeIs(Type type, Type element_type) {
+  auto type_ranked = dyn_cast<RankedTensorType>(type);
+  return type_ranked && type_ranked.getElementType() == element_type;
+}
+
+template <typename OpType>
+bool opInputElementTypeIs(mlir::Value value, Type element_type) {
+  auto op = dyn_cast<OpType>(value.getDefiningOp());
+  if (!op) {
+    return false;
+  }
+  return elementTypeIs(op.getIn().getType(), element_type);
+}
+
+// The pattern converts the Sitofp(i4): Fp32 to ExtFOp(Sitofp(i4): bf16): Fp32.
+LogicalResult SitofpToExtFpSitofpRewrite(ma::SIToFPOp sitofp_op,
+                                         PatternRewriter &rewriter) {
+  auto input = sitofp_op.getIn();
+  if (!opInputElementTypeIs<ma::ExtSIOp>(input, rewriter.getIntegerType(4))) {
+    return rewriter.notifyMatchFailure(
+        sitofp_op,
+        "Ignore sitofp op that does not have ExtSIOp(tensor<i4>) as input");
+  }
+  if (!opInputElementTypeIs<ma::SIToFPOp>(sitofp_op,
+                                          rewriter.getIntegerType(8))) {
+    return rewriter.notifyMatchFailure(
+        sitofp_op, "Ignore sitofp op that does not have i8 tensor as input");
+  }
+  Type type = sitofp_op.getType();
+  if (!elementTypeIs(type, rewriter.getF32Type())) {
+    return rewriter.notifyMatchFailure(
+        sitofp_op, "Ignore sitofp op that does not have F32 type as output");
+  }
+  auto type_ranked = dyn_cast<RankedTensorType>(type);
+  VLOG(2) << "SitofpToExtFpSitofpRewrite: SiToFp(i4): Fp32 -> "
+             "ExtFOp(SiToFp(i4): bf16): Fp32: type:"
+          << DumpToString(type_ranked);
+  auto loc = sitofp_op.getLoc();
+  auto sitofp_bf16_op = rewriter.create<ma::SIToFPOp>(
+      loc, type_ranked.clone(rewriter.getBF16Type()), sitofp_op.getIn());
+  rewriter.replaceOpWithNewOp<ma::ExtFOp>(sitofp_op, type, sitofp_bf16_op,
+                                          ma::FastMathFlagsAttr{});
+  return success();
+}
+
 struct PlainInt4ToPackedInt4RewritePass
     : public impl::LoadInt4RewritePassBase<PlainInt4ToPackedInt4RewritePass> {
   // The pass converts the types like tensor<AxBxi4> to tensor<AxB/2xi8>
@@ -573,6 +704,7 @@ struct PlainInt4ToPackedInt4RewritePass
     RewritePatternSet normalize_patterns(ctx);
     normalize_patterns.add(SitofpInt4ToInt8Rewrite);
     normalize_patterns.add(TruncfSitofpToSitofpRewrite);
+    normalize_patterns.add(SitofpToExtFpSitofpRewrite);
     if (failed(applyPatternsGreedily(module, std::move(normalize_patterns)))) {
       VLOG(2) << "failed to apply patterns";
       signalPassFailure();
