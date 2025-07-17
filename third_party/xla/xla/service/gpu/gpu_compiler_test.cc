@@ -99,6 +99,7 @@ namespace {
 namespace m = ::xla::match;
 
 using ::testing::EndsWith;
+using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::IsSupersetOf;
 using ::testing::Matches;
@@ -162,6 +163,73 @@ ENTRY main {
                         /*is_autotuning_compilation=*/false})
           .value();
   EXPECT_EQ(GetCompiledProgramsCount(), before + 1);
+}
+
+TEST_F(GpuCompilerTest, CatchCollectiveDeadlocksPostScheduling) {
+  const char* hlo_text = R"(
+HloModule test, is_scheduled=true
+
+ENTRY test_computation {
+  c0 = u32[] constant(0)
+  c1 = u32[] constant(1)
+  replica = u32[] replica-id()
+  a = u32[] add(c1, replica)
+  send-data = u32[2] broadcast(a), dimensions={}
+
+  after-all.0 = token[] after-all()
+  recv.0 = (u32[2], u32[], token[]) recv(after-all.0), channel_id=0,
+  frontend_attributes={
+      _xla_send_recv_source_target_pairs="{{1,0}}",
+      _xla_send_recv_pipeline="1"
+    }
+  send.0 = (u32[2], u32[], token[]) send(send-data, after-all.0),
+    channel_id=0, frontend_attributes={
+      _xla_send_recv_source_target_pairs="{{1,0}}",
+      _xla_send_recv_pipeline="1"
+    }
+
+  after-all.1 = token[] after-all()
+  recv.1 = (u32[2], u32[], token[]) recv(after-all.1), channel_id=0,
+  frontend_attributes={
+      _xla_send_recv_source_target_pairs="{{0,1}, {1,0}}"
+    }
+  send.1 = (u32[2], u32[], token[]) send(send-data, after-all.1),
+    channel_id=0, frontend_attributes={
+      _xla_send_recv_source_target_pairs="{{0,1}, {1,0}}"
+    }
+
+  recv-done.0 = (u32[2], token[]) recv-done(recv.0), channel_id=0,
+  frontend_attributes={
+      _xla_send_recv_pipeline="1"
+    }
+  recv-data.0 = u32[2] get-tuple-element(recv-done.0), index=0
+  recv-done.1 = (u32[2], token[]) recv-done(recv.1), channel_id=0,
+  frontend_attributes={
+      _xla_send_recv_pipeline="0"
+    }
+  recv-data.1 = u32[2] get-tuple-element(recv-done.1), index=0
+
+  compare0 = pred[] compare(replica, c0), direction=EQ
+  compare = pred[2] broadcast(compare0), dimensions={}
+  recv-data = u32[2] select(compare, recv-data.0, recv-data.1)
+
+  send-done.0 = token[] send-done(send.0), channel_id=0,
+  frontend_attributes={
+      _xla_send_recv_pipeline="1"
+    }
+  send-done.1 = token[] send-done(send.1), channel_id=0,
+  frontend_attributes={
+      _xla_send_recv_pipeline="0"
+    }
+  c1b = u32[2] broadcast(c1), dimensions={}
+  ROOT result = u32[2] add(c1b, recv-data)
+}
+)";
+  auto module = ParseAndReturnVerifiedModule(hlo_text).value();
+  auto run_result = Run(std::move(module), /*run_hlo_passes=*/true);
+  EXPECT_THAT(run_result.failure_message(),
+              HasSubstr("Expected send and recv instructions to have "
+                        "non-cyclical source-target pairs"));
 }
 
 TEST_F(GpuCompilerTest, RecordsStreamzStackTrace) {
