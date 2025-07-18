@@ -40,6 +40,7 @@ limitations under the License.
 #include "xla/service/algorithm_util.h"
 #include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/gpu/matmul_indexing_utils.h"
+#include "xla/service/gpu/transforms/dot_algorithm_rewriter.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
 #include "xla/status_macros.h"
@@ -906,6 +907,32 @@ PrimitiveType GetGemmAccumulatorType(HloDotInstruction* dot) {
     case PrimitiveType::S32:
     default:
       return output_type;
+  }
+}
+
+absl::StatusOr<HloInstruction*> MakeMultiplyForDotPrecisionAlgorithm(
+    HloInstruction* lhs, HloInstruction* rhs,
+    const PrecisionConfig::Algorithm& algorithm) {
+  switch (algorithm) {
+    case PrecisionConfig::ALG_DOT_BF16_BF16_F32:
+      return DotAlgorithmRewriter::MakeMultiplyForBF16BF16F32(lhs, rhs);
+    case PrecisionConfig::ALG_DOT_BF16_BF16_F32_X3:
+      return DotAlgorithmRewriter::MakeMultiplyForBF16BF16F32X3(lhs, rhs);
+    case PrecisionConfig::ALG_DOT_BF16_BF16_F32_X6:
+      return DotAlgorithmRewriter::MakeMultiplyForBF16BF16F32X6(lhs, rhs);
+    case PrecisionConfig::ALG_DOT_BF16_BF16_F32_X9:
+      return DotAlgorithmRewriter::MakeMultiplyForBF16BF16F32X9(lhs, rhs);
+    case PrecisionConfig::ALG_DOT_TF32_TF32_F32:
+      return DotAlgorithmRewriter::MakeMultiplyForTF32TF32F32(lhs, rhs);
+    case PrecisionConfig::ALG_DOT_TF32_TF32_F32_X3:
+      return DotAlgorithmRewriter::MakeMultiplyForTF32TF32F32X3(lhs, rhs);
+    case PrecisionConfig::ALG_DOT_F32_F32_F32:
+    case PrecisionConfig::ALG_UNSET:
+      return lhs->parent()->AddInstruction(HloInstruction::CreateBinary(
+          lhs->shape(), HloOpcode::kMultiply, lhs, rhs));
+    default:
+      return absl::InvalidArgumentError(
+          absl::StrCat("Unsupported dot precision algorithm: ", algorithm));
   }
 }
 
