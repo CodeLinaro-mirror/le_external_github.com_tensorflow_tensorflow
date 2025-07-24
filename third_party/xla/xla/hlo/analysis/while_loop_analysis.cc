@@ -418,7 +418,8 @@ std::vector<const HloInstruction*> GetAuxiliaryLoopInductionVars(
 //
 // If so, returns N.  Otherwise, returns nullopt.
 optional<int64_t> GetLoopInductionVarTupleIdx(const HloInstruction* while_op) {
-  return GetLoopInductionVarTupleIdxWithKnownValues(while_op, {});
+  return std::nullopt;
+  // return GetLoopInductionVarTupleIdxWithKnownValues(while_op, {});
 }
 
 // Same as above, but also handles cases where the range of the induction
