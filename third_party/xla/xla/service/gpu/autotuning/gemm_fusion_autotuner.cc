@@ -920,7 +920,20 @@ GemmFusionAutotunerImpl::CompileAll(AutotunerCompileUtil& compile_util,
             std::get<TritonGemmConfig>(config), config_.GetDeviceDescription(),
             fusion, opts, allow_filtering_kernels_spilling_registers);
       });
-      return executable_or;
+      if (executable_or.ok()) {
+        return executable_or;
+      }
+      if (absl::c_contains(
+              debug_options_
+                  .xla_gpu_unsupported_generic_triton_emitter_features(),
+              DebugOptions::
+                  GENERIC_TRITON_EMITTER_MUST_ACCEPT_ALL_AUTOTUNER_CONFIGS)) {
+        return executable_or;
+      }
+      LOG(WARNING)
+          << "TritonGemmAutotuneExtractor failed and config will be ignored: "
+          << executable_or.status();
+      return nullptr;
     }
 
     if (std::holds_alternative<CuDnnConfig>(config)) {
