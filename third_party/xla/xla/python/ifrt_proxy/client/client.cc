@@ -58,7 +58,6 @@
 #include "xla/python/ifrt_proxy/client/rpc_helper.h"
 #include "xla/python/ifrt_proxy/common/ifrt_service.pb.h"
 #include "xla/python/ifrt_proxy/common/types.h"
-#include "xla/python/ifrt_proxy/common/versions.h"
 #include "xla/python/pjrt_ifrt/pjrt_attribute_map_util.h"
 #include "xla/tsl/concurrency/ref_count.h"
 #include "xla/tsl/platform/statusor.h"
@@ -93,19 +92,9 @@ absl::StatusOr<std::unique_ptr<Client>> Client::Create(
       init_response.addressable_device_ids().begin(),
       init_response.addressable_device_ids().end());
   absl::flat_hash_set<int> primary_device_ids;
-  if (rpc_helper->protocol_version() < 7) {
-    // Legacy implementation for servers do not support Client::GetAllDevices()
-    // and thus do not provide device_ids(). Assume that it contains all device
-    // ids from devices().
-    primary_device_ids.reserve(init_response.all_devices().size());
-    for (const auto& d : init_response.all_devices()) {
-      primary_device_ids.insert(d.id());
-    }
-  } else {
-    primary_device_ids.reserve(init_response.primary_device_ids().size());
-    primary_device_ids.insert(init_response.primary_device_ids().begin(),
-                              init_response.primary_device_ids().end());
-  }
+  primary_device_ids.reserve(init_response.primary_device_ids().size());
+  primary_device_ids.insert(init_response.primary_device_ids().begin(),
+                            init_response.primary_device_ids().end());
 
   absl::flat_hash_map<int, std::unique_ptr<Memory>> memories;
   for (const auto& m : init_response.memories()) {
@@ -123,17 +112,9 @@ absl::StatusOr<std::unique_ptr<Client>> Client::Create(
   for (const auto& d : init_response.all_devices()) {
     absl::flat_hash_map<std::string, xla::PjRtDeviceAttribute>
         pjrt_device_attributes;
-    if (rpc_helper->protocol_version() <= 3) {
-      for (const auto& [key, attr] : d.deprecated_attributes()) {
-        TF_ASSIGN_OR_RETURN(xla::PjRtDeviceAttribute value,
-                            FromVariantProto(attr));
-        pjrt_device_attributes.insert({key, std::move(value)});
-      }
-    } else {
-      TF_ASSIGN_OR_RETURN(auto attributes,
-                          AttributeMap::FromProto(d.attributes()));
-      pjrt_device_attributes = ToPjRtAttributeMap(std::move(attributes));
-    }
+    TF_ASSIGN_OR_RETURN(auto attributes,
+                        AttributeMap::FromProto(d.attributes()));
+    pjrt_device_attributes = ToPjRtAttributeMap(std::move(attributes));
 
     DeviceDescription desc(d.id(), init_response.process_index(),
                            d.device_kind(), d.debug_string(), d.to_string(),
@@ -335,27 +316,19 @@ absl::StatusOr<std::vector<xla::ifrt::ArrayRef>> Client::CopyArrays(
   req->set_copy_semantics(ToArrayCopySemanticsProto(semantics));
 
   std::vector<uint64_t> result_handles;
-  if (rpc_helper_->protocol_version() <
-      protocol_version::kClientHandlesOptimization2) {
-    TF_ASSIGN_OR_RETURN(auto response,
-                        rpc_helper_->CopyArrays(std::move(req)).Await());
-    result_handles.assign(response->array_handles().begin(),
-                          response->array_handles().end());
-  } else {
-    for (int i = 0; i < arrays.size(); ++i) {
-      result_handles.push_back(rpc_helper_->NextHandle());
-      req->add_result_handles(result_handles.back());
-    }
-    rpc_helper_->CopyArrays(std::move(req))
-        .OnReady([result_handles](
-                     absl::StatusOr<std::shared_ptr<CopyArraysResponse>> r) {
-          if (r.ok()) {
-            for (int i = 0; i < result_handles.size(); ++i) {
-              CHECK_EQ((*r)->array_handles(i), result_handles[i]);
-            }
-          }
-        });
+  for (int i = 0; i < arrays.size(); ++i) {
+    result_handles.push_back(rpc_helper_->NextHandle());
+    req->add_result_handles(result_handles.back());
   }
+  rpc_helper_->CopyArrays(std::move(req))
+      .OnReady([result_handles](
+                   absl::StatusOr<std::shared_ptr<CopyArraysResponse>> r) {
+        if (r.ok()) {
+          for (int i = 0; i < result_handles.size(); ++i) {
+            CHECK_EQ((*r)->array_handles(i), result_handles[i]);
+          }
+        }
+      });
 
   std::vector<xla::ifrt::ArrayRef> new_arrays;
   new_arrays.reserve(arrays.size());

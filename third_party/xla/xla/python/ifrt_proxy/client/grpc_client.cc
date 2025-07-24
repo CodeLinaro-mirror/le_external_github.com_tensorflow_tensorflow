@@ -150,8 +150,7 @@ absl::StatusOr<std::unique_ptr<Client>> AttemptConnection(
       Future<std::shared_ptr<InitResponse>>(init_response_promise).Await());
 
   bool reuse_control_path_stub_for_data_path =
-      GetGlobalClientFlags()->synchronous_host_buffer_store ||
-      (metadata.version().protocol_version() < 10);
+      GetGlobalClientFlags()->synchronous_host_buffer_store;
   auto data_path_stub = reuse_control_path_stub_for_data_path
                             ? control_path_stub
                             : CreateGrpcStub(server_address);

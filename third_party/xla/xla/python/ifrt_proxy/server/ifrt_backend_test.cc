@@ -66,7 +66,6 @@
 #include "xla/python/ifrt_proxy/common/array_util.h"
 #include "xla/python/ifrt_proxy/common/ifrt_service.pb.h"
 #include "xla/python/ifrt_proxy/common/types.pb.h"
-#include "xla/python/ifrt_proxy/common/versions.h"
 #include "xla/python/ifrt_proxy/server/host_buffer.h"
 #include "xla/python/ifrt_proxy/server/host_callback.h"
 #include "xla/python/ifrt_proxy/server/version.h"
@@ -503,15 +502,9 @@ TEST_P(IfrtBackendHandlerTest, Init) {
     EXPECT_EQ(device.memory_ids().size(), 1);
     EXPECT_EQ(device.memory_ids(0), device_canonical_num);
     std::string expected_name = absl::StrCat("device", device_canonical_num);
-    if (Version().protocol_version() <= 3) {
-      EXPECT_EQ(device.deprecated_attributes().size(), 1);
-      EXPECT_EQ(device.deprecated_attributes().at("name").string_value(),
-                expected_name);
-    } else {
-      EXPECT_EQ(device.attributes().attributes().size(), 1);
-      EXPECT_EQ(device.attributes().attributes().at("name").string_value(),
-                expected_name);
-    }
+    EXPECT_EQ(device.attributes().attributes().size(), 1);
+    EXPECT_EQ(device.attributes().attributes().at("name").string_value(),
+              expected_name);
   }
 
   EXPECT_EQ(init_response.memories().size(), 2);
@@ -522,9 +515,7 @@ TEST_P(IfrtBackendHandlerTest, Init) {
     EXPECT_EQ(memory.device_ids(0), memory_canonical_num);
   }
 
-  if (Version().protocol_version() > 7) {
-    EXPECT_THAT(init_response.primary_device_ids(), ElementsAre(0, 1));
-  }
+  EXPECT_THAT(init_response.primary_device_ids(), ElementsAre(0, 1));
 
   EXPECT_EQ(init_response.client_attributes().attributes().size(), 1);
   EXPECT_EQ(init_response.client_attributes()
@@ -560,16 +551,11 @@ TEST_P(IfrtBackendHandlerTest, DisassembleIntoSingleDeviceArraysSucceeds) {
       disassemble_request
           ->mutable_disassemble_into_single_device_arrays_request();
   disassemble_into_single_device_arrays->set_array_handle(array_handle);
-  if (Version().protocol_version() >= 8) {
-    disassemble_into_single_device_arrays->set_single_device_shard_semantics(
-        proto::SingleDeviceShardSemantics::
-            SINGLE_DEVICE_SHARD_SEMANTICS_ALL_SHARDS);
-  }
-  if (Version().protocol_version() >=
-      protocol_version::kClientHandlesOptimization2) {
-    disassemble_into_single_device_arrays->add_result_handles(1);
-    disassemble_into_single_device_arrays->add_result_handles(2);
-  }
+  disassemble_into_single_device_arrays->set_single_device_shard_semantics(
+      proto::SingleDeviceShardSemantics::
+          SINGLE_DEVICE_SHARD_SEMANTICS_ALL_SHARDS);
+  disassemble_into_single_device_arrays->add_result_handles(1);
+  disassemble_into_single_device_arrays->add_result_handles(2);
   TF_ASSERT_OK_AND_ASSIGN(auto disassemble_response,
                           CallBackend(std::move(disassemble_request)));
 
@@ -680,18 +666,10 @@ TEST_P(IfrtBackendHandlerTest, AssembleArrayFromSingleDeviceArrays) {
     req->mutable_shape()->add_dims(2);
     req->mutable_shape()->add_dims(2);
     req->set_copy_semantics(proto::ARRAY_COPY_SEMANTICS_ALWAYS_COPY);
-    if (Version().protocol_version() > 8) {
-      req->set_single_device_shard_semantics(
-          proto::SINGLE_DEVICE_SHARD_SEMANTICS_ALL_SHARDS);
-    }
-    if (Version().protocol_version() >=
-        protocol_version::kClientHandlesOptimization2) {
-      req->set_result_handle(1);
-    }
-    if (Version().protocol_version() >=
-        protocol_version::kAssembleArrayFromSingleDeviceArraysWithDType) {
-      *req->mutable_dtype() = dtype.ToProto(ifrt_serdes_version());
-    }
+    req->set_single_device_shard_semantics(
+        proto::SINGLE_DEVICE_SHARD_SEMANTICS_ALL_SHARDS);
+    req->set_result_handle(1);
+    *req->mutable_dtype() = dtype.ToProto(ifrt_serdes_version());
     TF_ASSERT_OK_AND_ASSIGN(auto* device,
                             mock_client_->LookupDevice(DeviceId(1)));
     TF_ASSERT_OK_AND_ASSIGN(*req->mutable_sharding(),
@@ -711,17 +689,11 @@ TEST_P(IfrtBackendHandlerTest, AssembleArrayFromSingleDeviceArrays) {
             ->mutable_assemble_array_from_single_device_arrays_request();
     assemble_array_from_single_device_arrays->add_single_device_array_handles(
         array_handle);
-    if (Version().protocol_version() >= 8) {
-      assemble_array_from_single_device_arrays
-          ->set_single_device_shard_semantics(
-              proto::SingleDeviceShardSemantics::
-                  SINGLE_DEVICE_SHARD_SEMANTICS_ALL_SHARDS);
-    }
-    if (Version().protocol_version() >=
-        protocol_version::kAssembleArrayFromSingleDeviceArraysWithDType) {
-      *assemble_array_from_single_device_arrays->mutable_dtype() =
-          dtype.ToProto(ifrt_serdes_version());
-    }
+    assemble_array_from_single_device_arrays->set_single_device_shard_semantics(
+        proto::SingleDeviceShardSemantics::
+            SINGLE_DEVICE_SHARD_SEMANTICS_ALL_SHARDS);
+    *assemble_array_from_single_device_arrays->mutable_dtype() =
+        dtype.ToProto(ifrt_serdes_version());
   }
 
   tsl::RCReference<xla::ifrt::MockArray> result =
@@ -885,11 +857,9 @@ TEST_P(IfrtBackendHandlerTest,
       disassemble_request
           ->mutable_disassemble_into_single_device_arrays_request();
   disassemble_into_single_device_arrays->set_array_handle(array_handle);
-  if (Version().protocol_version() >= 8) {
-    disassemble_into_single_device_arrays->set_single_device_shard_semantics(
-        proto::SingleDeviceShardSemantics::
-            SINGLE_DEVICE_SHARD_SEMANTICS_ALL_SHARDS);
-  }
+  disassemble_into_single_device_arrays->set_single_device_shard_semantics(
+      proto::SingleDeviceShardSemantics::
+          SINGLE_DEVICE_SHARD_SEMANTICS_ALL_SHARDS);
   ASSERT_THAT(
       CallBackend(std::move(disassemble_request)),
       StatusIs(absl::StatusCode::kUnknown, StrEq(kDisassembleErrorMessage)));
@@ -930,10 +900,7 @@ TEST_P(IfrtBackendHandlerTest, CopyArrays) {
   copy_arrays_request->set_memory_kind(std::string(*memory_kind.memory_kind()));
   copy_arrays_request->set_copy_semantics(
       proto::ARRAY_COPY_SEMANTICS_ALWAYS_COPY);
-  if (Version().protocol_version() >=
-      protocol_version::kClientHandlesOptimization2) {
-    copy_arrays_request->add_result_handles(1);
-  }
+  copy_arrays_request->add_result_handles(1);
 
   TF_ASSERT_OK_AND_ASSIGN(auto response, CallBackend(std::move(ifrt_request)));
 
@@ -957,10 +924,7 @@ TEST_P(IfrtBackendHandlerTest, FullyReplicatedShardSuccess) {
       ifrt_request->mutable_fully_replicated_shard_request();
   fully_replicated_shard_request->set_array_handle(
       fully_replicated_array_handle);
-  if (Version().protocol_version() >=
-      protocol_version::kClientHandlesOptimization2) {
-    fully_replicated_shard_request->set_result_handle(1234);
-  }
+  fully_replicated_shard_request->set_result_handle(1234);
   fully_replicated_shard_request->set_copy_semantics(
       proto::ARRAY_COPY_SEMANTICS_ALWAYS_COPY);
 
@@ -1336,8 +1300,8 @@ TEST_P(IfrtBackendHandlerTest, LoadedExecutableExecute) {
                      std::optional<DeviceListRef> devices)
                      -> absl::StatusOr<LoadedExecutable::ExecuteResult> {
             return LoadedExecutable::ExecuteResult{
-                .status = Future<>(absl::InternalError("injected error")),
-                .outputs = outputs,
+                /*status=*/Future<>(absl::InternalError("injected error")),
+                /*outputs=*/outputs,
             };
           }));
 
@@ -1499,12 +1463,12 @@ TEST_P(IfrtBackendHandlerTest, LoadedExecutableDestruct) {
 TEST_P(IfrtBackendHandlerTest, LoadedHostCallbackExecute) {
   // Build a remote host callback with one F32 argument and one F32 result.
   std::vector<xla::HostCallbackArgInfo> hcb_args = {{
-      .channel_id = 1,
-      .shape = xla::ShapeUtil::MakeShape(xla::F32, {}),
+      /*channel_id=*/1,
+      /*shape=*/xla::ShapeUtil::MakeShape(xla::F32, {}),
   }};
   std::vector<xla::HostCallbackArgInfo> hcb_results = {{
-      .channel_id = 2,
-      .shape = xla::ShapeUtil::MakeShape(xla::F32, {}),
+      /*channel_id=*/2,
+      /*shape=*/xla::ShapeUtil::MakeShape(xla::F32, {}),
   }};
   auto hcb = tsl::MakeRef<RemoteLoadedHostCallback>(
       mock_client_, std::move(hcb_args), std::move(hcb_results),

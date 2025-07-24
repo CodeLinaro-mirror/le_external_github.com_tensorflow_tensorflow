@@ -43,7 +43,6 @@
 #include "xla/python/ifrt/array.h"
 #include "xla/python/ifrt/array_spec.h"
 #include "xla/python/ifrt/client.h"
-#include "xla/python/ifrt/client_impl_util.h"
 #include "xla/python/ifrt/dtype.h"
 #include "xla/python/ifrt/future.h"
 #include "xla/python/ifrt/remap_plan.h"
@@ -56,7 +55,6 @@
 #include "xla/python/ifrt_proxy/common/ifrt_service.pb.h"
 #include "xla/python/ifrt_proxy/common/types.h"
 #include "xla/python/ifrt_proxy/common/types.pb.h"
-#include "xla/python/ifrt_proxy/common/versions.h"
 #include "xla/status_macros.h"
 #include "xla/tsl/concurrency/ref_count.h"
 #include "xla/tsl/platform/errors.h"
@@ -118,10 +116,6 @@ absl::StatusOr<uint64_t> MakeHostBuffer(
     mem_region = array_mem_region.mem_region();
   } else {
     // DType::kString
-    if (rpc_helper->protocol_version() < 9) {
-      return absl::UnimplementedError(
-          "String arrays are not supported in ifrt-proxy version < 9");
-    }
     tsl::profiler::TraceMe traceme("IfrtProxySerializeStringHostBuffer");
     TF_ASSIGN_OR_RETURN(
         std::shared_ptr<std::string> owned_data,
@@ -146,8 +140,7 @@ absl::StatusOr<uint64_t> MakeHostBuffer(
 
   const uint64_t host_buffer_handle = rpc_helper->NextHandle();
 
-  if (GetGlobalClientFlags()->synchronous_host_buffer_store ||
-      rpc_helper->protocol_version() < 10) {
+  if (GetGlobalClientFlags()->synchronous_host_buffer_store) {
     // Synchronously send data and await.
     TF_RETURN_IF_ERROR(rpc_helper->host_buffer_store()
                            ->Store(host_buffer_handle, mem_region)
@@ -234,8 +227,7 @@ absl::StatusOr<xla::ifrt::ArrayRef> Array::MakeArrayFromHostBuffer(
   }
 
   ArrayHandle arr_handle;
-  if (GetGlobalClientFlags()->synchronous_host_buffer_store ||
-      rpc_helper->protocol_version() < 10) {
+  if (GetGlobalClientFlags()->synchronous_host_buffer_store) {
     TF_ASSIGN_OR_RETURN(
         auto resp, rpc_helper->MakeArrayFromHostBuffer(std::move(req)).Await());
     arr_handle.handle = resp->array_handle();
@@ -258,11 +250,6 @@ Array::MakeArraysFromHostBufferShards(
     absl::Span<xla::ifrt::Client::MakeArraysFromHostBufferShardsSpec> specs,
     xla::ifrt::Client::HostBufferSemantics semantics,
     tsl::RCReference<xla::ifrt::UserContext> user_context) {
-  if (rpc_helper->protocol_version() <
-      protocol_version::kMakeArraysFromHostBufferShards) {
-    return xla::ifrt::ClientMakeArraysFromHostBufferShards(
-        client, specs, semantics, std::move(user_context));
-  }
   // TODO(b/407104769): Handle `user_context`.
 
   absl::InlinedVector<absl::InlinedVector<uint64_t, 1>, 1>
@@ -398,16 +385,8 @@ absl::StatusOr<std::vector<xla::ifrt::ArrayRef>> Array::MakeErrorArrays(
     arr_handles.push_back(ArrayHandle{array_handle});
   }
 
-  if (rpc_helper->protocol_version() < 10) {
-    TF_ASSIGN_OR_RETURN(auto resp,
-                        rpc_helper->MakeErrorArrays(std::move(req)).Await());
-    for (const uint64_t array_handle : resp->array_handles()) {
-      arr_handles.push_back(ArrayHandle{array_handle});
-    }
-  } else {
-    CheckResponseAfterAsyncCall(rpc_helper->MakeErrorArrays(std::move(req)),
-                                arr_handles);
-  }
+  CheckResponseAfterAsyncCall(rpc_helper->MakeErrorArrays(std::move(req)),
+                              arr_handles);
 
   std::vector<xla::ifrt::ArrayRef> arrays;
   arrays.reserve(array_specs.size());
@@ -421,22 +400,7 @@ absl::StatusOr<std::vector<xla::ifrt::ArrayRef>> Array::MakeErrorArrays(
 }
 
 void Array::Destruct(RpcHelper* rpc_helper, ArrayHandle handle) {
-  if (rpc_helper->protocol_version() >= 5) {
-    rpc_helper->Batch(RpcHelper::kDestructArray, handle);
-    return;
-  }
-
-  auto req = std::make_unique<DestructArrayRequest>();
-  req->set_array_handle_deprecated(handle.handle);
-  rpc_helper->DestructArray(std::move(req))
-      .OnReady(
-          [](absl::StatusOr<std::shared_ptr<DestructArrayResponse>> response) {
-            if (!response.ok()) {
-              LOG(WARNING)
-                  << "Server returned an error when asked to destruct array: "
-                  << response.status();
-            }
-          });
+  rpc_helper->Batch(RpcHelper::kDestructArray, handle);
 }
 
 Future<> Array::GetReadyFuture() const {
@@ -469,25 +433,8 @@ Future<> Array::Delete() {
     absl::MutexLock lock(&mu_);
     deleted_ = DeletionState::kDeleted;
   }
-  if (rpc_helper_->protocol_version() >= 5) {
-    rpc_helper_->Batch(RpcHelper::kDeleteArray, handle_);
-    return Future<>(absl::OkStatus());
-  }
-
-  auto req = std::make_unique<DeleteArrayRequest>();
-  req->set_array_handle_deprecated(handle_.handle);
-
-  absl::StatusOr<std::shared_ptr<DeleteArrayResponse>> response =
-      rpc_helper_->DeleteArray(std::move(req)).Await();
-  if (!response.ok()) {
-    return Future<>(response.status());
-  }
-
-  // TODO(b/266635130): So that the caller is not blocked until the server
-  // replies with the deletion's response, from within
-  // `Future(status_handle_promise).OnReady()`, schedule `CheckFuture()` on a
-  // separate thread.
-  return rpc_helper_->CheckFuture((*response)->deletion_future_handle());
+  rpc_helper_->Batch(RpcHelper::kDeleteArray, handle_);
+  return Future<>(absl::OkStatus());
 }
 
 bool Array::IsDeleted() const {
@@ -518,14 +465,13 @@ bool Array::IsDeleted() const {
       deleted_ = DeletionState::kAlive;
     }
     return (*response)->deleted();
-  } else {
-    LOG(ERROR) << "Internal error from proxy server during Array::IsDeleted(): "
-               << response.status();
-    // Return false so that the user likely queries the array with some
-    // method that returns an absl::Status, and ends up with the real
-    // error being returned to them by that method.
-    return false;
   }
+  LOG(ERROR) << "Internal error from proxy server during Array::IsDeleted(): "
+             << response.status();
+  // Return false so that the user likely queries the array with some
+  // method that returns an absl::Status, and ends up with the real
+  // error being returned to them by that method.
+  return false;
 }
 
 absl::StatusOr<xla::ifrt::ArrayRef> Array::AssembleArrayFromSingleDeviceArrays(
@@ -542,13 +488,6 @@ absl::StatusOr<xla::ifrt::ArrayRef> Array::AssembleArrayFromSingleDeviceArrays(
              {"sds_semantics",
               static_cast<int>(single_device_shard_semantics)}});
       });
-  if (single_device_shard_semantics ==
-          SingleDeviceShardSemantics::kAddressableShards &&
-      rpc_helper->protocol_version() < 8) {
-    return absl::UnimplementedError(
-        "SingleDeviceShardSemantics::kAdressableShards is not supported in "
-        "ifrt-proxy version < 8");
-  }
   if (arrays.empty()) {
     return absl::InvalidArgumentError(
         "AssembleArrayFromSingleDeviceArrays() called with empty arrays list");
@@ -575,20 +514,11 @@ absl::StatusOr<xla::ifrt::ArrayRef> Array::AssembleArrayFromSingleDeviceArrays(
   }
 
   ArrayHandle result_handle;
-  if (rpc_helper->protocol_version() <
-      protocol_version::kClientHandlesOptimization2) {
-    TF_ASSIGN_OR_RETURN(
-        std::shared_ptr<AssembleArrayFromSingleDeviceArraysResponse> response,
-        rpc_helper->AssembleArrayFromSingleDeviceArrays(std::move(req))
-            .Await());
-
-  } else {
-    result_handle.handle = rpc_helper->NextHandle();
-    req->set_result_handle(result_handle.handle);
-    CheckResponseAfterAsyncCall(
-        rpc_helper->AssembleArrayFromSingleDeviceArrays(std::move(req)),
-        result_handle);
-  }
+  result_handle.handle = rpc_helper->NextHandle();
+  req->set_result_handle(result_handle.handle);
+  CheckResponseAfterAsyncCall(
+      rpc_helper->AssembleArrayFromSingleDeviceArrays(std::move(req)),
+      result_handle);
 
   // We assume that all shards have the same layout.
   const xla::ifrt::ArrayRef& rcref = arrays[0];
@@ -673,24 +603,14 @@ absl::StatusOr<std::vector<xla::ifrt::ArrayRef>> Array::RemapArrays(
   }
 
   std::vector<ArrayHandle> result_handles;
-  if (rpc_helper->protocol_version() <
-      protocol_version::kClientHandlesOptimization2) {
-    TF_ASSIGN_OR_RETURN(std::shared_ptr<RemapArraysResponse> response,
-                        rpc_helper->RemapArrays(std::move(req)).Await());
-    TF_RET_CHECK(result_handles.size() == plan.output_specs.size());
-    for (auto& handle : response->array_handles()) {
-      result_handles.push_back(ArrayHandle{handle});
-    }
-  } else {
-    for (int i = 0; i < plan.output_specs.size(); ++i) {
-      uint64_t h = rpc_helper->NextHandle();
-      result_handles.push_back(ArrayHandle{h});
-      req->add_result_handles(h);
-    }
-    CheckResponseAfterAsyncCall(rpc_helper->RemapArrays(std::move(req)),
-                                result_handles);
-    TF_RET_CHECK(result_handles.size() == plan.output_specs.size());
+  for (int i = 0; i < plan.output_specs.size(); ++i) {
+    uint64_t h = rpc_helper->NextHandle();
+    result_handles.push_back(ArrayHandle{h});
+    req->add_result_handles(h);
   }
+  CheckResponseAfterAsyncCall(rpc_helper->RemapArrays(std::move(req)),
+                              result_handles);
+  TF_RET_CHECK(result_handles.size() == plan.output_specs.size());
 
   std::vector<xla::ifrt::ArrayRef> result;
   result.reserve(result_handles.size());
@@ -709,13 +629,6 @@ Array::DisassembleIntoSingleDeviceArrays(
     SingleDeviceShardSemantics single_device_shard_semantics) {
   tsl::profiler::TraceMe traceme_ifrt_entrypoint(
       "IfrtProxyEntrypointDisassembleIntoSingleDeviceArrays");
-  if (single_device_shard_semantics ==
-          SingleDeviceShardSemantics::kAddressableShards &&
-      rpc_helper_->protocol_version() < 8) {
-    return absl::UnimplementedError(
-        "SingleDeviceShardSemantics::kAdressableShards is not supported in "
-        "version < 8");
-  }
   auto req = std::make_unique<DisassembleIntoSingleDeviceArraysRequest>();
   TF_ASSIGN_OR_RETURN(ArrayHandle handle, GetHandle(array_copy_semantics));
   req->set_array_handle(handle.handle);
@@ -727,24 +640,14 @@ Array::DisassembleIntoSingleDeviceArrays(
   TF_ASSIGN_OR_RETURN(auto shape_and_shardings, sharding_->Disassemble(shape_));
   result_handles.reserve(shape_and_shardings.size());
 
-  if (rpc_helper_->protocol_version() <
-      protocol_version::kClientHandlesOptimization2) {
-    TF_ASSIGN_OR_RETURN(
-        std::shared_ptr<DisassembleIntoSingleDeviceArraysResponse> response,
-        rpc_helper_->DisassembleIntoSingleDeviceArrays(std::move(req)).Await());
-    for (auto& handle : response->array_handles()) {
-      result_handles.push_back(ArrayHandle{handle});
-    }
-  } else {
-    for (int i = 0; i < shape_and_shardings.size(); ++i) {
-      uint64_t h = rpc_helper_->NextHandle();
-      result_handles.push_back(ArrayHandle{h});
-      req->add_result_handles(h);
-    }
-    CheckResponseAfterAsyncCall(
-        rpc_helper_->DisassembleIntoSingleDeviceArrays(std::move(req)),
-        result_handles);
+  for (int i = 0; i < shape_and_shardings.size(); ++i) {
+    uint64_t h = rpc_helper_->NextHandle();
+    result_handles.push_back(ArrayHandle{h});
+    req->add_result_handles(h);
   }
+  CheckResponseAfterAsyncCall(
+      rpc_helper_->DisassembleIntoSingleDeviceArrays(std::move(req)),
+      result_handles);
 
   CHECK_EQ(result_handles.size(), shape_and_shardings.size())
       << " " << absl::StrJoin(result_handles, ",") << " " << shape_ << " "
@@ -772,18 +675,10 @@ absl::StatusOr<xla::ifrt::ArrayRef> Array::FullyReplicatedShard(
   req->set_copy_semantics(ToArrayCopySemanticsProto(semantics));
 
   ArrayHandle result_handle;
-  if (rpc_helper_->protocol_version() <
-      protocol_version::kClientHandlesOptimization2) {
-    TF_ASSIGN_OR_RETURN(
-        std::shared_ptr<FullyReplicatedShardResponse> response,
-        rpc_helper_->FullyReplicatedShard(std::move(req)).Await());
-    result_handle.handle = response->array_handle();
-  } else {
-    result_handle.handle = rpc_helper_->NextHandle();
-    req->set_result_handle(result_handle.handle);
-    CheckResponseAfterAsyncCall(
-        rpc_helper_->FullyReplicatedShard(std::move(req)), result_handle);
-  }
+  result_handle.handle = rpc_helper_->NextHandle();
+  req->set_result_handle(result_handle.handle);
+  CheckResponseAfterAsyncCall(rpc_helper_->FullyReplicatedShard(std::move(req)),
+                              result_handle);
 
   // We are making the assumption the Array returned by the server corresponds
   // to the first device. Revisit this when IFRT supports: (1) an inexpensive
@@ -804,10 +699,6 @@ Future<> Array::CopyToStringHostBuffer(
     ArrayCopySemantics semantics) {
   tsl::profiler::TraceMe traceme_ifrt_entrypoint(
       "IfrtProxyEntrypointCopyToStringHostBuffer");
-  if (rpc_helper_->protocol_version() < 9) {
-    return Future<>(absl::UnimplementedError(
-        "String arrays are not supported in ifrt-proxy version < 9"));
-  }
   auto req = std::make_unique<CopyToHostBufferRequest>();
   absl::StatusOr<ArrayHandle> handle = GetHandle(semantics);
   if (!handle.ok()) {

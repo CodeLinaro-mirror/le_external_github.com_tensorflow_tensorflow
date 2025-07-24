@@ -22,41 +22,20 @@ namespace proxy {
 
 namespace protocol_version {
 
-// The minimum protocol_version that the current client code understands.
-inline constexpr int kClientMin = 3;
-
-// The minimum protocol_version that the current server code understands.
-inline constexpr int kServerMin = 3;
-
 enum {
-  // Versions kAncient are named and are only referred to by their numbers. See
-  // VERSIONS.md to see the explanation of the numbers.
-  kAncient = 10,
-
-  // kClientHandlesOptimization2 introduces a set of performance optimizations
-  // where the client generates array handles.
-  kClientHandlesOptimization2,
-
-  // kClientHandlesExecutableOptimization introduces a set of performance
-  // optimizations where the client generates array handles for operations
-  // related to LoadedExecutable.
-  kClientHandlesExecutableOptimization,
-
-  // kAssembleArrayFromSingleDeviceArraysWithDType adds a DType argument to
-  // AssembleArrayFromSingleDeviceArrays to support non-addressable arrays.
-  kAssembleArrayFromSingleDeviceArraysWithDType,
-
-  // kMakeArraysFromHostBufferShards adds Client::MakeArraysFromHostBufferShards
-  // support.
-  kMakeArraysFromHostBufferShards,
-
   // kSerDesVersioning users IFRT SerDes versioning for IFRT types.
-  kSerDesVersioning,
+  kSerDesVersioning = 15,
 
   // kSentiel is used to derive kCurrent below. Keep this as the last value of
   // the enum.
   kSentiel,
 };
+
+// The minimum protocol_version that the current client code understands.
+inline constexpr int kClientMin = kSerDesVersioning;
+
+// The minimum protocol_version that the current server code understands.
+inline constexpr int kServerMin = kSerDesVersioning;
 
 // The maximum protocol_version that the current client and server code
 // understand.

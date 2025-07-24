@@ -59,7 +59,6 @@
 #include "xla/python/ifrt_proxy/client/rpc_helper.h"
 #include "xla/python/ifrt_proxy/common/ifrt_service.pb.h"
 #include "xla/python/ifrt_proxy/common/types.h"
-#include "xla/python/ifrt_proxy/common/versions.h"
 #include "xla/python/pjrt_ifrt/pjrt_host_callback.h"
 #include "xla/shape_util.h"
 #include "xla/tsl/concurrency/ref_count.h"
@@ -661,17 +660,14 @@ LoadedExecutable::Execute(absl::Span<xla::ifrt::ArrayRef> args,
     }
   }
 
-  // Starting version 6, the server populates the status future only if it was
-  // explicitly requested via `options.fill_status`.
-  const bool result_needs_exec_status =
-      rpc_helper_->protocol_version() < 6 || options.fill_status;
+  // The server populates the status future only if it was explicitly requested
+  // via `options.fill_status`.
+  const bool result_needs_exec_status = options.fill_status;
 
   // The client generates handles if the protocol version is sufficiently newer,
   // and we've already seen at least one response from an execute (and thus know
   // the number of handles to generate).
   const bool client_generated_handles =
-      (rpc_helper_->protocol_version() >=
-       protocol_version::kClientHandlesExecutableOptimization) &&
       output_spec_cache_->Retrieve().has_value();
 
   xla::ifrt::LoadedExecutable::ExecuteResult result;
