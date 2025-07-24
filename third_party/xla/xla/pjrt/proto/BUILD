@@ -1,4 +1,5 @@
 # copybara:uncomment load("@rules_python//python:proto.bzl", "py_proto_library")
+load("//third_party/protobuf/bazel:cc_proto_library.bzl", "cc_proto_library")
 load(
     "//xla/tsl/platform:build_config.bzl",
     "tf_proto_library",
@@ -50,4 +51,19 @@ tf_proto_library(
     name = "pjrt_partial_program_proto",
     srcs = ["pjrt_partial_program.proto"],
     visibility = ["//visibility:public"],
+)
+
+tf_proto_library(
+    name = "topology_description_proto",
+    srcs = ["topology_description.proto"],
+    compatible_with = ["//buildenv/target:libtpu"],
+    visibility = ["//visibility:public"],
+    deps = ["@com_google_protobuf//:any"],
+)
+
+cc_proto_library(
+    name = "topology_description_cc_proto",
+    compatible_with = ["//buildenv/target:libtpu"],
+    visibility = ["//visibility:public"],
+    deps = [":topology_description_proto"],
 )
