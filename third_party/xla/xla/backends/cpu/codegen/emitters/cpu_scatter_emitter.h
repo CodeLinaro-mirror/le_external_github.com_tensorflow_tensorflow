@@ -40,7 +40,8 @@ namespace cpu {
 class CpuScatterFusion final : public MlirKernelEmitter {
  public:
   explicit CpuScatterFusion(const BufferAssignment& buffer_assignment,
-                            const HloFusionInstruction* fusion);
+                            const HloFusionInstruction* fusion,
+                            mlir::MLIRContext* mlir_context);
 
   absl::StatusOr<MlirKernelDefinition> EmitKernelDefinition() final;
 
@@ -69,6 +70,7 @@ class CpuScatterFusion final : public MlirKernelEmitter {
 
   const BufferAssignment& buffer_assignment_;
   const HloFusionInstruction* fusion_;
+  mlir::MLIRContext* mlir_context_;
 
   int64_t vector_size_;
   int64_t num_threads_;
