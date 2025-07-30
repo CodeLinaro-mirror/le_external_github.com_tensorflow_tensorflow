@@ -21,6 +21,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
+#include "xla/backends/cpu/xnn_gemm_config.h"
 #include "xla/error_spec.h"
 #include "xla/tests/hlo_test_base.h"
 #include "xla/tsl/platform/test.h"
@@ -132,6 +133,8 @@ TEST_P(SameTypeTest, DotAddMultiply) {
     GTEST_SKIP() << "XNNPACK bf16 matmul requires AVX512_BF16 which this CPU "
                     "doesn't have.";
   }
+  // Override XnnGemmConfig.
+  GetXnnGemmConfig().SetTestFilter([](const XnnGemm&) { return true; });
 
   constexpr absl::string_view kModuleStr = R"(
     HloModule dot_add_multiply
@@ -179,6 +182,9 @@ TEST_P(SameTypeTest, DotRhsTransposedAndMultiply) {
     GTEST_SKIP() << "XNNPACK bf16 matmul requires AVX512_BF16 which this CPU "
                     "doesn't have.";
   }
+
+  // Override XnnGemmConfig.
+  GetXnnGemmConfig().SetTestFilter([](const XnnGemm&) { return true; });
 
   constexpr absl::string_view kModuleStr = R"(
     HloModule dot_rhs_transposed_and_multiply
@@ -237,6 +243,9 @@ TEST_P(MixedTypesTest, BatchedDot) {
     GTEST_SKIP() << "XNNPACK bf16 matmul requires AVX512_BF16 which this CPU"
                     "doesn't have.";
   }
+
+  // Override XnnGemmConfig.
+  GetXnnGemmConfig().SetTestFilter([](const XnnGemm&) { return true; });
 
   constexpr absl::string_view kModuleStr = R"(
     HloModule dot_add_multiply
@@ -306,6 +315,9 @@ TEST_F(XnnFusionTest, ConvertF32ToBF16) {
 
 // The following tests don't need to be run with different data types.
 TEST_F(XnnFusionTest, UnsupportedDot) {
+  // Override XnnGemmConfig.
+  GetXnnGemmConfig().SetTestFilter([](const XnnGemm&) { return false; });
+
   constexpr absl::string_view kModuleStr = R"(
     HloModule unsupported_dot
 
@@ -331,6 +343,9 @@ TEST_F(XnnFusionTest, UnsupportedDot) {
 }
 
 TEST_F(XnnFusionTest, UnsupportedBatchDot) {
+  // Override XnnGemmConfig.
+  GetXnnGemmConfig().SetTestFilter([](const XnnGemm&) { return false; });
+
   constexpr absl::string_view kModuleStr = R"(
     HloModule unsupported_dot
 
