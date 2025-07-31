@@ -22,8 +22,8 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/status/statusor.h"
 #include "xla/pjrt/pjrt_client.h"
+#include "xla/service/split_phase_utils.h"
 #include "xla/tests/hlo_runner_agnostic_test_base.h"
-#include "xla/tests/hlo_runner_pjrt_test_utils.h"
 #include "xla/tests/pjrt_client_registry.h"
 
 namespace xla {

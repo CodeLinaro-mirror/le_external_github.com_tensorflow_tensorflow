@@ -286,11 +286,11 @@ cc_library(
     hdrs = ["hlo_pjrt_test_base.h"],
     deps = [
         ":hlo_runner_agnostic_test_base",
-        ":hlo_runner_pjrt_test_utils",
         ":pjrt_client_registry",
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/pjrt:pjrt_client",
+        "//xla/service:split_phase_utils",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status:statusor",
     ],
@@ -3679,19 +3679,6 @@ xla_test(
         "@com_google_googletest//:gtest",
         "@local_tsl//tsl/platform:env",
         "@local_tsl//tsl/platform:path",
-    ],
-)
-
-cc_library(
-    name = "hlo_runner_pjrt_test_utils",
-    testonly = True,
-    srcs = ["hlo_runner_pjrt_test_utils.cc"],
-    hdrs = ["hlo_runner_pjrt_test_utils.h"],
-    deps = [
-        "//xla/pjrt:pjrt_client",
-        "//xla/service:hlo_runner_pjrt",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 

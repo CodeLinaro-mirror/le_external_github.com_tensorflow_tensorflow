@@ -6220,4 +6220,16 @@ xla_cc_test(
     ],
 )
 
+cc_library(
+    name = "split_phase_utils",
+    srcs = ["split_phase_utils.cc"],
+    hdrs = ["split_phase_utils.h"],
+    deps = [
+        ":hlo_runner_pjrt",
+        "//xla/pjrt:pjrt_client",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 exports_files(["xla_aot_compile_test_gpu_target_config.txtpb"])
