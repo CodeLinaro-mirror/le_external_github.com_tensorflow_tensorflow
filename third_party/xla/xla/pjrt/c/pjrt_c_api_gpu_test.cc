@@ -718,6 +718,12 @@ TEST(PjrtCApiGpuAllocatorTest, ValidOptionsParsing) {
     create_arg.client = nullptr;
     create_arg.create_options = c_options.data();
     create_arg.num_options = c_options.size();
+    create_arg.kv_get_callback = nullptr;
+    create_arg.kv_get_user_arg = nullptr;
+    create_arg.kv_try_get_callback = nullptr;
+    create_arg.kv_try_get_user_arg = nullptr;
+    create_arg.kv_put_callback = nullptr;
+    create_arg.kv_put_user_arg = nullptr;
     PJRT_Error* error = api->PJRT_Client_Create(&create_arg);
     EXPECT_EQ(error, nullptr) << error->status.message();
 
@@ -752,6 +758,12 @@ TEST(PjrtCApiGpuAllocatorTest, InvalidAllocatorOptionsParsing) {
   create_arg.client = nullptr;
   create_arg.create_options = c_options.data();
   create_arg.num_options = c_options.size();
+  create_arg.kv_get_callback = nullptr;
+  create_arg.kv_get_user_arg = nullptr;
+  create_arg.kv_try_get_callback = nullptr;
+  create_arg.kv_try_get_user_arg = nullptr;
+  create_arg.kv_put_callback = nullptr;
+  create_arg.kv_put_user_arg = nullptr;
   PJRT_Error* error = api->PJRT_Client_Create(&create_arg);
   EXPECT_NE(error, nullptr);
   EXPECT_THAT(error->status,
@@ -786,6 +798,12 @@ TEST(PjrtCApiPlatformNameTest, AvailablePlatformName) {
   create_arg.client = nullptr;
   create_arg.create_options = c_options.data();
   create_arg.num_options = c_options.size();
+  create_arg.kv_get_callback = nullptr;
+  create_arg.kv_get_user_arg = nullptr;
+  create_arg.kv_try_get_callback = nullptr;
+  create_arg.kv_try_get_user_arg = nullptr;
+  create_arg.kv_put_callback = nullptr;
+  create_arg.kv_put_user_arg = nullptr;
   PJRT_Error* error = api->PJRT_Client_Create(&create_arg);
   EXPECT_EQ(error, nullptr) << error->status.message();
 
@@ -825,6 +843,12 @@ TEST(PjrtCApiPlatformNameTest, UnavailablePlatformName) {
   create_arg.client = nullptr;
   create_arg.create_options = c_options.data();
   create_arg.num_options = c_options.size();
+  create_arg.kv_get_callback = nullptr;
+  create_arg.kv_get_user_arg = nullptr;
+  create_arg.kv_try_get_callback = nullptr;
+  create_arg.kv_try_get_user_arg = nullptr;
+  create_arg.kv_put_callback = nullptr;
+  create_arg.kv_put_user_arg = nullptr;
   PJRT_Error* error = api->PJRT_Client_Create(&create_arg);
   EXPECT_NE(error, nullptr);
   EXPECT_THAT(error->status,
@@ -858,6 +882,12 @@ TEST(PjrtCApiGpuExtensionTest,
   create_arg.client = nullptr;
   create_arg.create_options = c_options.data();
   create_arg.num_options = c_options.size();
+  create_arg.kv_get_callback = nullptr;
+  create_arg.kv_get_user_arg = nullptr;
+  create_arg.kv_try_get_callback = nullptr;
+  create_arg.kv_try_get_user_arg = nullptr;
+  create_arg.kv_put_callback = nullptr;
+  create_arg.kv_put_user_arg = nullptr;
   PJRT_Error* error = api->PJRT_Client_Create(&create_arg);
   EXPECT_EQ(error, nullptr) << error->status.message();
 
@@ -890,6 +920,13 @@ TEST(PjrtCApiGpuExtensionTest,
   create_arg.client = nullptr;
   create_arg.create_options = c_options.data();
   create_arg.num_options = c_options.size();
+  create_arg.kv_get_callback = nullptr;
+  create_arg.kv_get_user_arg = nullptr;
+  create_arg.kv_try_get_callback = nullptr;
+  create_arg.kv_try_get_user_arg = nullptr;
+  create_arg.kv_put_callback = nullptr;
+  create_arg.kv_put_user_arg = nullptr;
+
   PJRT_Error* error = api->PJRT_Client_Create(&create_arg);
   EXPECT_EQ(error, nullptr) << error->status.message();
 
