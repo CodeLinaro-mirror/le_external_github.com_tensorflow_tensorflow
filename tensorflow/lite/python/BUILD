@@ -2,7 +2,7 @@ load("@flatbuffers//:build_defs.bzl", "flatbuffer_py_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
 load("//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library", "py_strict_test")
-load("//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "pywrap_binaries", "pywrap_library")
+load("//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "pywrap_binaries", "pywrap_library", "tf_python_pybind_extension")
 load("//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 load("//tensorflow/lite:special_rules.bzl", "internal_visibility_allowlist")
 
@@ -648,6 +648,15 @@ py_strict_test(
     ],
 )
 
+tf_python_pybind_extension(
+    name = "_dummy_pybind",
+    srcs = ["dummy_pybind.cc"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "@pybind11",
+    ],
+)
+
 # Use pywrap_library to avoid duplicate registration of pybind11 modules.
 # A great example on how to use pywrap_library is
 # https://github.com/vam-google/symbol-locations/blob/main/pybind/BUILD
@@ -667,7 +676,12 @@ py_strict_library(
         "//tensorflow/lite/testing:_pywrap_string_util",
         "//tensorflow/lite/tools/optimize/python:_pywrap_modify_model_interface",
         "//tensorflow/lite/tools/optimize/sparsity:format_converter_wrapper_pybind11",
-    ],
+    ] + select({
+        "//conditions:default": [":_dummy_pybind"],
+        "//tensorflow:disable_tf_lite_py": [
+            "//tensorflow/compiler/mlir/lite/python:_pywrap_converter_api",
+        ],
+    }),
 )
 
 pywrap_library(
@@ -682,7 +696,7 @@ pywrap_library(
             "//conditions:default": "pywrap_tflite_common.lds",
         }),
     },
-    pywrap_count = 8,
+    pywrap_count = 9,
     visibility = ["//visibility:public"],
     deps = [
         ":tflite_pywrap_deps",
