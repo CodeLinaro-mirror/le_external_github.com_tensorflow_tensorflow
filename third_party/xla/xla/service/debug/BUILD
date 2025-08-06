@@ -41,3 +41,31 @@ xla_cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "unstable_reduction_detector",
+    srcs = ["unstable_reduction_detector.cc"],
+    hdrs = ["unstable_reduction_detector.h"],
+    deps = [
+        ":unstable_reduction_finder",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/pass:hlo_pass",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+xla_cc_test(
+    name = "unstable_reduction_detector_test",
+    srcs = ["unstable_reduction_detector_test.cc"],
+    deps = [
+        ":unstable_reduction_detector",
+        "//xla/hlo/parser:hlo_parser",
+        "//xla/tests:hlo_runner_agnostic_test_base",
+        "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
