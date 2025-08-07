@@ -50,7 +50,7 @@ onednn_graph_cc_library(
     deps = [
         ":onednn_deps",
         ":onednn_fusion",
-        ":onednn_fusion_graph",
+        ":onednn_support",
         "//xla:shape_util",
         "//xla:util",
         "//xla:xla_data_proto_cc",
@@ -67,19 +67,16 @@ onednn_graph_cc_library(
 )
 
 onednn_graph_cc_library(
-    name = "onednn_fusion_graph",
-    srcs = [],
-    hdrs = ["onednn_fusion_graph.h"],
+    name = "onednn_fusion",
+    hdrs = ["onednn_fusion.h"],
     compatible_with = get_compatible_with_portable(),
-    deps = [
-        ":onednn_deps",
-    ],
+    deps = [":onednn_deps"],
 )
 
 cc_library(
-    name = "onednn_fusion",
-    srcs = ["onednn_fusion.cc"],
-    hdrs = ["onednn_fusion.h"],
+    name = "onednn_support",
+    srcs = ["onednn_support.cc"],
+    hdrs = ["onednn_support.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
         "//xla:shape_util",
