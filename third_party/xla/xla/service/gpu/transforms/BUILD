@@ -2431,6 +2431,26 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "scaled_dot_rewriter",
+    srcs = ["scaled_dot_rewriter.cc"],
+    hdrs = ["scaled_dot_rewriter.h"],
+    deps = [
+        "//xla:shape_util",
+        "//xla:status_macros",
+        "//xla:util",
+        "//xla:xla_data_proto_cc",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/pass:hlo_pass",
+        "//xla/tsl/platform:errors",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@local_tsl//tsl/platform:errors",
+    ],
+)
+
 xla_cc_test(
     name = "scalar_constant_sinker_test",
     srcs = ["scalar_constant_sinker_test.cc"],
@@ -3358,6 +3378,23 @@ xla_test(
         "//xla/tsl/platform:status",
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+xla_test(
+    name = "scaled_dot_rewriter_test",
+    srcs = ["scaled_dot_rewriter_test.cc"],
+    deps = [
+        ":scaled_dot_rewriter",
+        "//xla:error_spec",
+        "//xla:xla_data_proto_cc",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/parser:hlo_parser",
+        "//xla/tests:hlo_test_base",
+        "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
