@@ -28,6 +28,7 @@ limitations under the License.
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_replace.h"
@@ -1373,9 +1374,8 @@ TEST_F(CollectiveOpsTestE2E, HostMemoryOffloadingWithDonation) {
       << "Expected buffer assignment error but compilation succeeded";
 
   std::string error_message = executable_or.status().ToString();
-  EXPECT_TRUE(error_message.find("Buffer color") != std::string::npos &&
-              error_message.find("does not match allocation color") !=
-                  std::string::npos)
+  EXPECT_TRUE(absl::StrContains(
+      error_message, "Not all HloValues in the HloBuffer have the same color"))
       << "Got error but not the expected buffer color mismatch: "
       << error_message;
 }
