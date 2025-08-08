@@ -145,6 +145,9 @@ limitations under the License.
 #include "rocm/rocm_config.h"
 #endif
 
+// Required to build successfully with Mingw
+#undef CreateEvent
+
 namespace xla {
 namespace {
 
