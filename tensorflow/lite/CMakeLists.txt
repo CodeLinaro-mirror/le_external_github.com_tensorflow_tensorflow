@@ -33,6 +33,16 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
+find_package(PkgConfig)
+pkg_check_modules(OPENCL opencl)
+
+if(OPENCL_FOUND)
+  string(REGEX MATCH "^[0-9]+" OPENCL_VERSION_MAJOR ${OPENCL_VERSION})
+  set(CL_LIB_NAME "libOpenCL.so.${OPENCL_VERSION_MAJOR}")
+else()
+  set(CL_LIB_NAME "libOpenCL.so")
+endif()
+
 #Compile time Flags
 if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
   add_definitions(-DTFLITE_PROFILING_ENABLED)
@@ -682,6 +692,10 @@ target_link_libraries(tensorflow-lite
 if (NOT BUILD_SHARED_LIBS)
   list(APPEND TFLITE_TARGET_PUBLIC_OPTIONS "-DTFL_STATIC_LIBRARY_BUILD")
 endif()
+
+target_compile_definitions(tensorflow-lite
+  PRIVATE CL_LIB_NAME=\"${CL_LIB_NAME}\"
+)
 
 target_compile_options(tensorflow-lite
   PUBLIC ${TFLITE_TARGET_PUBLIC_OPTIONS}

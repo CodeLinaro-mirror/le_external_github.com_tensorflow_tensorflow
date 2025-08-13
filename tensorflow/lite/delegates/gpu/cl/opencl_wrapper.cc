@@ -130,7 +130,11 @@ absl::Status LoadOpenCL() {
   static const char* kClLibName =
       "/System/Library/Frameworks/OpenCL.framework/OpenCL";
 #else
+#ifndef CL_LIB_NAME
   static const char* kClLibName = "libOpenCL.so";
+#else
+  static const char* kClLibName = CL_LIB_NAME;
+#endif
 #endif
 #ifdef __ANDROID__
   libopencl = AndroidDlopenSphalLibrary(kClLibName, RTLD_NOW | RTLD_LOCAL);
