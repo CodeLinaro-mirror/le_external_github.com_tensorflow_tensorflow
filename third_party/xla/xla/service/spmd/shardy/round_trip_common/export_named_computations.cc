@@ -108,23 +108,8 @@ StringAttr createFuncOpOrGetFromCache(
     ManualAxesAttr manualAxesAttr,
     std::optional<TensorShardingPerValueAttr> inShardings,
     std::optional<TensorShardingPerValueAttr> outShardings) {
-  // TODO(enver): Support deduplicate also for ones with manual axes.
-  if (manualAxesAttr) {
-    return createFuncOp(namedComputationOp, rewriter, symbolTable, inShardings,
-                        outShardings, manualAxesAttr);
-  }
-  auto key = std::make_tuple(namedComputationOp.getName(),
-                             namedComputationOp.getInShardings().value_or(
-                                 TensorShardingPerValueAttr()),
-                             namedComputationOp.getOutShardings().value_or(
-                                 TensorShardingPerValueAttr()));
-  if (auto it = funcCache.find(key); it != funcCache.end()) {
-    return it->second;
-  }
-  StringAttr funcSymName = createFuncOp(namedComputationOp, rewriter,
-                                        symbolTable, inShardings, outShardings);
-  funcCache.try_emplace(key, funcSymName);
-  return funcSymName;
+  return createFuncOp(namedComputationOp, rewriter, symbolTable, inShardings,
+                      outShardings, manualAxesAttr);
 }
 
 // Converts a `NamedComputationOp` into a `CallOp`.
