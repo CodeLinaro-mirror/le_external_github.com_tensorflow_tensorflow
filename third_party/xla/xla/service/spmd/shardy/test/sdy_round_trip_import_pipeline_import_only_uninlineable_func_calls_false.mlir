@@ -1,4 +1,4 @@
-// RUN: sdy_opt %s --split-input-file -xla-sdy-import-constants -xla-sdy-round-trip-import-pipeline='import-only-uninlineable-func-calls=false' 2>&1 | FileCheck %s
+// RUN: sdy_opt %s --split-input-file -xla-sdy-round-trip-import-pipeline='import-only-uninlineable-func-calls=false' 2>&1 | FileCheck %s
 
 // CHECK-LABEL: module @multiple_func_result_shardings
 module @multiple_func_result_shardings attributes {mhlo.frontend_attributes = {xla.sdy.meshes =
