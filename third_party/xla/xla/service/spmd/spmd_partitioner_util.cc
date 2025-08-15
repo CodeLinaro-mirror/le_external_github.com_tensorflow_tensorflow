@@ -1177,6 +1177,11 @@ std::optional<HloInstruction*> ExchangeHalo(
     auto left_halo =
         collective_ops_creator.create_cross_partition_collective_permute(
             b, source_halo_slice, source_target_pairs, (*next_channel_id)++);
+    if (source_target_pairs.empty()) {
+      // TODO(b/436714523): evaluate if the left halo could be optimized.
+      VLOG(1) << "ExchangeHalo:left halo added invalid collective-permute"
+              << left_halo->ToString();
+    }
     concat_pieces.push_back(left_halo);
   }
 
@@ -1237,6 +1242,11 @@ std::optional<HloInstruction*> ExchangeHalo(
           HloInstruction::CreateSlice(halo_shape, hlo, halo_start_indices,
                                       halo_limit_indices, halo_slice_strides));
     }
+    if (source_target_pairs.empty()) {
+      // depends on the external padding in ExchangeHaloAndGetValidData to
+      // fill the gap.
+      break;
+    }
     auto right_halo =
         collective_ops_creator.create_cross_partition_collective_permute(
             b, source_halo_slice, source_target_pairs, (*next_channel_id)++);
@@ -1254,6 +1264,7 @@ std::optional<HloInstruction*> ExchangeHalo(
     concat_shape.set_dimensions(dim, concat_dim_size);
     concat = b->AddInstruction(
         HloInstruction::CreateConcatenate(concat_shape, concat_pieces, dim));
+    VLOG(2) << "ExchangeHalo: adding concat: " << concat->ToString();
   }
 
   return concat;

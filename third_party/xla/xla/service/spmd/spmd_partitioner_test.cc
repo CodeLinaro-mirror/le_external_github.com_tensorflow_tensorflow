@@ -2560,6 +2560,33 @@ TEST_P(SpmdPartitioningTest, LargeEdgePadAlongCrossPartitionDimension) {
   EXPECT_THAT(root, op::DynamicSlice(op::Pad(all_reduce, _), _, _));
 }
 
+TEST_P(SpmdPartitioningTest, LargePadOnSliceHaloExchange) {
+  const char* const hlo_string = R"(
+  HloModule module
+
+  ENTRY main() -> f64[3056,11] {
+        %constant.946 = f64[] constant(0)
+        %subtract.1055 = f64[3056,12272]{1,0} parameter(0), sharding={devices=[2,2]<=[2,2]T(1,0)}
+        %slice.1057 = f64[3056,1]{1,0} slice(%subtract.1055), slice={[0:3056], [12271:12272]}, sharding={devices=[2,2]<=[2,2]T(1,0)}
+        ROOT %pad.1059 = f64[3056,11]{1,0} pad(%slice.1057, %constant.946), padding=0_0x0_10, sharding={devices=[2,2]<=[2,2]T(1,0)}
+      }
+  )";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          PartitionComputation(hlo_string, /*num_devices=*/4));
+  VLOG(1) << module->ToString();
+  auto slice = op::Slice(op::Parameter(0));
+  auto cp0 = op::CollectivePermute(slice);
+  auto copy_cp0 = op::Copy(cp0);
+  auto cp1 = op::CollectivePermute(copy_cp0);
+  auto concatenate = op::Concatenate(copy_cp0, cp1);
+  auto pad = op::Pad(concatenate, op::Constant());
+  auto dynamic_slice = op::DynamicSlice(pad, _, _);
+  EXPECT_THAT(
+      module->entry_computation()->root_instruction(),
+      AllOf(op::Shape("f64[1528,6]"),
+            op::Select(op::Compare(), dynamic_slice, op::Broadcast(_))));
+}
+
 TEST_P(SpmdPartitioningTest, PadAlongPartitionedDimensionWithInteriorPadding) {
   absl::string_view hlo_string = R"(
 HloModule module
