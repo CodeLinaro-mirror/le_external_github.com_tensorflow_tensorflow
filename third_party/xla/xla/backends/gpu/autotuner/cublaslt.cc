@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "xla/backends/gpu/autotuner/cublaslt.h"
 
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -26,16 +27,15 @@ limitations under the License.
 #include "xla/backends/autotuner/codegen_backend.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/service/compiler.h"
-#include "xla/service/gpu/autotuning/redzone_buffers.h"
 #include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/gpu/cublas_cudnn.h"
 #include "xla/service/gpu/matmul_utils.h"
+#include "xla/shape.h"
+#include "xla/shape_util.h"
 #include "xla/stream_executor/blas.h"
 #include "xla/stream_executor/device_description.h"
-#include "xla/stream_executor/device_memory.h"
-#include "xla/stream_executor/device_memory_allocator.h"
 #include "xla/stream_executor/gpu/gpu_blas_lt.h"
-#include "xla/stream_executor/stream_executor.h"
+#include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor_memory_allocator.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
@@ -109,20 +109,18 @@ CublasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
       std::unique_ptr<BlasLt::MatmulPlan> plan,
       se::gpu::BlasLt::GetMatmulPlan(stream, gemm_config, epilogue));
 
-  TF_ASSIGN_OR_RETURN(RedzoneBuffers rz_buffers,
-                      RedzoneBuffers::FromInstruction(
-                          instr, allocator.get(), stream,
-                          RedzoneBuffers::kAllInputsAllOutputs, true, true,
-                          instr.GetModule()
-                              ->config()
-                              .debug_options()
-                              .xla_gpu_redzone_padding_bytes()));
-  se::DeviceMemoryBase workspace_buffer =
-      rz_buffers.output_buffers().at(instr.shape().tuple_shapes().size() - 1);
+  const Shape& output_shape = instr.shape();
+  if (!output_shape.IsTuple() || output_shape.tuple_shapes().empty()) {
+    return Internal(
+        "Invalid shape for CublasLt matmul: output is not a non-empty tuple.");
+  }
+  // The last element of the output tuple is the workspace.
+  const int64_t workspace_size =
+      ShapeUtil::ByteSizeOf(output_shape.tuple_shapes().back());
 
-  TF_ASSIGN_OR_RETURN(std::vector<BlasLt::MatmulAlgorithm> algorithms,
-                      plan->GetAlgorithms(stream, GemmConfig::kNumAlgorithms,
-                                          workspace_buffer.size()));
+  TF_ASSIGN_OR_RETURN(
+      std::vector<BlasLt::MatmulAlgorithm> algorithms,
+      plan->GetAlgorithms(stream, GemmConfig::kNumAlgorithms, workspace_size));
   int num_algorithms = algorithms.size();
   std::vector<std::unique_ptr<BackendConfig>> configs;
   configs.reserve(num_algorithms);
