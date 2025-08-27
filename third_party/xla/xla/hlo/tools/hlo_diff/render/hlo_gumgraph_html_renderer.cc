@@ -41,6 +41,7 @@
 #include "xla/hlo/tools/hlo_diff/render/graph_url_generator.h"
 #include "xla/hlo/tools/hlo_diff/render/hlo_gumgraph_renderer_util.h"
 #include "xla/hlo/tools/hlo_diff/render/op_metric_getter.h"
+#include "xla/hlo/tools/hlo_diff/utils/text_diff.h"
 #include "xla/printer.h"
 #include "xla/shape_util.h"
 #include "tsl/platform/fingerprint.h"
@@ -236,6 +237,9 @@ std::string PrintCss() {
     }
     span.yellow-highlight {
       background-color: #feefc3;
+    }
+    span.grey-highlight {
+      background-color: #dddddd;
     }
     span.temp-highlight {
       background-color: #a8c7fa;
@@ -625,6 +629,8 @@ std::string PrintTextbox(absl::string_view title, absl::string_view content,
 struct Attributes {
   std::string highlight;
   std::string diffid;
+  const HloInstruction* mapped_instruction;
+  bool is_left_node;
 };
 
 // Generate span attributes for all instructions given diff result.
@@ -632,26 +638,34 @@ absl::flat_hash_map<const HloInstruction*, Attributes> GenerateSpanAttributes(
     const DiffResult& diff_result) {
   absl::flat_hash_map<const HloInstruction*, Attributes> span_attributes;
   for (auto& instruction : diff_result.left_module_unmatched_instructions) {
-    span_attributes[instruction] = {"red-highlight"};
+    span_attributes[instruction] = {"red-highlight", /*diffid=*/"",
+                                    /*mapped_instruction=*/nullptr,
+                                    /*is_left_node=*/true};
   }
   for (auto& instruction : diff_result.right_module_unmatched_instructions) {
-    span_attributes[instruction] = {"green-highlight"};
+    span_attributes[instruction] = {"green-highlight", /*diffid=*/"",
+                                    /*mapped_instruction=*/nullptr,
+                                    /*is_left_node=*/false};
   }
   for (const auto& [l_instruction, r_instruction] :
        diff_result.changed_instructions) {
     span_attributes[l_instruction] = {
         "yellow-highlight",
-        absl::StrCat(l_instruction->name(), "::", r_instruction->name())};
+        absl::StrCat(l_instruction->name(), "::", r_instruction->name()),
+        r_instruction, /*is_left_node=*/true};
     span_attributes[r_instruction] = {
         "yellow-highlight",
-        absl::StrCat(l_instruction->name(), "::", r_instruction->name())};
+        absl::StrCat(l_instruction->name(), "::", r_instruction->name()),
+        l_instruction, /*is_left_node=*/false};
   }
   for (const auto& [l_instruction, r_instruction] :
        diff_result.unchanged_instructions) {
     span_attributes[l_instruction] = {
-        "", absl::StrCat(l_instruction->name(), "::", r_instruction->name())};
+        "", absl::StrCat(l_instruction->name(), "::", r_instruction->name()),
+        r_instruction, /*is_left_node=*/true};
     span_attributes[r_instruction] = {
-        "", absl::StrCat(l_instruction->name(), "::", r_instruction->name())};
+        "", absl::StrCat(l_instruction->name(), "::", r_instruction->name()),
+        l_instruction, /*is_left_node=*/false};
   }
   return span_attributes;
 };
@@ -709,8 +723,54 @@ std::string PrintHloComputationToHtml(
       if (instruction == comp->root_instruction()) {
         printer.Append("ROOT ");
       }
-      instruction->PrintWithCanonicalNameMap(
-          &printer, instruction_print_options, &name_map);
+      // instruction->PrintWithCanonicalNameMap(
+      //     &printer, instruction_print_options, &name_map);
+      if (it == span_attributes.end() ||
+          it->second.mapped_instruction == nullptr) {
+        instruction->PrintWithCanonicalNameMap(
+            &printer, instruction_print_options, &name_map);
+      } else {
+        // Instruction is part of a changed pair. Show character-level diff.
+        const HloInstruction* mapped_instruction =
+            it->second.mapped_instruction;
+        bool is_left_node = it->second.is_left_node;
+
+        StringPrinter current_printer, mapped_printer;
+        instruction->PrintWithCanonicalNameMap(
+            &current_printer, instruction_print_options, &name_map);
+        mapped_instruction->PrintWithCanonicalNameMap(
+            &mapped_printer, instruction_print_options, &name_map);
+
+        std::string current_str = std::move(current_printer).ToString();
+        std::string mapped_str = std::move(mapped_printer).ToString();
+
+        std::vector<TextDiffChunk> diff_chunks;
+        if (is_left_node) {
+          // Left side: diff current (left) vs mapped (right).
+          diff_chunks = ComputeTextDiff(current_str, mapped_str);
+        } else {
+          // Right side: diff mapped (left) vs current (right).
+          diff_chunks = ComputeTextDiff(mapped_str, current_str);
+        }
+
+        for (const auto& chunk : diff_chunks) {
+          if (chunk.type == TextDiffType::kUnchanged) {
+            printer.Append(EscapeStringForHtmlAttribute(chunk.text));
+          } else if (is_left_node && chunk.type == TextDiffType::kRemoved) {
+            // On the left side, highlight text REMOVED from left compared to
+            // right.
+            printer.Append("<span class=\"grey-highlight\">");
+            printer.Append(EscapeStringForHtmlAttribute(chunk.text));
+            printer.Append("</span>");
+          } else if (!is_left_node && chunk.type == TextDiffType::kAdded) {
+            // On the right side, highlight text ADDED to right compared to
+            // left.
+            printer.Append("<span class=\"grey-highlight\">");
+            printer.Append(EscapeStringForHtmlAttribute(chunk.text));
+            printer.Append("</span>");
+          }
+        }
+      }
       printer.Append("</span>");
     }
   }
