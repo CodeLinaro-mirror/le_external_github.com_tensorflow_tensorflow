@@ -13,6 +13,7 @@ load(
 )
 load("@local_xla//third_party/py:python_wheel.bzl", "collect_data_files", "transitive_py_deps")
 load("@local_xla//xla/tsl/mkl:build_defs.bzl", "if_enable_mkl", "if_mkl", "if_mkl_ml")
+load("@nvidia_wheel_versions//:versions.bzl", "NVIDIA_WHEEL_VERSIONS")
 load("//tensorflow:tensorflow.bzl", "if_wheel_dependency", "if_with_tpu_support", "transitive_hdrs")
 load("//tensorflow:tf_version.bzl", "TF_SEMANTIC_VERSION_SUFFIX", "TF_VERSION")
 load(
@@ -268,15 +269,24 @@ transitive_py_deps(
     deps = COMMON_PIP_DEPS,
 )
 
+py_binary(
+    name = "modify_setup_py_binary",
+    srcs = ["modify_setup_py.py"],
+    main = "modify_setup_py.py",
+)
+
 genrule(
     name = "setup_py",
     srcs = ["setup.py.tpl"],
     outs = ["setup.py"],
-    cmd = """sed -E "s/_VERSION = '0.0.0'/_VERSION = '{wheel_version}{wheel_version_suffix}'/" \
-$(location setup.py.tpl) > $@;""".format(
-        wheel_version = TF_VERSION,
-        wheel_version_suffix = TF_SEMANTIC_VERSION_SUFFIX,
-    ),
+    cmd = """
+      $(location :modify_setup_py_binary) \\
+          --template_file $(location setup.py.tpl) \\
+          --output_file $(OUTS) \\
+          --nvidia_wheel_versions_data $(NVIDIA_WHEEL_VERSIONS) \\
+          --tf_version "$(TF_VERSION)$(TF_SEMANTIC_VERSION_SUFFIX)"
+    """,
+    tools = [":modify_setup_py_binary"],
 )
 
 py_binary(
@@ -435,6 +445,7 @@ py_import(
     wheel_deps = if_cuda([
         "@pypi_nvidia_cublas_cu12//:pkg",
         "@pypi_nvidia_cuda_cupti_cu12//:pkg",
+        "@pypi_nvidia_cuda_nvcc_cu12//:pkg",
         "@pypi_nvidia_cuda_nvrtc_cu12//:pkg",
         "@pypi_nvidia_cuda_runtime_cu12//:pkg",
         "@pypi_nvidia_cudnn_cu12//:pkg",

@@ -54,6 +54,19 @@ from setuptools.dist import Distribution
 # result for pip.
 _VERSION = '0.0.0'
 
+nvidia_cublas_version = ''  # placeholder
+nvidia_cuda_cupti_version = ''  # placeholder
+nvidia_cuda_nvcc_version = ''  # placeholder
+nvidia_cuda_runtime_version = ''  # placeholder
+nvidia_cudnn_version = ''  # placeholder
+nvidia_cufft_version = ''  # placeholder
+nvidia_cusolver_version = ''  # placeholder
+nvidia_cusparse_version = ''  # placeholder
+nvidia_nccl_version = ''  # placeholder
+nvidia_nvjitlink_version = ''  # placeholder
+nvidia_cuda_nvrtc_version = ''  # placeholder
+nvidia_nvshmem_version = ''  # placeholder
+
 # We use the same setup.py for all tensorflow_* packages and for the nightly
 # equivalents (tf_nightly_*). The package is controlled from the argument line
 # when building the pip package.
@@ -145,18 +158,18 @@ if collaborator_build:
 EXTRA_PACKAGES = {
     'and-cuda': [
         # TODO(nluehr): set nvidia-* versions based on build components.
-        'nvidia-cublas-cu12 >= 12.5.3.2, < 13.0',
-        'nvidia-cuda-cupti-cu12 >= 12.5.82, < 13.0',
-        'nvidia-cuda-nvcc-cu12 >= 12.5.82, < 13.0',
-        'nvidia-cuda-nvrtc-cu12 >= 12.5.82, < 13.0',
-        'nvidia-cuda-runtime-cu12 >= 12.5.82, < 13.0',
-        'nvidia-cudnn-cu12 >= 9.3.0.75, < 10.0',
-        'nvidia-cufft-cu12 >= 11.2.3.61, < 12.0',
-        'nvidia-curand-cu12 >= 10.3.6.82, < 11.0',
-        'nvidia-cusolver-cu12 >= 11.6.3.83, < 12.0',
-        'nvidia-cusparse-cu12 >= 12.5.1.3, < 13.0',
-        'nvidia-nccl-cu12 >= 2.27.7, < 3.0',
-        'nvidia-nvjitlink-cu12 >= 12.5.82, < 13.0',
+        f'nvidia-cublas-cu12{nvidia_cublas_version}',
+        f'nvidia-cuda-cupti-cu12{nvidia_cuda_cupti_version}',
+        f'nvidia-cuda-nvcc-cu12{nvidia_cuda_nvcc_version}',
+        f'nvidia-cuda-nvrtc-cu12{nvidia_cuda_nvrtc_version}',
+        f'nvidia-cuda-runtime-cu12{nvidia_cuda_runtime_version}',
+        f'nvidia-cudnn-cu12{nvidia_cudnn_version}',
+        f'nvidia-cufft-cu12{nvidia_cufft_version}',
+        f'nvidia-curand-cu12{nvidia_curand_version}',
+        f'nvidia-cusolver-cu12{nvidia_cusolver_version}',
+        f'nvidia-cusparse-cu12{nvidia_cusparse_version}',
+        f'nvidia-nccl-cu12{nvidia_nccl_version}',
+        f'nvidia-nvjitlink-cu12{nvidia_nvjitlink_version}',
     ],
     'gcs-filesystem': [
         ('tensorflow-io-gcs-filesystem>=0.23.1; '
