@@ -19,9 +19,9 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/tests/hlo_test_base.h"
+#include "xla/tsl/lib/core/status_test_util.h"
+#include "xla/tsl/platform/errors.h"
 #include "xla/xla_data.pb.h"
-#include "tsl/platform/errors.h"
-#include "tsl/platform/status_matchers.h"
 
 namespace xla {
 namespace gpu {
@@ -58,6 +58,13 @@ TEST_F(HloOpProfilerTest, UnsupportedCombinationsDoNotCrash) {
   HloOpProfiler profiler(test_runner_as_hlo_runner());
   EXPECT_THAT(profiler.MeasureClockCyclesPerOp(HloOpcode::kCbrt, S8),
               absl_testing::StatusIs(tsl::error::INVALID_ARGUMENT));
+}
+
+TEST_F(HloOpProfilerTest, AllSupportedCombinationsAreMeasurable) {
+  HloOpProfiler profiler(test_runner_as_hlo_runner());
+  for (const HloOpcode op : HloOpProfiler::AllSupportedOps()) {
+    TF_EXPECT_OK(profiler.MeasureClockCyclesPerOp(op, S32));
+  }
 }
 
 }  // namespace
