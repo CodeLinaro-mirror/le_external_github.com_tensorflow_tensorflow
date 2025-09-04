@@ -122,8 +122,8 @@ class ManualComputationPattern : public OpConversionPattern<CallOp> {
                << kGlobalToLocalShapeCallTargetName << " CustomCallOp";
       }
       globalToLocalShape = (*customCallResIt).getDefiningOp<CustomCallOp>();
-      CHECK(globalToLocalShape.getCallTargetName() ==
-            kGlobalToLocalShapeCallTargetName);
+      CHECK_EQ(globalToLocalShape.getCallTargetName(),
+               kGlobalToLocalShapeCallTargetName);
       operands = globalToLocalShape->getOperands();
     }
     mlir::TypeRange resultTypes = callOp->getResultTypes();
@@ -140,8 +140,8 @@ class ManualComputationPattern : public OpConversionPattern<CallOp> {
                << callOp.getCalleeAttr() << " to be a "
                << kLocalToGlobalShapeCallTargetName << " CustomCallOp";
       }
-      CHECK(localToGlobalShape.getCallTargetName() ==
-            kLocalToGlobalShapeCallTargetName);
+      CHECK_EQ(localToGlobalShape.getCallTargetName(),
+               kLocalToGlobalShapeCallTargetName);
       resultTypes = localToGlobalShape->getResultTypes();
     }
 
