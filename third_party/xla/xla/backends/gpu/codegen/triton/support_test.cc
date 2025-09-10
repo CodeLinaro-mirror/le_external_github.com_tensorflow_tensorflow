@@ -76,8 +76,6 @@ bool DoesOpSupportType(HloOpcode opcode, PrimitiveType type) {
     case HloOpcode::kXor:
     case HloOpcode::kNot:
       return type == PRED || pu::IsIntegralType(type);
-    case HloOpcode::kAcosh:
-      return pu::IsFloatingPointType(type);
     case HloOpcode::kAtan2:
     case HloOpcode::kCos:
     case HloOpcode::kExp:
@@ -95,6 +93,8 @@ bool DoesOpSupportType(HloOpcode opcode, PrimitiveType type) {
     case HloOpcode::kCholesky:
     case HloOpcode::kTriangularSolve:
       return pu::IsFloatingPointType(type) || pu::IsComplexType(type);
+    case HloOpcode::kAcos:
+    case HloOpcode::kAcosh:
     case HloOpcode::kCbrt:
     case HloOpcode::kErf:
     case HloOpcode::kFloor:

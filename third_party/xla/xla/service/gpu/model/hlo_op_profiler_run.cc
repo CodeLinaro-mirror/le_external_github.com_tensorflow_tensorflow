@@ -89,6 +89,7 @@ int RunProfiler(int argc, char** argv) {
   };
   const std::vector<HloOpcode> ops = {
       // Unary
+      HloOpcode::kAcos,
       HloOpcode::kAcosh,
       HloOpcode::kCbrt,
       HloOpcode::kCos,
