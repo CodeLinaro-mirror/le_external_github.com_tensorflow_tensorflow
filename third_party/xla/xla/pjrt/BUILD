@@ -733,6 +733,7 @@ cc_library(
     hdrs = ["mlir_to_hlo.h"],
     visibility = internal_visibility([":friends"]),
     deps = [
+        "//util/symbolize",
         "//xla:util",
         "//xla/client:executable_build_options",
         "//xla/hlo/builder:xla_computation",
