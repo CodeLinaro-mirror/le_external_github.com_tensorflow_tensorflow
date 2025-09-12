@@ -16,13 +16,16 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/infeed_thunk.h"
 
 #include <cstddef>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/types/span.h"
 #include "xla/backends/gpu/runtime/thunk.h"
+#include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/buffer_allocations.h"
 #include "xla/service/gpu/gpu_transfer_manager.h"
 #include "xla/service/gpu/infeed_manager.h"
@@ -32,9 +35,10 @@ limitations under the License.
 #include "xla/status_macros.h"
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/device_memory_handle.h"
-#include "xla/stream_executor/stream_executor.h"
+#include "xla/stream_executor/stream.h"
+#include "xla/tsl/platform/errors.h"
+#include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
-#include "tsl/platform/errors.h"
 
 namespace xla {
 namespace gpu {
@@ -83,6 +87,38 @@ absl::Status InfeedThunk::ExecuteOnStream(const ExecuteParams& params) {
 
   VLOG(2) << "Infeeding to GPU complete";
   return absl::OkStatus();
+}
+
+absl::StatusOr<std::unique_ptr<InfeedThunk>> InfeedThunk::FromProto(
+    ThunkInfo thunk_info, const InfeedThunkProto& thunk_proto,
+    absl::Span<const BufferAllocation> buffer_allocations) {
+  std::vector<ShapedSlice> dest_slices(thunk_proto.dest_slices_size());
+
+  for (int i = 0; i < dest_slices.size(); i++) {
+    TF_ASSIGN_OR_RETURN(
+        dest_slices[i].slice,
+        BufferAllocation::Slice::FromProto(thunk_proto.dest_slices(i).slice(),
+                                           buffer_allocations));
+    TF_ASSIGN_OR_RETURN(dest_slices[i].shape,
+                        Shape::FromProto(thunk_proto.dest_slices(i).shape()));
+  }
+
+  return std::make_unique<InfeedThunk>(std::move(thunk_info),
+                                       std::move(dest_slices));
+}
+
+absl::StatusOr<ThunkProto> InfeedThunk::ToProto() const {
+  ThunkProto proto;
+  *proto.mutable_thunk_info() = thunk_info().ToProto();
+
+  InfeedThunkProto* thunk_proto = proto.mutable_infeed_thunk();
+  for (int i = 0; i < dest_slices_.size(); i++) {
+    auto* sliced_proto = thunk_proto->add_dest_slices();
+    TF_ASSIGN_OR_RETURN(*sliced_proto->mutable_slice(),
+                        dest_slices_[i].slice.ToProto());
+    *sliced_proto->mutable_shape() = dest_slices_[i].shape.ToProto();
+  }
+  return proto;
 }
 
 }  // namespace gpu
