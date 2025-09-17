@@ -78,6 +78,14 @@ std::string PrintCss() {
     .section > .content {
       font-size: 14px;
     }
+    .section > .content ul {
+      margin-top: 5px;
+      margin-bottom: 5px;
+      padding-left: 20px;
+    }
+    .section > .content li {
+      margin-bottom: 3px;
+    }
 
     details {
       margin: 0;
@@ -231,6 +239,8 @@ std::string PrintCss() {
       display: flex;
       width: 100%;
       align-items: flex-start;
+      border: 2px solid transparent;
+      box-sizing: border-box;
     }
     div.hlo-instruction.expanded {
       max-width: unset;
@@ -266,7 +276,19 @@ std::string PrintCss() {
     div.hlo-instruction.has-overflow:not(.expanded):hover button.hlo-expand-btn {
       visibility: visible;
     }
-    div.bordered {
+    button.hlo-program-shape-btn {
+      background: #e8eaf6;
+      color: #3f51b5;
+      padding: 0 4px;
+      border: 1px solid #c5cae9;
+      box-shadow: none;
+      font-weight: bold;
+      margin-left: 4px;
+      height: 1.3em;
+      line-height: 1.1;
+      cursor: pointer;
+    }
+    div.hlo-instruction.bordered {
       border: 2px solid #4285F4;
     }
 
@@ -404,6 +426,23 @@ std::string PrintJavascriptForHoverEvent() {
           e.stopPropagation();
         });
       }
+  });
+
+  const allProgramShapeButtons = document.querySelectorAll('.hlo-program-shape-btn');
+  allProgramShapeButtons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const shapeSpan = btn.nextElementSibling;
+      if (shapeSpan && shapeSpan.classList.contains('hlo-program-shape')) {
+        if (shapeSpan.style.display === 'none') {
+          shapeSpan.style.display = 'inline';
+          btn.textContent = 'hide program shape';
+        } else {
+          shapeSpan.style.display = 'none';
+          btn.textContent = 'show program shape';
+        }
+      }
+      e.stopPropagation();
+    });
   });
 
   function getRelatedDivs(diffId, mappedId) {
@@ -626,6 +665,59 @@ std::string PrintSectionWithHeader(absl::string_view header,
                   {"section"});
 }
 
+// Prints overview section.
+std::string PrintOverviewSection(const DiffResult& diff_result) {
+  std::string content = absl::StrFormat(
+      R"html(
+        <p>This report highlights the differences between two HLO modules.</p>
+        <p>
+          <b>Diff Statistics:</b>
+          <span>%d unchanged</span>,
+          <span class="yellow">%d changed</span>,
+          <span class="red">%d left unmatched</span>,
+          <span class="green">%d right unmatched</span> instruction(s).
+        </p>
+      )html",
+      diff_result.unchanged_instructions.size(),
+      diff_result.changed_instructions.size(),
+      diff_result.left_module_unmatched_instructions.size(),
+      diff_result.right_module_unmatched_instructions.size());
+  return PrintSectionWithHeader("Overview", content);
+}
+
+// Prints the "How to use this report" section.
+std::string PrintHowToUseSection() {
+  std::string content = R"html(
+        <p>
+          <b>Highlights:</b>
+          <ul>
+            <li><span class="red-highlight">&nbsp;Red&nbsp;</span>: Instruction only present in the left module.</li>
+            <li><span class="green-highlight">&nbsp;Green&nbsp;</span>: Instruction only present in the right module.</li>
+            <li><span class="yellow-highlight">&nbsp;Yellow&nbsp;</span>: Instruction present in both modules but with differences.</li>
+            <li>Instructions without highlights are identical in both modules.</li>
+          </ul>
+        </p>
+        <p>
+          <b>Interactions:</b>
+          <ul>
+            <li><b>Hover</b> over an instruction to highlight its counterpart in the other module.</li>
+            <li><b>Click</b> on an instruction to scroll its counterpart into view within the same computation diff.</li>
+            <li><b>Double-click</b> on an instruction to jump to its counterpart if it resides in a different computation diff.</li>
+            <li>Click the <b>[+]</b> button on an instruction to expand/collapse overflowing text.</li>
+          </ul>
+        </p>
+        <p>
+          <b>Sections:</b>
+          <ul>
+            <li><b>XProf Op Metrics Diff</b>: Shows instructions with the largest execution time differences based on XProf data (if available).</li>
+            <li><b>Diffs grouped by computation</b>: Groups computations with similar diff patterns to help identify repetitive changes.</li>
+            <li><b>Full Diff Results</b>: A flat list of all instructions that are unmatched or have changed.</li>
+          </ul>
+        </p>
+      )html";
+  return PrintSectionWithHeader("How to use this report", content);
+}
+
 // Prints a system message placeholder.
 std::string PrintSystemMessagePlaceholder() {
   return PrintDiv(PrintSpan("System message placeholder", {}),
@@ -714,42 +806,42 @@ absl::flat_hash_map<const HloInstruction*, Attributes> GenerateSpanAttributes(
   for (auto& instruction : diff_result.left_module_unmatched_instructions) {
     span_attributes[instruction] =
         Attributes{.highlight = "red-highlight",
-                   .diffid = std::string(instruction->name()),
+                   .diffid = absl::StrCat("left:", instruction->name()),
                    .mapped_diffid = "",
                    .mapped_instruction = nullptr};
   }
   for (auto& instruction : diff_result.right_module_unmatched_instructions) {
     span_attributes[instruction] =
         Attributes{.highlight = "green-highlight",
-                   .diffid = std::string(instruction->name()),
+                   .diffid = absl::StrCat("right:", instruction->name()),
                    .mapped_diffid = "",
                    .mapped_instruction = nullptr};
   }
   for (const auto& [l_instruction, r_instruction] :
        diff_result.changed_instructions) {
-    span_attributes[l_instruction] =
-        Attributes{.highlight = "yellow-highlight",
-                   .diffid = std::string(l_instruction->name()),
-                   .mapped_diffid = std::string(r_instruction->name()),
-                   .mapped_instruction = r_instruction};
-    span_attributes[r_instruction] =
-        Attributes{.highlight = "yellow-highlight",
-                   .diffid = std::string(r_instruction->name()),
-                   .mapped_diffid = std::string(l_instruction->name()),
-                   .mapped_instruction = l_instruction};
+    span_attributes[l_instruction] = Attributes{
+        .highlight = "yellow-highlight",
+        .diffid = absl::StrCat("left:", l_instruction->name()),
+        .mapped_diffid = absl::StrCat("right:", r_instruction->name()),
+        .mapped_instruction = r_instruction};
+    span_attributes[r_instruction] = Attributes{
+        .highlight = "yellow-highlight",
+        .diffid = absl::StrCat("right:", r_instruction->name()),
+        .mapped_diffid = absl::StrCat("left:", l_instruction->name()),
+        .mapped_instruction = l_instruction};
   }
   for (const auto& [l_instruction, r_instruction] :
        diff_result.unchanged_instructions) {
-    span_attributes[l_instruction] =
-        Attributes{.highlight = "",
-                   .diffid = std::string(l_instruction->name()),
-                   .mapped_diffid = std::string(r_instruction->name()),
-                   .mapped_instruction = r_instruction};
-    span_attributes[r_instruction] =
-        Attributes{.highlight = "",
-                   .diffid = std::string(r_instruction->name()),
-                   .mapped_diffid = std::string(l_instruction->name()),
-                   .mapped_instruction = l_instruction};
+    span_attributes[l_instruction] = Attributes{
+        .highlight = "",
+        .diffid = absl::StrCat("left:", l_instruction->name()),
+        .mapped_diffid = absl::StrCat("right:", r_instruction->name()),
+        .mapped_instruction = r_instruction};
+    span_attributes[r_instruction] = Attributes{
+        .highlight = "",
+        .diffid = absl::StrCat("right:", r_instruction->name()),
+        .mapped_diffid = absl::StrCat("left:", l_instruction->name()),
+        .mapped_instruction = l_instruction};
   }
   return span_attributes;
 };
@@ -768,8 +860,12 @@ std::string PrintHloComputationToHtml(
   printer.Append("<b>%");
   printer.Append(comp->name());
   printer.Append(" ");
+  printer.Append(
+      "<button class='hlo-program-shape-btn'>show program shape</button>");
+  printer.Append("<span class='hlo-program-shape' style='display: none;'>");
   ShapeUtil::PrintHumanString(&printer,
                               comp->ComputeProgramShape(/*include_ids=*/true));
+  printer.Append("</span>");
   printer.Append(" ");
   printer.Append("{</b>\n");
 
@@ -1414,6 +1510,12 @@ void RenderHtml(const DiffResult& diff_result, const DiffSummary& diff_summary,
       GenerateSpanAttributes(diff_result);
 
   out << PrintCss() << PrintJavascript();
+
+  // Print overview section
+  out << PrintOverviewSection(filtered_diff_result);
+
+  // Print "How to use this report" section
+  out << PrintHowToUseSection();
 
   // Print profile metrics diff
   if (left_op_metric_getter != nullptr && right_op_metric_getter != nullptr) {
