@@ -774,6 +774,9 @@ class PjRtFuture<void> : public internal::PjRtFutureBase<absl::Status> {
     using Base::Promise::async_value;
     using Base::Promise::Promise;
 
+    Promise(Promise&&) = default;
+    Promise& operator=(Promise&&) = default;
+
     // Sets the promise completed with a given status. Must be called at most
     // once.
     //
@@ -783,56 +786,26 @@ class PjRtFuture<void> : public internal::PjRtFutureBase<absl::Status> {
       Base::Promise::emplace(std::move(status));
     }
 
+    // A helper function to convert move-only Promise to shared_ptr, which is
+    // useful when the promise has to be captured by a std::function.
+    std::shared_ptr<Promise> ToShared() && {
+      return std::make_shared<Promise>(std::move(*this));
+    }
+
    private:
     friend class PjRtFuture<void>;
   };
 
-  // This is a temporary class to support migration from CreatePromise() to
-  // MakePromise() and an end goal of making Promise move-only type.
-  class MoveOnlyPromise : public Promise {
-   public:
-    using Promise::Promise;
-    using Promise::Set;
-
-    MoveOnlyPromise(MoveOnlyPromise&&) = default;
-    MoveOnlyPromise& operator=(MoveOnlyPromise&&) = default;
-
-    // A helper function to convert move-only Promise to shared_ptr, which is
-    // useful when the promise has to be captured by a std::function.
-    std::shared_ptr<MoveOnlyPromise> ToShared() && {
-      return std::make_shared<MoveOnlyPromise>(std::move(*this));
-    }
-  };
-
-  // Returns a Promise that can be used to construct a PjRtFuture, and then Set
-  // later.
-  static Promise CreatePromise() {
-    return Promise(tsl::MakeUnconstructedAsyncValueRef<absl::Status>());
-  }
-
   // Returns a pair of connected Promise and PjRtFuture<>. Setting the returned
   // promise will fulfill the connected future.
-  static std::pair<MoveOnlyPromise, PjRtFuture<>> MakePromise() {
-    MoveOnlyPromise promise(
-        tsl::MakeUnconstructedAsyncValueRef<absl::Status>());
+  static std::pair<Promise, PjRtFuture<>> MakePromise() {
+    Promise promise(tsl::MakeUnconstructedAsyncValueRef<absl::Status>());
     PjRtFuture<> future(promise);
     return std::make_pair(std::move(promise), std::move(future));
   }
 
-  // Bring PjRtFutureBase constructors in scope.
-  using Base::Base;
-
-  // Constructor for unavailable future that will be fulfilled later via the
-  // promise object.
-  //
-  // - on_block_start is called before Await starts to block.
-  // - on_block_end is called after Await finishes blocking.
-  explicit PjRtFuture(
-      const Promise& promise,
-      PjRtFutureHelpers::OnBlockStartFn on_block_start = nullptr,
-      PjRtFutureHelpers::OnBlockEndFn on_block_end = nullptr)
-      : Base(promise.ref(), std::move(on_block_start),
-             std::move(on_block_end)) {}
+  // Constructor for an empty future.
+  PjRtFuture() = default;
 
   // Constructor for a future that is immediately ready with a given status.
   // For futures that are immediately ready with OK status, we use a global non
@@ -956,6 +929,23 @@ class PjRtFuture<void> : public internal::PjRtFutureBase<absl::Status> {
   }
 
  private:
+  friend class PjRtFutureHelpers;
+
+  // Bring PjRtFutureBase constructors into scope.
+  using Base::Base;
+
+  // Constructor for unavailable future that will be fulfilled later via the
+  // promise object.
+  //
+  // - on_block_start is called before Await starts to block.
+  // - on_block_end is called after Await finishes blocking.
+  explicit PjRtFuture(
+      const Promise& promise,
+      PjRtFutureHelpers::OnBlockStartFn on_block_start = nullptr,
+      PjRtFutureHelpers::OnBlockEndFn on_block_end = nullptr)
+      : Base(promise.ref(), std::move(on_block_start),
+             std::move(on_block_end)) {}
+
   // A promise that is immediately ready with OK status. Async value allocated
   // in the static storage and is not reference-counted.
   static absl::NoDestructor<tsl::AsyncValueOwningRef<absl::Status>>
