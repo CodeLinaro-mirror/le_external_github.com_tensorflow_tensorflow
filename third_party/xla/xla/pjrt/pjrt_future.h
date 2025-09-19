@@ -771,6 +771,9 @@ class PjRtFuture<void> : public internal::PjRtFutureBase<absl::Status> {
  public:
   class Promise : public Base::Promise {
    public:
+    Promise(Promise&&) = default;
+    Promise& operator=(Promise&&) = default;
+
     using Base::Promise::async_value;
     using Base::Promise::Promise;
 
@@ -803,12 +806,6 @@ class PjRtFuture<void> : public internal::PjRtFutureBase<absl::Status> {
       return std::make_shared<MoveOnlyPromise>(std::move(*this));
     }
   };
-
-  // Returns a Promise that can be used to construct a PjRtFuture, and then Set
-  // later.
-  static Promise CreatePromise() {
-    return Promise(tsl::MakeUnconstructedAsyncValueRef<absl::Status>());
-  }
 
   // Returns a pair of connected Promise and PjRtFuture<>. Setting the returned
   // promise will fulfill the connected future.
