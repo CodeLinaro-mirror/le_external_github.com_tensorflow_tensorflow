@@ -8,6 +8,7 @@ load(
 load("//xla/tsl:tsl.bzl", "clean_dep")
 load(
     "//xla/tsl/profiler/builds/oss:build_config.bzl",
+    _nvtx_select_deps = "nvtx_select_deps",
     _tf_profiler_alias = "tf_profiler_alias",
     _tf_profiler_pybind_cc_library_wrapper = "tf_profiler_pybind_cc_library_wrapper",
 )
@@ -16,6 +17,7 @@ visibility(DEFAULT_LOAD_VISIBILITY + LEGACY_TSL_PROFILER_BUILDS_BUILD_CONFIG_USE
 
 tf_profiler_pybind_cc_library_wrapper = _tf_profiler_pybind_cc_library_wrapper
 tf_profiler_alias = _tf_profiler_alias
+nvtx_select_deps = _nvtx_select_deps
 
 def tf_profiler_copts():
     return []

@@ -9,6 +9,7 @@ load(
 )
 load(
     "@local_xla//xla/tsl/profiler/builds:build_config.bzl",
+    "nvtx_select_deps",
     "tf_profiler_copts",
     "tf_profiler_pybind_cc_library_wrapper",
 )
@@ -292,7 +293,7 @@ cc_library(
 )
 
 cc_library(
-    name = "nvtx_utils_libtpu",
+    name = "nvtx_utils_external",
     srcs = ["nvtx_utils_stub.cc"],
     hdrs = ["nvtx_utils.h"],
     visibility = ["//visibility:public"],
@@ -308,11 +309,7 @@ cc_library(
     name = "nvtx_utils",
     hdrs = ["nvtx_utils.h"],
     visibility = ["//visibility:public"],
-    deps = select({
-        # Remove this once we clean up all the CUDA specific deps.
-        "libtpu_on_gce": [":nvtx_utils_libtpu"],
-        "//conditions:default": [":nvtx_utils_impl"],
-    }),
+    deps = select(nvtx_select_deps()),
 )
 
 cc_library(
