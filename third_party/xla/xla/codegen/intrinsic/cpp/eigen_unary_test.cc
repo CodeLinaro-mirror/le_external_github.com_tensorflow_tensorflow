@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+
 #include <string>
 
 #include <gmock/gmock.h>
@@ -21,11 +22,20 @@ limitations under the License.
 namespace xla::codegen {
 namespace {
 using ::testing::ContainsRegex;
+using ::testing::Not;
 
 TEST(EigenUnaryTest, FastTanhfIsVectorized) {
-  std::string ir = eigen_unary_ir_string;
-  EXPECT_THAT(ir, ContainsRegex("fmul <4 x float>"));
-  EXPECT_THAT(ir, ContainsRegex("<4 x float>.*0x3E4DF2A3C0000000"));
+  const std::string arm = llvm_ir::kEigenUnaryLlArmIr;
+  EXPECT_THAT(arm, ContainsRegex("fmul <4 x float>"));
+  EXPECT_THAT(arm, ContainsRegex("<4 x float>.*0x3E4DF2A3C0000000"));
+  EXPECT_THAT(arm, Not(ContainsRegex("llvm.x86")));
+  EXPECT_THAT(arm, ContainsRegex("llvm.aarch64.neon"));
+
+  const std::string x86 = llvm_ir::kEigenUnaryLlX86Ir;
+  EXPECT_THAT(x86, ContainsRegex("fmul <4 x float>"));
+  EXPECT_THAT(x86, ContainsRegex("<4 x float>.*0x3E4DF2A3C0000000"));
+  EXPECT_THAT(x86, ContainsRegex("llvm.x86"));
+  EXPECT_THAT(x86, Not(ContainsRegex("llvm.aarch64")));
 }
 
 }  // namespace

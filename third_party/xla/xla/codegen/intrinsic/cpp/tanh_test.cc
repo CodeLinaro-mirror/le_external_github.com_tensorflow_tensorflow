@@ -26,7 +26,7 @@ using ::testing::ContainsRegex;
 namespace {
 
 TEST(TanhTest, FloatTanhVectorized) {
-  std::string ir = tanh_ir_string;
+  std::string ir = llvm_ir::kTanhLlX86Ir;
   EXPECT_THAT(ir, ContainsRegex("fmul <4 x float>"));
   EXPECT_THAT(
       ir, ContainsRegex("fcmp olt <4 x float>.*float 0x3F3A36E2E0000000.*"));

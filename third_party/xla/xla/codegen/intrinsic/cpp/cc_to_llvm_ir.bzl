@@ -1,75 +1,192 @@
 """
-Starlark rule for compiling a C++ file to LLVM IR (.ll) in a hermetic way.
+A rule to compile a C++ file to a header containing LLVM IR for both
+x86 and ARM, using a split transition to be self-contained.
 """
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("//xla/tsl:package_groups.bzl", "DEFAULT_LOAD_VISIBILITY")
 
 visibility(DEFAULT_LOAD_VISIBILITY)
 
-def _cc_to_llvm_ir_impl(ctx):
-    cc_toolchain = find_cc_toolchain(ctx)
-
+def _cc_to_ir_single_impl(ctx):
+    cc_toolchain = find_cc_toolchain(ctx, mandatory = False)
     feature_configuration = cc_common.configure_features(
         ctx = ctx,
         cc_toolchain = cc_toolchain,
     )
-    dep_compilation_contexts = [
-        dep[CcInfo].compilation_context
-        for dep in ctx.attr.deps
-    ]
+    compilation_contexts = [dep[CcInfo].compilation_context for dep in ctx.attr.deps]
 
+    # We get srcs and compilation context from the underlying cc_library target.
     compilation_outputs = cc_common.compile(
         actions = ctx.actions,
         feature_configuration = feature_configuration,
         cc_toolchain = cc_toolchain,
-        srcs = [ctx.file.src],
+        srcs = ctx.files.srcs,
+        compilation_contexts = compilation_contexts,
         cxx_flags = [
             "-S",
             "-emit-llvm",
+            "-O3",
         ],
         name = ctx.label.name,
-        compilation_contexts = dep_compilation_contexts,
     )
+    output_ll = ctx.outputs.out
 
     # The compile action produces an output file. Even though we requested
     # LLVM IR, the filename will likely end in ".o" or ".pic.o".
     # We take the first (and only) object file from the outputs.
-    intermediate_ll_file = compilation_outputs[1].pic_objects[0]
-    final_ll_file = ctx.outputs.out
+    pic_out = compilation_outputs[1].pic_objects[0]
 
     ctx.actions.run_shell(
-        inputs = [intermediate_ll_file],
-        outputs = [final_ll_file],
-        command = "cp %s %s" % (intermediate_ll_file.path, final_ll_file.path),
-        progress_message = "Copying LLVM IR for %s" % ctx.label.name,
-        mnemonic = "CopyLlvmIr",
+        inputs = [pic_out],
+        outputs = [output_ll],
+        command = "cp %s %s" % (pic_out.path, output_ll.path),
+        mnemonic = "CopyLLVMIR",
     )
+    return [DefaultInfo(files = depset([output_ll]))]
 
-    return [DefaultInfo(files = depset([final_ll_file]))]
-
-cc_to_llvm_ir = rule(
-    implementation = _cc_to_llvm_ir_impl,
+cc_to_ir_single = rule(
+    implementation = _cc_to_ir_single_impl,
     attrs = {
-        "src": attr.label(
-            allow_single_file = True,
+        "srcs": attr.label_list(
+            allow_files = True,
             mandatory = True,
-            doc = "The C++ source file to compile.",
+            doc = "The C++ source files to compile.",
         ),
-        "out": attr.output(
-            mandatory = True,
-            doc = "The output .ll (LLVM IR) file.",
-        ),
-        "deps": attr.label_list(
-            providers = [CcInfo],
-            mandatory = True,
-            doc = "A cc_library target to provide the C++ compilation context. You MUST specify at least one cc_library dependency here so this rule can leech the C++ context required for compilation.",
-        ),
+        "deps": attr.label_list(providers = [CcInfo]),
+        "out": attr.output(mandatory = True),
         "_cc_toolchain": attr.label(default = "@bazel_tools//tools/cpp:current_cc_toolchain"),
     },
-    # This declares that the rule needs a C++ toolchain to be present.
     toolchains = use_cc_toolchain(),
-    doc = "Compiles a single C++ file to LLVM IR (.ll) using the C++ toolchain.",
     fragments = ["cpp"],
 )
+
+def _multi_arch_transition_impl(_settings, _attr):
+    return {
+        "x86": {"//command_line_option:platforms": "x86_64"},
+        "arm": {"//command_line_option:platforms": "arm"},
+    }
+
+multi_arch_transition = transition(
+    implementation = _multi_arch_transition_impl,
+    inputs = [],
+    outputs = ["//command_line_option:platforms"],
+)
+
+def to_camel_case(s):
+    s_with_underscores = s.replace("-", "_")
+    return "".join([p.capitalize() for p in s_with_underscores.split("_")])
+
+def _cc_to_ir_header_impl(ctx):
+    """Generates a C++ header from the IR files of different architectures."""
+
+    output_header = ctx.outputs.out_header
+    base_name = to_camel_case(ctx.attr.base_name)
+    inputs = []
+
+    if "x86" in ctx.split_attr.gen and ctx.split_attr.gen["x86"][DefaultInfo].files.to_list():
+        x86_ir_file = ctx.split_attr.gen["x86"][DefaultInfo].files.to_list()[0]
+        inputs.append(x86_ir_file)
+        x86_ir_definition = 'inline constexpr char k{base_name}X86Ir[] = R"IR(\\n$(cat {x86_input})\\n)IR";'.format(
+            base_name = base_name,
+            x86_input = x86_ir_file.path,
+        )
+    else:
+        x86_ir_definition = 'inline constexpr char k{base_name}X86Ir[] = "";'.format(base_name = base_name)
+
+    if "arm" in ctx.split_attr.gen and ctx.split_attr.gen["arm"][DefaultInfo].files.to_list():
+        arm_ir_file = ctx.split_attr.gen["arm"][DefaultInfo].files.to_list()[0]
+        inputs.append(arm_ir_file)
+        arm_ir_definition = 'inline constexpr char k{base_name}ArmIr[] = R"IR(\\n$(cat {arm_input})\\n)IR";'.format(
+            base_name = base_name,
+            arm_input = arm_ir_file.path,
+        )
+    else:
+        arm_ir_definition = 'inline constexpr char k{base_name}ArmIr[] = "";'.format(base_name = base_name)
+
+    ctx.actions.run_shell(
+        inputs = inputs,  # Use the dynamically built list of inputs
+        outputs = [output_header],
+        mnemonic = "EmbeddingLLVMIR",
+        command = """
+cat <<EOF > {output}
+#pragma once
+
+// Generated by cc_to_ir_header rule. DO NOT EDIT.
+
+namespace {namespace} {{
+
+{x86_def}
+
+{arm_def}
+
+}} // namespace {namespace}
+EOF
+""".format(
+            output = output_header.path,
+            x86_def = x86_ir_definition,
+            arm_def = arm_ir_definition,
+            namespace = ctx.attr.namespace,
+        ),
+        progress_message = "Embedding LLVM IR into header for %s" % ctx.label,
+    )
+
+    return [DefaultInfo(files = depset([output_header]))]
+
+_cc_to_ir_header = rule(
+    implementation = _cc_to_ir_header_impl,
+    attrs = {
+        "out_header": attr.output(mandatory = True),
+        "gen": attr.label(cfg = multi_arch_transition, mandatory = True),
+        "base_name": attr.string(mandatory = True),
+        "namespace": attr.string(
+            default = "llvm_ir",
+            doc = "The C++ namespace for the generated variables.",
+        ),
+    },
+)
+
+def cc_to_ir_header(name, src, deps = [], namespace = "llvm_ir", **kwargs):
+    """Compiles a C++ source to a header with LLVM IR for x86 and ARM.
+
+    This macro generates a single C++ header file: `{name}.h`. This header
+    can be used as a dependency in other `cc_library` or `cc_binary` rules.
+    It contains the LLVM IR for both x86 and ARM, stored in `constexpr
+    char[]` variables.
+
+    Args:
+        name: The base name for the rule and the output header.
+        src: The C++ source file to compile.
+        deps: A list of cc_library targets providing compilation context (mandatory!).
+        namespace: The C++ namespace for the generated IR variables.
+        **kwargs: Standard rule arguments.
+    """
+    generator_name = name + "_ir_generator"
+    output_header_name = name + ".h"
+
+    cc_to_ir_single(
+        name = generator_name,
+        srcs = [src],
+        deps = deps,
+        out = name + "_intermediate.ll",
+        # Avoid this target being built directly by users.
+        tags = ["manual"],
+    )
+
+    _cc_to_ir_header(
+        base_name = name,
+        name = name + "_gen",
+        out_header = output_header_name,
+        gen = ":" + generator_name,
+        namespace = namespace,
+        tags = ["manual"],
+        **kwargs
+    )
+
+    cc_library(
+        name = name,
+        hdrs = [":" + output_header_name],
+        **kwargs
+    )
