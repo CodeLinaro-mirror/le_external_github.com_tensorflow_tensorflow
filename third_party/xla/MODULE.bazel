@@ -36,8 +36,8 @@ bazel_dep(name = "rules_ml_toolchain")
 archive_override(
   module_name = "rules_ml_toolchain",
   integrity = "sha256-1a7xQJbzZ7rm8t61lGoxiSsGut1mD4ww9lZaD5qZGF8=",
-  urls = ["https://github.com/google-ml-infra/rules_ml_toolchain/archive/18ba88facf7f0d7203adbaccb982315936b1ac7a.tar.gz"],
-  strip_prefix = "rules_ml_toolchain-18ba88facf7f0d7203adbaccb982315936b1ac7a",
+  urls = ["https://github.com/google-ml-infra/rules_ml_toolchain/archive/5b47bb36d6b6942ec399d4ffa29059cb148c2286.tar.gz"],
+  strip_prefix = "rules_ml_toolchain-5b47bb36d6b6942ec399d4ffa29059cb148c2286",
 )
 
 # TODO: Upstream the patch?
