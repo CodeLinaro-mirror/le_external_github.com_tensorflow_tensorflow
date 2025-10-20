@@ -8083,6 +8083,117 @@ ENTRY entry {
                     op::Shape("s32[64,32]")));
 }
 
+TEST_P(SpmdPartitioningTest, DynamicUpdateSliceOfConstantInRange) {
+  absl::string_view hlo_string = R"(
+  HloModule module
+
+  ENTRY entry {
+    %input = s32[128,64] parameter(0), sharding={devices=[1,2]0,1}
+    %update = s32[10,10] parameter(1), sharding={devices=[1,2]0,1}
+    %c59 = s32[] constant(59)
+    %c27 = s32[] constant(27)
+    ROOT %dynamic-update-slice = s32[128,64]
+      dynamic-update-slice(%input, %update, %c59, %c27),
+      sharding={devices=[1,2]0,1}
+  })";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          PartitionComputation(hlo_string, /*num_devices=*/2));
+
+  const auto root = module->entry_computation()->root_instruction();
+  auto sharded_input = AllOf(op::Parameter(0), op::Shape("s32[128,32]"));
+  auto sharded_update = AllOf(op::Parameter(1), op::Shape("s32[10,5]"));
+  EXPECT_THAT(
+      root,
+      AllOf(op::Select(
+                op::Pad(op::Select(_, op::DynamicSlice(_, _, _), _),
+                        op::Constant()),
+                sharded_input,
+                op::Pad(op::DynamicSlice(op::Pad(sharded_update, _),
+                                         op::Constant(), op::Multiply(_, _)),
+                        op::Constant())),
+            op::Shape("s32[128,32]")));
+}
+
+// Out of range DUS is legal and will truncate the update tensor to fit the
+// original shape
+TEST_P(SpmdPartitioningTest, DynamicUpdateSliceOfConstantOutOfRange) {
+  absl::string_view hlo_string = R"(
+  HloModule module
+
+  ENTRY entry {
+    %input = s32[128,64] parameter(0), sharding={devices=[1,2]0,1}
+    %update = s32[128,20] parameter(1), sharding={devices=[1,2]0,1}
+    %c20 = s32[] constant(20)
+    %c60 = s32[] constant(60)
+    ROOT %dynamic-update-slice = s32[128,64]
+      dynamic-update-slice(%input, %update, %c20, %c60),
+      sharding={devices=[1,2]0,1}
+  })";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          PartitionComputation(hlo_string, /*num_devices=*/2));
+
+  const auto root = module->entry_computation()->root_instruction();
+  auto sharded_input = AllOf(op::Parameter(0), op::Shape("s32[128,32]"));
+  auto sharded_update = AllOf(op::Parameter(1), op::Shape("s32[128,10]"));
+  EXPECT_THAT(
+      root,
+      AllOf(
+          op::Select(
+              op::Pad(op::Select(_,
+                                 op::DynamicSlice(op::Pad(_, _), op::Constant(),
+                                                  op::Multiply(_, _)),
+                                 op::Broadcast(_)),
+                      op::Constant()),
+              sharded_input,
+              op::Pad(
+                  op::DynamicSlice(
+                      op::Pad(op::Concatenate(op::Broadcast(_),
+                                              op::CollectivePermute(
+                                                  op::Slice(sharded_update))),
+                              _),
+                      op::Constant(), op::Multiply(_, _)),
+                  op::Constant())),
+          op::Shape("s32[128,32]")));
+}
+
+TEST_P(SpmdPartitioningTest, DynamicUpdateSliceSingleDimension) {
+  absl::string_view hlo_string = R"(
+    HloModule module
+
+    ENTRY entry {
+      %input = s32[16] parameter(0), sharding={devices=[4]<=[4]}
+      %update = s32[8] parameter(1), sharding={devices=[4]<=[4]}
+      %c3 = s32[] constant(3)
+      ROOT %dynamic-update-slice = s32[16]
+        dynamic-update-slice(%input, %update, %c3),
+        sharding={devices=[4]<=[4]}
+    })";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          PartitionComputation(hlo_string, /*num_devices=*/4));
+  const auto root = module->entry_computation()->root_instruction();
+  auto sharded_input = AllOf(op::Parameter(0), op::Shape("s32[4]"));
+  auto sharded_update = AllOf(op::Parameter(1), op::Shape("s32[2]"));
+  auto c3 = AllOf(op::Constant(), op::Shape("s32[]"));
+  EXPECT_THAT(
+      root,
+      AllOf(
+          op::Select(
+              op::Select(_, op::DynamicSlice(op::Pad(_, _), op::Multiply(_, _)),
+                         op::Broadcast()),
+              sharded_input,
+              op::DynamicSlice(
+                  op::Pad(
+                      op::Concatenate(op::CollectivePermute(_), sharded_update,
+                                      op::CollectivePermute(_),
+                                      op::CollectivePermute(_)),
+                      op::Constant()),
+                  op::Multiply(_, _))),
+          op::Shape("s32[4]")));
+}
+
 TEST_P(SpmdPartitioningTest, UnpartitionedGather) {
   absl::string_view hlo_string = R"(
 HloModule module
@@ -14776,12 +14887,12 @@ ENTRY entry {
   TF_ASSERT_OK_AND_ASSIGN(auto module,
                           PartitionComputation(hlo_string, /*num_devices=*/8));
 
-  XLA_VLOG_LINES(1, module->ToString());
-  EXPECT_THAT(
-      module->entry_computation()->root_instruction(),
-      op::Copy(op::DynamicSlice(
-          AllOf(op::DynamicUpdateSlice(), op::Shape("bf16[8,224, 224,384]")), _,
-          _, _, _)));
+  XLA_VLOG_LINES(0, module->ToString());
+  EXPECT_THAT(module->entry_computation()->root_instruction(),
+              AllOf(op::Copy(op::Select(op::Select(_, _, _),
+                                        op::DynamicSlice(_, _, _, _, _),
+                                        op::DynamicSlice(_, _, _, _, _))),
+                    op::Shape("bf16[8,112,112,384]")));
 }
 
 TEST_P(SpmdPartitioningTest, CustomCallManualSharding) {
