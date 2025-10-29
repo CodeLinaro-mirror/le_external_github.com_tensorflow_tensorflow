@@ -350,6 +350,7 @@ cc_library(
     deps = [
         ":pjrt_client",
         ":pjrt_compiler",
+        "//xla:literal",
         "//xla:shape_util",
         "//xla:xla_data_proto_cc",
         "//xla/backends/cpu:alignment",
