@@ -635,6 +635,9 @@ message DebugOptions {
   optional bool xla_gpu_experimental_enable_heuristic_collective_combining =
       366;
 
+  // If true, enable buffer nan counter on thunks.
+  optional bool xla_gpu_experimental_enable_nan_counter_on_thunks = 423;
+
   // Enable NCCL symmetric buffers.
   optional bool xla_gpu_experimental_enable_nccl_symmetric_buffers = 406;
 
@@ -1366,7 +1369,7 @@ message DebugOptions {
   // Note: when adding a new flag, please add it to one of the hardware-specific
   // or hardware-agnostic sections at the top of this proto message.
 
-  // Next id: 423
+  // Next id: 424
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.
