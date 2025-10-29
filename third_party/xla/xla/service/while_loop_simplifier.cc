@@ -46,6 +46,7 @@ limitations under the License.
 #include "xla/service/call_inliner.h"
 #include "xla/service/hlo_creation_utils.h"
 #include "xla/service/pattern_matcher.h"
+#include "xla/service/while_util.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
 #include "xla/status_macros.h"
@@ -1325,6 +1326,8 @@ static absl::StatusOr<bool> TryFlattenNestedTuples(HloInstruction* while_op) {
 // each integral type elem_ty.
 static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
     HloInstruction* while_op, PrimitiveType elem_ty) {
+  std::cerr << "TryMergeInductionVariables, elem_ty: "
+            << PrimitiveType_Name(elem_ty) << "\n";
   CHECK(primitive_util::IsIntegralType(elem_ty)) << PrimitiveType_Name(elem_ty);
   HloModule* module = while_op->GetModule();
   HloComputation* computation = while_op->parent();
@@ -1355,13 +1358,17 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
                    .WithShape(m::Shape().WithElementType(elem_ty)))) {
       continue;
     }
+
     if (!trip_counter && constant->literal().IsAll(1) &&
         while_init->operand(i)->IsConstant() &&
         while_init->operand(i)->literal().IsAll(0)) {
       VLOG(10) << "Found existing trip counter at index " << i;
+      std::cerr << "Found trip counter at index " << i << "\n";
       trip_counter = i;
     } else {
       VLOG(10) << "Found induction variable at index " << i;
+      std::cerr << "Found induction variable at index " << i << ": "
+                << while_body_root->operand(i)->ToString() << "\n";
       induction_vars.emplace(i, Cast<HloConstantInstruction>(constant));
     }
   }
@@ -1385,6 +1392,7 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
   std::vector<std::unique_ptr<HloInstruction>> new_instrs;
   auto add_new_instr = [&](std::unique_ptr<HloInstruction> instr) {
     new_instrs.push_back(std::move(instr));
+    // std::cerr << "add_new_instr: " << new_instrs.back()->ToString() << "\n";
     return new_instrs.back().get();
   };
 
@@ -1413,6 +1421,7 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
   bool added_trip_counter = false;
   if (!trip_counter) {
     VLOG(10) << "Adding new trip counter to end of loop's tuple.";
+    std::cerr << "Adding new trip counter to end of loop's tuple.\n";
     trip_counter = new_while_shape.tuple_shapes().size();
     *new_while_shape.add_tuple_shapes() =
         ShapeUtil::MakeShape(elem_ty, /*dimensions=*/{});
@@ -1423,19 +1432,27 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
   // shape `while_body->shape()` and where the induction variables are "reified"
   // (i.e. they have value <init> + <counter> * <constant>).
   auto convert_to_old_form = [&](HloInstruction* instr) {
+    std::cerr << "convert_to_old_form, instr: " << instr->ToString() << "\n";
     CHECK(ShapeUtil::Compatible(instr->shape(), new_while_shape));
     std::vector<HloInstruction*> tuple_elems;
     for (int i = 0; i < while_shape.tuple_shapes().size(); ++i) {
+      std::cerr << "induction_vars.count(" << i
+                << "): " << induction_vars.count(i) << "\n";
       const auto& elem_shape = while_shape.tuple_shapes(i);
       if (!induction_vars.count(i)) {
         tuple_elems.push_back(add_gte(instr, i));
         continue;
       }
+      std::cerr << "\tfrom while_body_root->operand(" << i
+                << "): " << while_body_root->operand(i)->ToString() << "\n";
       tuple_elems.push_back(add_binary_op(
           elem_shape, HloOpcode::kAdd, add_gte(instr, i),
           add_binary_op(elem_shape, HloOpcode::kMultiply,
                         add_gte(instr, *trip_counter),
                         add_new_instr(induction_vars.at(i)->Clone()))));
+      HloInstruction* add = tuple_elems.back();
+      add->CopyOriginalValue(while_body_root->operand(i));
+      std::cerr << "\tto add: " << add->ToString() << "\n";
     }
     return HloInstruction::CreateTuple(tuple_elems);
   };
@@ -1445,6 +1462,8 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
   // counters) are replaced with their unchanging <loop_body_param> values.
   auto convert_to_new_form = [&](HloInstruction* old_root,
                                  HloParameterInstruction* loop_body_param) {
+    std::cerr << "convert_to_new_form, old_root: " << old_root->ToString()
+              << ", loop_body_param: " << loop_body_param->ToString() << "\n";
     CHECK(ShapeUtil::Compatible(old_root->shape(), while_shape));
     std::vector<HloInstruction*> tuple_elems;
 
@@ -1453,8 +1472,13 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
     // from the `root` tuple unmodified.
     tuple_elems.reserve(while_shape.tuple_shapes().size());
     for (int i = 0; i < while_shape.tuple_shapes().size(); ++i) {
+      std::cerr << "induction_vars.count(" << i
+                << "): " << (induction_vars.count(i) ? "true" : "false")
+                << "\n";
       tuple_elems.push_back(
           add_gte((induction_vars.count(i) ? loop_body_param : old_root), i));
+      std::cerr << "\ttuple_elems[" << i
+                << "]: " << tuple_elems.back()->ToString() << "\n";
     }
     // If we created a trip counter ourselves, add 1 to it in the next
     // iteration.
@@ -1464,6 +1488,7 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
           add_gte(loop_body_param, *trip_counter),
           add_new_instr(
               HloInstruction::CreateConstant(LiteralUtil::One(elem_ty)))));
+      std::cerr << "\ttrip counter: " << tuple_elems.back()->ToString() << "\n";
     }
 
     return HloInstruction::CreateTuple(tuple_elems);
@@ -1510,6 +1535,8 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
               0, new_while_shape,
               while_body->parameter_instruction(0)->name()))),
       }));
+  std::cerr << "temp_new_while_body: " << temp_new_while_body->ToString()
+            << "\n";
   std::unique_ptr<HloComputation> new_while_body =
       temp_new_while_body->CloneWithReplacementPairs({
           temp_new_while_body->root_instruction(),
@@ -1528,7 +1555,20 @@ static absl::StatusOr<HloInstruction*> TryMergeInductionVariables(
       module->AddEmbeddedComputation(std::move(new_while_cond)),
       module->AddEmbeddedComputation(std::move(new_while_body)),
       get_new_while_init(while_init)));
+  std::cerr << "new_while_body: " << new_while->while_body()->ToString()
+            << "\n";
   new_while->CopyBackendConfigFrom(while_op);
+  if (auto original_value = while_init->original_value()) {
+    new_while->while_init()->set_original_value(original_value);
+  }
+  if (auto original_value = while_op->original_value()) {
+    new_while->set_original_value(original_value);
+  }
+  if (added_trip_counter) {
+    AppendToWhileLoopOriginalValue(new_while, {});
+  }
+  std::cerr << "while_op: " << while_op->ToString() << "\n";
+  std::cerr << "new_while: " << new_while->ToString() << "\n";
   CopyFrontendAttributes(while_op, new_while);
   CopyMetadata(while_op, new_while);
   TF_RETURN_IF_ERROR(computation->ReplaceWithNewInstruction(
