@@ -41,6 +41,7 @@ limitations under the License.
 #include "xla/codegen/emitter_loc_op_builder.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
+#include "xla/hlo/translate/hlo_to_mhlo/attribute_importer.h"
 #include "xla/service/algorithm_util.h"
 #include "xla/service/llvm_ir/llvm_util.h"
 #include "xla/tsl/platform/errors.h"
@@ -70,11 +71,25 @@ struct PrecisionSpec {
   PrecisionConfig::Algorithm algorithm;
   // TODO(bchetioui): we hope to get rid of operand precisions eventually, they
   // are currently a (XLA-wide) bridge to work with ALG_UNSET.
-  PrecisionConfig::Precision lhs_operand_precision;
-  PrecisionConfig::Precision rhs_operand_precision;
-  // Encodes `tt.dot`'s `inputPrecision` attribute.
-  ttir::InputPrecision ttir_input_precision;
+  mlir::stablehlo::Precision lhs_operand_precision;
+  mlir::stablehlo::Precision rhs_operand_precision;
+  // Encodes `stablehlo.dot`'s `precision` attribute.
+  mlir::stablehlo::DotAlgorithmAttr stablehlo_dot_algorithm;
 };
+
+mlir::stablehlo::Precision XlaPrecisionToStableHloPrecision(
+    PrecisionConfig::Precision precision) {
+  switch (precision) {
+    case PrecisionConfig::DEFAULT:
+      return mlir::stablehlo::Precision::DEFAULT;
+    case PrecisionConfig::HIGH:
+      return mlir::stablehlo::Precision::HIGH;
+    case PrecisionConfig::HIGHEST:
+      return mlir::stablehlo::Precision::HIGHEST;
+    default:
+      LOG(FATAL) << "Unsupported precision: " << precision;
+  }
+}
 
 using AlgorithmEmitter = absl::StatusOr<Value> (*)(EmitterLocOpBuilder,
                                                    const DotOperands&,
@@ -170,10 +185,48 @@ absl::StatusOr<Value> ScaledDot(EmitterLocOpBuilder b,
       rhs_dot_elem_type, true);
 }
 
-Value IEEEDot(EmitterLocOpBuilder b, Value lhs, Value rhs, Value acc) {
-  return b.create<ttir::DotOp>(lhs, rhs, acc,
-                               /*inputPrecision=*/ttir::InputPrecision::IEEE,
-                               /*maxNumImpreciseAcc=*/0);
+namespace {
+
+Value EmitStableHloDotAndAdd(EmitterLocOpBuilder b, Value lhs, Value rhs,
+                             Value acc, PrecisionSpec precision_spec) {
+  auto lhs_type = mlir::cast<ShapedType>(lhs.getType());
+  auto rhs_type = mlir::cast<ShapedType>(rhs.getType());
+
+  CHECK(lhs_type.getRank() <= 2 && rhs_type.getRank() <= 2)
+      << "Unsupported ranks. LHS rank: " << lhs_type.getRank()
+      << " RHS rank: " << rhs_type.getRank();
+
+  llvm::SmallVector<int64_t> array_attr{0};
+  auto dot_dimension_numbers = mlir::stablehlo::DotDimensionNumbersAttr::get(
+      b.getContext(), /*lhsBatchingDimensions=*/{},
+      /*rhsBatchingDimensions=*/{},
+      /*lhsContractingDimensions=*/
+      {lhs_type.getRank() - 1},
+      /*rhsContractingDimensions=*/
+      {0});
+
+  auto precision_config = mlir::stablehlo::PrecisionConfigAttr::get(
+      b.getContext(), {precision_spec.lhs_operand_precision,
+                       precision_spec.rhs_operand_precision});
+
+  auto dot = b.create<mlir::stablehlo::DotGeneralOp>(
+      acc.getType(), lhs, rhs, dot_dimension_numbers,
+      /*precision_config=*/precision_config,
+      /*algorithm=*/precision_spec.stablehlo_dot_algorithm);
+
+  auto add_result =
+      mlir::isa<mlir::IntegerType>(dot.getResult().getType().getElementType())
+          ? b.create<mlir::arith::AddIOp>(acc, dot)
+          : b.create<mlir::arith::AddFOp>(acc, dot);
+  return add_result->getResult(0);
+}
+
+}  // namespace
+
+Value IEEEDot(EmitterLocOpBuilder b, Value lhs, Value rhs, Value acc,
+              PrecisionSpec precision_spec) {
+  return EmitStableHloDotAndAdd(b, lhs, rhs, acc,
+                                /*precision_spec=*/precision_spec);
 }
 
 // Leverages BF16 datatype for F32 matmul computation. It follows the guidance
@@ -196,20 +249,25 @@ absl::StatusOr<Value> EmitBF16x9Matmul(EmitterLocOpBuilder b,
 
   Value result = triton::ZerosLike(b, dot_operands.accumulator);
 
-  result = IEEEDot(b, lhs_parts[kLow], rhs_parts[kLow], result);
-  result = IEEEDot(b, lhs_parts[kMid], rhs_parts[kLow], result);
-  result = IEEEDot(b, lhs_parts[kLow], rhs_parts[kMid], result);
+  result = IEEEDot(b, lhs_parts[kLow], rhs_parts[kLow], result, precision_spec);
+  result = IEEEDot(b, lhs_parts[kMid], rhs_parts[kLow], result, precision_spec);
+  result = IEEEDot(b, lhs_parts[kLow], rhs_parts[kMid], result, precision_spec);
 
-  result = IEEEDot(b, lhs_parts[kMid], rhs_parts[kMid], result);
+  result = IEEEDot(b, lhs_parts[kMid], rhs_parts[kMid], result, precision_spec);
 
-  result = IEEEDot(b, lhs_parts[kLow], rhs_parts[kHigh], result);
-  result = IEEEDot(b, lhs_parts[kHigh], rhs_parts[kLow], result);
+  result =
+      IEEEDot(b, lhs_parts[kLow], rhs_parts[kHigh], result, precision_spec);
+  result =
+      IEEEDot(b, lhs_parts[kHigh], rhs_parts[kLow], result, precision_spec);
 
-  result = IEEEDot(b, lhs_parts[kMid], rhs_parts[kHigh], result);
-  result = IEEEDot(b, lhs_parts[kHigh], rhs_parts[kMid], result);
+  result =
+      IEEEDot(b, lhs_parts[kMid], rhs_parts[kHigh], result, precision_spec);
+  result =
+      IEEEDot(b, lhs_parts[kHigh], rhs_parts[kMid], result, precision_spec);
 
   result = ZeroNaNs(b, result);
-  result = IEEEDot(b, lhs_parts[kHigh], rhs_parts[kHigh], result);
+  result =
+      IEEEDot(b, lhs_parts[kHigh], rhs_parts[kHigh], result, precision_spec);
   result = b.create<arith::AddFOp>(dot_operands.accumulator, result);
   return result;
 }
@@ -234,16 +292,21 @@ absl::StatusOr<Value> EmitBF16x6Matmul(EmitterLocOpBuilder b,
 
   Value result = triton::ZerosLike(b, dot_operands.accumulator);
 
-  result = IEEEDot(b, lhs_parts[kMid], rhs_parts[kMid], result);
+  result = IEEEDot(b, lhs_parts[kMid], rhs_parts[kMid], result, precision_spec);
 
-  result = IEEEDot(b, lhs_parts[kLow], rhs_parts[kHigh], result);
-  result = IEEEDot(b, lhs_parts[kHigh], rhs_parts[kLow], result);
+  result =
+      IEEEDot(b, lhs_parts[kLow], rhs_parts[kHigh], result, precision_spec);
+  result =
+      IEEEDot(b, lhs_parts[kHigh], rhs_parts[kLow], result, precision_spec);
 
-  result = IEEEDot(b, lhs_parts[kMid], rhs_parts[kHigh], result);
-  result = IEEEDot(b, lhs_parts[kHigh], rhs_parts[kMid], result);
+  result =
+      IEEEDot(b, lhs_parts[kMid], rhs_parts[kHigh], result, precision_spec);
+  result =
+      IEEEDot(b, lhs_parts[kHigh], rhs_parts[kMid], result, precision_spec);
 
   result = ZeroNaNs(b, result);
-  result = IEEEDot(b, lhs_parts[kHigh], rhs_parts[kHigh], result);
+  result =
+      IEEEDot(b, lhs_parts[kHigh], rhs_parts[kHigh], result, precision_spec);
   result = b.create<arith::AddFOp>(dot_operands.accumulator, result);
   return result;
 }
@@ -266,32 +329,18 @@ absl::StatusOr<Value> EmitBF16x3Matmul(EmitterLocOpBuilder b,
   std::vector<Value> rhs_bf16 = SplitF32(b, dot_operands.rhs, kNumParts);
 
   Value result = triton::ZerosLike(b, dot_operands.accumulator);
-  result = IEEEDot(b, lhs_bf16[kLow], rhs_bf16[kHigh], result);
-  result = IEEEDot(b, lhs_bf16[kHigh], rhs_bf16[kLow], result);
+  result = IEEEDot(b, lhs_bf16[kLow], rhs_bf16[kHigh], result, precision_spec);
+  result = IEEEDot(b, lhs_bf16[kHigh], rhs_bf16[kLow], result, precision_spec);
   result = ZeroNaNs(b, result);
-  result = IEEEDot(b, lhs_bf16[kHigh], rhs_bf16[kHigh], result);
+  result = IEEEDot(b, lhs_bf16[kHigh], rhs_bf16[kHigh], result, precision_spec);
   result = b.create<arith::AddFOp>(dot_operands.accumulator, result);
   return result;
 }
 
-bool IsTf32Allowed(const HloDotInstruction& dot) {
-  auto precision_config = dot.precision_config();
-  if (precision_config.algorithm() == PrecisionConfig::ALG_UNSET) {
-    return tsl::tensor_float_32_execution_enabled() &&
-           precision_config.operand_precision(0) == PrecisionConfig::DEFAULT &&
-           precision_config.operand_precision(1) == PrecisionConfig::DEFAULT;
-  }
-  return algorithm_util::HasTf32InputType(precision_config.algorithm());
-}
-
-ttir::InputPrecision InferDotPrecision(const HloDotInstruction& dot) {
-  if (dot.precision_config().algorithm() ==
-      PrecisionConfig::ALG_DOT_TF32_TF32_F32_X3) {
-    return ttir::InputPrecision::TF32x3;
-  }
-
-  return IsTf32Allowed(dot) ? ttir::InputPrecision::TF32
-                            : ttir::InputPrecision::IEEE;
+mlir::stablehlo::DotAlgorithmAttr InferDotPrecision(
+    const HloDotInstruction& dot, EmitterLocOpBuilder& builder) {
+  return stablehlo::ConvertDotAlgorithm(dot.precision_config().algorithm(),
+                                        &builder);
 }
 
 absl::StatusOr<Type> GetAlgUnsetAccumulatorType(EmitterLocOpBuilder b,
@@ -333,18 +382,8 @@ absl::StatusOr<Value> EmitDotAlgUnset(EmitterLocOpBuilder b,
   Value rhs = dot_operands.rhs;
   Value acc = dot_operands.accumulator;
 
-  int max_num_imprecise_acc = 0;
-  if (ElementType(lhs).isFloat(8) || ElementType(rhs).isFloat(8)) {
-    // For fp8 dots, disable accumulator promotion to mimick cuBLAS. It may make
-    // sense to enable frequent accumulator promotion at higher matmul
-    // precisions set in the config.
-    max_num_imprecise_acc = std::numeric_limits<int>::max();
-  }
-
-  return b.create<ttir::DotOp>(
-      lhs, rhs, acc,
-      /*inputPrecision=*/precision_spec.ttir_input_precision,
-      /*maxNumImpreciseAcc=*/max_num_imprecise_acc);
+  return EmitStableHloDotAndAdd(b, lhs, rhs, acc,
+                                /*precision_spec=*/precision_spec);
 }
 
 absl::StatusOr<Value> EmitRegularDot(EmitterLocOpBuilder b,
@@ -352,14 +391,6 @@ absl::StatusOr<Value> EmitRegularDot(EmitterLocOpBuilder b,
                                      const PrecisionSpec& precision_spec) {
   Value lhs = dot_operands.lhs;
   Value rhs = dot_operands.rhs;
-
-  int max_num_imprecise_acc = 0;
-  if (ElementType(lhs).isFloat(8) || ElementType(rhs).isFloat(8)) {
-    // For fp8 dots, disable accumulator promotion to mimick cuBLAS. It may make
-    // sense to enable frequent accumulator promotion at higher matmul
-    // precisions set in the config.
-    max_num_imprecise_acc = std::numeric_limits<int>::max();
-  }
 
   // Cast F32 inputs to BF16 if the algorithm is BF16_BF16_F32.
   // TODO(bchetioui): abstract this.
@@ -373,10 +404,9 @@ absl::StatusOr<Value> EmitRegularDot(EmitterLocOpBuilder b,
     }
   }
 
-  return b.create<ttir::DotOp>(
-      dot_operands.lhs, dot_operands.rhs, dot_operands.accumulator,
-      /*inputPrecision=*/precision_spec.ttir_input_precision,
-      /*maxNumImpreciseAcc=*/max_num_imprecise_acc);
+  return EmitStableHloDotAndAdd(b, dot_operands.lhs, dot_operands.rhs,
+                                dot_operands.accumulator,
+                                /*precision_spec=*/precision_spec);
 }
 
 // Returns an emitter for the given dot algorithm. Raises an
@@ -489,9 +519,12 @@ absl::StatusOr<Value> EmitSingleTileDot(EmitterLocOpBuilder b,
                                         const HloDotInstruction& dot,
                                         DotOperands dot_operands) {
   PrecisionConfig::Algorithm algorithm = dot.precision_config().algorithm();
-  PrecisionSpec precision_spec{
-      algorithm, dot.precision_config().operand_precision(0),
-      dot.precision_config().operand_precision(1), InferDotPrecision(dot)};
+  PrecisionSpec precision_spec{algorithm,
+                               XlaPrecisionToStableHloPrecision(
+                                   dot.precision_config().operand_precision(0)),
+                               XlaPrecisionToStableHloPrecision(
+                                   dot.precision_config().operand_precision(1)),
+                               InferDotPrecision(dot, b)};
 
   TF_ASSIGN_OR_RETURN(AlgorithmEmitter algorithm_emitter,
                       GetAlgorithmEmitter(algorithm));

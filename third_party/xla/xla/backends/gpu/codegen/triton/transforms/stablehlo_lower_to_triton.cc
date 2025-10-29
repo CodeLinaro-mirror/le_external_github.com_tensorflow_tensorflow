@@ -14,14 +14,19 @@ limitations under the License.
 ==============================================================================*/
 
 #include <cstdint>
+#include <iterator>
+#include <limits>
 #include <memory>
 #include <utility>
 
 #include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -37,6 +42,10 @@ limitations under the License.
 #include "stablehlo/dialect/StablehloOps.h"
 #include "xla/codegen/emitter_loc_op_builder.h"
 #include "xla/codegen/xtile/ir/xtile_ops.h"
+#include "xla/hlo/translate/mhlo_to_hlo/attribute_exporter.h"
+#include "xla/service/algorithm_util.h"
+#include "tsl/platform/tensor_float_32_utils.h"
+#include "third_party/triton/include/triton/Dialect/Triton/IR/Dialect.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 
 namespace mlir::triton::xla {
@@ -325,6 +334,171 @@ class LowerReshape : public mlir::OpRewritePattern<stablehlo::ReshapeOp> {
   }
 };
 
+namespace {
+
+LogicalResult PopulateOperandPrecision(PatternRewriter& rewriter,
+                                       stablehlo::DotGeneralOp op,
+                                       stablehlo::Precision& lhs_precision,
+                                       stablehlo::Precision& rhs_precision) {
+  auto precision_config = op.getPrecisionConfig();
+
+  if (!precision_config.has_value()) {
+    return rewriter.notifyMatchFailure(op->getLoc(),
+                                       "Dot op must have precision config.");
+  }
+
+  if (precision_config.value().size() != 2) {
+    return rewriter.notifyMatchFailure(
+        op->getLoc(),
+        "Dot op must have exactly two precisions. One for lhs and one for "
+        "rhs.");
+  }
+
+  auto lhs_precision_attr =
+      mlir::cast<stablehlo::PrecisionAttr>(precision_config.value()[0]);
+  auto rhs_precision_attr =
+      mlir::cast<stablehlo::PrecisionAttr>(precision_config.value()[1]);
+
+  lhs_precision = lhs_precision_attr.getValue();
+  rhs_precision = rhs_precision_attr.getValue();
+
+  return mlir::success();
+}
+
+::xla::PrecisionConfig::Precision StableHloPrecisionToXlaPrecision(
+    stablehlo::Precision precision) {
+  switch (precision) {
+    case stablehlo::Precision::DEFAULT:
+      return ::xla::PrecisionConfig::DEFAULT;
+    case stablehlo::Precision::HIGH:
+      return ::xla::PrecisionConfig::HIGH;
+    case stablehlo::Precision::HIGHEST:
+      return ::xla::PrecisionConfig::HIGHEST;
+    default:
+      LOG(FATAL) << "Unsupported precision";
+  }
+}
+
+bool IsTf32Allowed(const stablehlo::Precision lhs,
+                   const stablehlo::Precision rhs,
+                   const ::xla::PrecisionConfig::Algorithm algorithm) {
+  if (algorithm == ::xla::PrecisionConfig::ALG_UNSET) {
+    return tsl::tensor_float_32_execution_enabled() &&
+           StableHloPrecisionToXlaPrecision(lhs) ==
+               ::xla::PrecisionConfig::DEFAULT &&
+           StableHloPrecisionToXlaPrecision(rhs) ==
+               ::xla::PrecisionConfig::DEFAULT;
+  }
+  return ::xla::algorithm_util::HasTf32InputType(algorithm);
+}
+
+LogicalResult GetTritonInputPrecision(
+    PatternRewriter& rewriter, stablehlo::DotGeneralOp op,
+    ttir::InputPrecision& triton_input_precision) {
+  stablehlo::Precision lhs_precision;
+  stablehlo::Precision rhs_precision;
+
+  if (mlir::failed(PopulateOperandPrecision(rewriter, op, lhs_precision,
+                                            rhs_precision))) {
+    return mlir::failure();
+  }
+
+  auto dot_algorithm = op.getAlgorithm();
+
+  auto hlo_algorithm_or_status =
+      dot_algorithm.has_value()
+          ? ::xla::ConvertDotAlgorithm(dot_algorithm.value())
+          : ::xla::PrecisionConfig::ALG_UNSET;
+
+  if (!hlo_algorithm_or_status.ok()) {
+    return rewriter.notifyMatchFailure(
+        op->getLoc(),
+        "Dot op must have algorithm set to be converted to "
+        "triton dot.");
+  }
+
+  auto hlo_algorithm = hlo_algorithm_or_status.value();
+
+  if (hlo_algorithm == ::xla::PrecisionConfig::ALG_DOT_TF32_TF32_F32_X3) {
+    triton_input_precision = ttir::InputPrecision::TF32x3;
+  } else if (hlo_algorithm ==
+                 ::xla::PrecisionConfig::ALG_DOT_BF16_BF16_F32_X3 ||
+             hlo_algorithm ==
+                 ::xla::PrecisionConfig::ALG_DOT_BF16_BF16_F32_X6 ||
+             hlo_algorithm ==
+                 ::xla::PrecisionConfig::ALG_DOT_BF16_BF16_F32_X9) {
+    triton_input_precision = ttir::InputPrecision::IEEE;
+  } else {
+    triton_input_precision =
+        IsTf32Allowed(lhs_precision, rhs_precision, hlo_algorithm)
+            ? ttir::InputPrecision::TF32
+            : ttir::InputPrecision::IEEE;
+    ;
+  }
+
+  return mlir::success();
+}
+
+}  // namespace
+
+class LowerDotGeneral : public mlir::OpRewritePattern<stablehlo::DotGeneralOp> {
+ public:
+  using OpRewritePattern::OpRewritePattern;
+
+ private:
+  mlir::LogicalResult matchAndRewrite(
+      stablehlo::DotGeneralOp op,
+      mlir::PatternRewriter& rewriter) const override {
+    if (std::distance(op->getUsers().begin(), op->getUsers().end()) != 1) {
+      return rewriter.notifyMatchFailure(
+          op->getLoc(),
+          "Dot op must have exactly one user in order to be lowered to "
+          "triton.");
+    }
+
+    mlir::Operation* add_op = dyn_cast<arith::AddFOp>(*op->getUsers().begin());
+    if (!add_op) {
+      add_op = dyn_cast<arith::AddIOp>(*op->getUsers().begin());
+    }
+
+    if (!add_op) {
+      return rewriter.notifyMatchFailure(
+          op->getLoc(),
+          "Dot op must be consumed by an AddOp in order to be convertible to "
+          "triton dot.");
+    }
+
+    int max_num_imprecise_acc = 0;
+
+    if (op.getLhs().getType().getElementType().isFloat(8) ||
+        op.getRhs().getType().getElementType().isFloat(8)) {
+      // For fp8 dots, disable accumulator promotion to mimick cuBLAS. It may
+      // make sense to enable frequent accumulator promotion at higher matmul
+      // precisions set in the config.
+      max_num_imprecise_acc = std::numeric_limits<int>::max();
+    }
+
+    // Accumulator is the operand of add that is not the dot operation.
+    auto accumulator = add_op->getOperand(1) == op ? add_op->getOperand(0)
+                                                   : add_op->getOperand(1);
+
+    ttir::InputPrecision triton_input_precision;
+    if (mlir::failed(
+            GetTritonInputPrecision(rewriter, op, triton_input_precision))) {
+      return mlir::failure();
+    }
+
+    auto triton_dot_op =
+        ttir::DotOp::create(rewriter, op.getLoc(), op.getResult().getType(),
+                            op.getLhs(), op.getRhs(), accumulator,
+                            triton_input_precision, max_num_imprecise_acc);
+
+    rewriter.replaceAllOpUsesWith(add_op, op.getResult());
+    rewriter.replaceOp(op, triton_dot_op);
+    return mlir::success();
+  }
+};
+
 class StableHLOLowerToTritonPass
     : public impl::StableHLOLowerToTritonPassBase<StableHLOLowerToTritonPass> {
  public:
@@ -332,7 +506,7 @@ class StableHLOLowerToTritonPass
     mlir::MLIRContext* mlir_context = &getContext();
     mlir::RewritePatternSet patterns(mlir_context);
     patterns.add<LowerTranspose, LowerIotaToMakeRange, LowerBroadcastInDim,
-                 LowerReduce, LowerReshape>(mlir_context);
+                 LowerReduce, LowerReshape, LowerDotGeneral>(mlir_context);
 
     if (mlir::failed(
             mlir::applyPatternsGreedily(getOperation(), std::move(patterns)))) {
