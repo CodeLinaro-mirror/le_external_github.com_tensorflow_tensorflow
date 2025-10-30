@@ -170,10 +170,67 @@ TEST(MeshAndAxisTest, MeshRoundtripProto) {
 
   // Non-iota tiling.
   Array2D<int64_t> array(
-      {{14, 7, 6}, {12, 0, 8}, {11, 10, 5}, {11, 9, 3}, {2, 13, 4}});
+      {{14, 7, 6}, {12, 0, 8}, {1, 10, 5}, {11, 9, 3}, {2, 13, 4}});
   Mesh mesh_non_iota(TileAssignment(std::make_shared<Array<int64_t>>(array)),
                      axes_xy);
   EXPECT_THAT(mesh_non_iota, Mesh::FromProto(mesh_non_iota.ToProto()));
+}
+
+TEST(MeshAndAxisTest, ValidatesAxisRef) {
+  EXPECT_DEATH(
+      { AxisRef axis_ref_invalid_pre_size(3, {0, 2}); },
+      "sub-axis pre-size must be ");
+  EXPECT_DEATH(
+      { AxisRef axis_ref_invalid_subaxis_size(0, {1, 1}); },
+      "sub-axis size must be");
+}
+
+TEST(MeshAndAxisTest, ValidatesMesh) {
+  EXPECT_DEATH(
+      {
+        Mesh mesh_dims_axes_mismatch(TileAssignment({2, 3, 4}),
+                                     /*axes_names=*/{"x", "y"});
+      },
+      "Number of axes names must match number of dimensions");
+
+  Array2D<int64_t> negative_device_ids({{0, 1, 2}, {3, -4, 5}});
+  EXPECT_DEATH(
+      {
+        Mesh mesh_invalid_non_iota(
+            TileAssignment(
+                std::make_shared<Array<int64_t>>(negative_device_ids)),
+            /*axes_names=*/{"x", "y"});
+      },
+      "Mesh device ids must be non-negative");
+
+  Array2D<int64_t> invalid_non_iota_device_ids({{10, 11, 12}, {13, 14, 15}});
+  EXPECT_DEATH(
+      {
+        Mesh mesh_invalid_non_iota(
+            TileAssignment(
+                std::make_shared<Array<int64_t>>(invalid_non_iota_device_ids)),
+            /*axes_names=*/{"x", "y"});
+      },
+      "Device ids must be a permutation of");
+}
+
+TEST(MeshAndAxisTest, MeshAxesToString) {
+  Mesh mesh_uvw(TileAssignment(IotaTileAssignment::Create(
+                    /*dims=*/{10, 12, 15})),
+                /*axes_names=*/{"u", "v", "w"});
+  EXPECT_EQ(mesh_uvw.ToString(), "@mesh<u=10,v=12,w=15>");
+
+  Mesh mesh_abcd(TileAssignment(IotaTileAssignment::Create(
+                     /*dims=*/{2, 4, 4, 2}, /*reshape_dims=*/{1, 4, 1, 16},
+                     /*transpose_perm=*/{2, 3, 0, 1})),
+                 /*axes_names=*/{"a", "b", "c", "d"});
+  EXPECT_EQ(mesh_abcd.ToString(), "@mesh<a=2,b=4,c=4,d=2>([4,16]T(1,0))");
+
+  Array<int64_t> array({{8, 3, 7, 5, 4, 2, 6, 0, 1, 9}});
+  array.Reshape({10});
+  TileAssignment tile_assignment(std::make_shared<Array<int64_t>>(array));
+  Mesh mesh_ooo(tile_assignment, /*axes_names=*/{"ooo"});
+  EXPECT_EQ(mesh_ooo.ToString(), "@mesh<ooo=10>(8,3,7,5,4,2,6,0,1,9)");
 }
 
 }  // namespace xla

@@ -15,14 +15,18 @@ limitations under the License.
 
 #include "xla/hlo/ir/mesh_and_axis.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/log/check.h"
+#include "absl/status/status.h"
 #include "absl/types/span.h"
 #include "llvm/ADT/STLExtras.h"
 #include "xla/array.h"
@@ -30,6 +34,60 @@ limitations under the License.
 #include "xla/xla_data.pb.h"
 
 namespace xla {
+
+absl::Status Mesh::ValidateMesh() {
+  if (device_assignment_.dimensions().size() != axes_names_.size()) {
+    return absl::InvalidArgumentError(
+        "Number of axes names must match number of dimensions in the device "
+        "assignment.");
+  }
+  std::vector<int64_t> device_ids(device_assignment_.array().begin(),
+                                  device_assignment_.array().end());
+  for (int64_t device_id : device_assignment_.array()) {
+    if (device_id < 0) {
+      return absl::InvalidArgumentError(
+          "Mesh device ids must be non-negative.");
+    }
+  }
+  std::vector<int64_t> iota(device_ids.size());
+  std::iota(iota.begin(), iota.end(), 0);
+
+  absl::c_sort(device_ids);
+  if (device_ids != iota) {
+    return absl::InvalidArgumentError(
+        "Device ids must be a permutation of [0,1,2,3...].");
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Mesh::ValidateAxisForMesh(const AxisRef& axis_ref) const {
+  if (axis_ref.mesh_axis_index() >= axes_names_.size()) {
+    return absl::InvalidArgumentError(
+        "Axis index must be less than number of axes.");
+  }
+  if (!axis_ref.sub_axis_info().has_value()) {
+    return absl::OkStatus();
+  }
+
+  int64_t axis_size = device_assignment_.dim(axis_ref.mesh_axis_index());
+  if (axis_size % axis_ref.sub_axis_info()->pre_size != 0 ||
+      axis_size % axis_ref.sub_axis_info()->size != 0) {
+    return absl::InvalidArgumentError(
+        "Pre-size and size must divide the full axis size.");
+  }
+  if (axis_ref.sub_axis_info()->size >= axis_size) {
+    return absl::InvalidArgumentError(
+        "Sub-axis size must be strictly less than the full axis size.");
+  }
+  return absl::OkStatus();
+}
+
+Mesh::Mesh(TileAssignment device_assignment,
+           absl::Span<const std::string> axes_names)
+    : device_assignment_(std::move(device_assignment)),
+      axes_names_(axes_names.begin(), axes_names.end()) {
+  CHECK_OK(ValidateMesh());
+}
 
 MeshProto Mesh::ToProto() const {
   MeshProto proto;
@@ -55,7 +113,6 @@ MeshProto Mesh::ToProto() const {
 }
 
 Mesh Mesh::FromProto(const MeshProto& proto) {
-  // TODO(b/454008727): Add validators for Mesh and AxisRef FromProto methods.
   std::vector<int64_t> mesh_axis_sizes;
   std::vector<std::string> mesh_axis_names;
   mesh_axis_sizes.reserve(proto.axes_size());
@@ -99,6 +156,72 @@ AxisRef AxisRef::FromProto(const AxisRefProto& proto) {
                                proto.sub_axis_info().size()};
   }
   return axis_ref;
+}
+
+absl::Status AxisRef::ValidateAxisRef() {
+  if (sub_axis_info_.has_value()) {
+    if (sub_axis_info_->pre_size < 1) {
+      return absl::InvalidArgumentError("sub-axis pre-size must be >= 1");
+    }
+    if (sub_axis_info_->size <= 1) {
+      return absl::InvalidArgumentError("sub-axis size must be > 1");
+    }
+  }
+  return absl::OkStatus();
+}
+
+AxisRef::AxisRef(int64_t mesh_axis_index) : mesh_axis_index_(mesh_axis_index) {
+  CHECK_OK(ValidateAxisRef());
+}
+
+AxisRef::AxisRef(int64_t mesh_axis_index, SubAxis sub_axis_info)
+    : mesh_axis_index_(mesh_axis_index), sub_axis_info_(sub_axis_info) {
+  CHECK_OK(ValidateAxisRef());
+}
+
+AxisRef::AxisRef(int64_t mesh_axis_index, int64_t sub_axis_pre_size,
+                 int64_t sub_axis_size)
+    : mesh_axis_index_(mesh_axis_index),
+      sub_axis_info_({sub_axis_pre_size, sub_axis_size}) {
+  CHECK_OK(ValidateAxisRef());
+}
+
+bool canSubAxesCoexist(int64_t minPreSize, int64_t maxPreSize,
+                       int64_t minNextPreSize, int64_t maxNextPreSize) {
+  if (minNextPreSize > maxPreSize) {
+    // Sub-axes overlap, check if overlapping and non-overlapping parts are
+    // valid.
+    return minNextPreSize % maxPreSize == 0 && maxPreSize % minPreSize == 0 &&
+           maxNextPreSize % minNextPreSize == 0;
+  }
+  // Sub-axes don't overlap, check if the gap is valid.
+  return maxPreSize % minNextPreSize == 0;
+}
+
+bool AxisRef::CanCoexist(const AxisRef& other) const {
+  if (mesh_axis_index() != other.mesh_axis_index()) {
+    return true;
+  }
+  if (!sub_axis_info_.has_value() || !other.sub_axis_info_.has_value()) {
+    // If one is a full axis and the other is a sub-axis, they can coexist.
+    return true;
+  }
+
+  const SubAxis& this_sub_axis = sub_axis_info_.value();
+  const SubAxis& other_sub_axis = other.sub_axis_info_.value();
+
+  int64_t this_pre_size = this_sub_axis.pre_size;
+  int64_t other_pre_size = other_sub_axis.pre_size;
+  int64_t this_next_pre_size = this_sub_axis.next_pre_size();
+  int64_t other_next_pre_size = other_sub_axis.next_pre_size();
+
+  auto [min_pre_size, max_pre_size] =
+      std::minmax(this_pre_size, other_pre_size);
+  auto [min_next_pre_size, max_next_pre_size] =
+      std::minmax(this_next_pre_size, other_next_pre_size);
+
+  return canSubAxesCoexist(min_pre_size, max_pre_size, min_next_pre_size,
+                           max_next_pre_size);
 }
 
 }  // namespace xla
