@@ -113,7 +113,9 @@ void CheckProtoRoundTrip(const DynamicSliceThunk& thunk,
   Thunk::Deserializer deserializer =
       [&buffer_allocations](const ThunkProto& thunk_proto)
       -> absl::StatusOr<std::unique_ptr<Thunk>> {
-    return DeserializeThunkProto(thunk_proto, buffer_allocations);
+    return DeserializeThunkProto(thunk_proto, buffer_allocations,
+                                 /*hlo_module*/ nullptr,
+                                 /*platform_name=*/"TEST_PLATFORM");
   };
   TF_ASSERT_OK_AND_ASSIGN(
       auto thunk_from_proto,
