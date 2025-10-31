@@ -249,15 +249,17 @@ bool IsDotAlgorithmSupportedByTriton(
 CodegenDecision AreDotInputAndOutputTypesSupportedAndCompatible(
     const HloDotInstruction& dot, const se::GpuComputeCapability& gpu_version) {
   auto output_type = dot.shape().element_type();
-  auto lhs_type = dot.operand(0)->shape().element_type();
-  auto rhs_type = dot.operand(1)->shape().element_type();
-
   if (!IsTritonSupportedDotOutputType(output_type, gpu_version)) {
     return CodegenDecision::Forbid("Unsupported output data type for Dot op.");
   }
 
-  if (!IsTritonSupportedDataType(lhs_type, gpu_version) ||
-      !IsTritonSupportedDataType(rhs_type, gpu_version)) {
+  auto lhs_type = dot.operand(0)->shape().element_type();
+  auto rhs_type = dot.operand(1)->shape().element_type();
+  if (lhs_type != rhs_type) {
+    return CodegenDecision::Forbid("Input types must be the same.");
+  }
+
+  if (!IsTritonSupportedDataType(lhs_type, gpu_version)) {
     return CodegenDecision::Forbid("Unsupported input data type for Dot op.");
   }
 
@@ -266,6 +268,12 @@ CodegenDecision AreDotInputAndOutputTypesSupportedAndCompatible(
         primitive_util::Is8BitIntegralType(rhs_type))) {
     return CodegenDecision::Forbid(
         "Currently, S32 output is only supported for 8-bit integral inputs.");
+  }
+
+  if (primitive_util::IsIntegralType(lhs_type) !=
+      primitive_util::IsIntegralType(output_type)) {
+    return CodegenDecision::Forbid(
+        "Dots between integer and floating-point types are not supported.");
   }
 
   return CodegenDecision::Allow();
