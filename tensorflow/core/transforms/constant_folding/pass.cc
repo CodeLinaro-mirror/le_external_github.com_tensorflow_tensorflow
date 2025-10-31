@@ -448,9 +448,7 @@ bool OpPropertyHelper::ModifiesInputsInPlace(TFOp op) {
     return false;
   }
 
-  std::string lower_op_name = op_name.str();
-  std::transform(lower_op_name.begin(), lower_op_name.end(),
-                 lower_op_name.begin(), ::tolower);
+  std::string lower_op_name = absl::AsciiStrToLower(op_name.str());
   if (absl::StrContains(lower_op_name, "inplace")) return true;
 
   return op->hasAttr("in_place") || op->hasAttr("inplace");

@@ -121,7 +121,7 @@ std::string Type::name() const {
 
 Type Type::FromName(absl::string_view name) {
   if (name[0] == 'v') {
-    size_t len = std::isdigit(name[2]) ? 2 : 1;
+    size_t len = absl::ascii_isdigit(name[2]) ? 2 : 1;
     size_t width;
     CHECK(absl::SimpleAtoi(name.substr(1, len), &width)) << name;
     return Type(FromLowercaseLLVMTypeName(name.substr(len + 1)), width);

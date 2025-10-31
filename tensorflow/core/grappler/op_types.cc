@@ -767,9 +767,7 @@ bool ModifiesInputsInPlace(const NodeDef& node) {
     return false;
   }
 
-  string lower_op_name = op_name;
-  std::transform(lower_op_name.begin(), lower_op_name.end(),
-                 lower_op_name.begin(), ::tolower);
+  std::string lower_op_name = absl::AsciiStrToLower(op_name);
   if (absl::StrContains(lower_op_name, "inplace")) {
     return true;
   }

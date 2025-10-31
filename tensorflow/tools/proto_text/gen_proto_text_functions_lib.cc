@@ -352,7 +352,7 @@ void Generator::AppendFieldAppend(const FieldDescriptor& field) {
     const auto* oneof = field.containing_oneof();
     if (oneof != nullptr) {
       std::string camel_name(field.camelcase_name());
-      camel_name[0] = toupper(camel_name[0]);
+      camel_name[0] = absl::ascii_toupper(camel_name[0]);
       Print("if (msg.", oneof->name(), "_case() == ",
             GetQualifiedName(*oneof->containing_type()), "::k", camel_name,
             ") {");

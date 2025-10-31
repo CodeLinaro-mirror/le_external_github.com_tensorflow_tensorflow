@@ -188,7 +188,7 @@ string SnakeToCamelCase(const string& str, bool upper = false) {
     if (c == '_') {
       cap = true;
     } else if (cap) {
-      result += toupper(c);
+      result += absl::ascii_toupper(c);
       cap = false;
     } else {
       result += c;

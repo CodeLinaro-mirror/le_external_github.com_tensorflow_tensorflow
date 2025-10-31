@@ -493,7 +493,7 @@ bool MatchesAnyVersion(absl::string_view op_prefix,
     return true;
   }
   size_t index = op_to_match.length() - 1;
-  while (isdigit(op_to_match[index])) {
+  while (absl::ascii_isdigit(op_to_match[index])) {
     index--;
   }
   return (op_to_match[index] == 'V') && (op_prefix.length() == index);

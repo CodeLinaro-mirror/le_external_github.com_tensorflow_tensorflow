@@ -306,7 +306,7 @@ string ToCamelCase(absl::string_view str) {
     } else if (c == joiner) {
       cap = true;
     } else if (cap) {
-      result += toupper(c);
+      result += absl::ascii_toupper(c);
       cap = false;
     } else {
       result += c;

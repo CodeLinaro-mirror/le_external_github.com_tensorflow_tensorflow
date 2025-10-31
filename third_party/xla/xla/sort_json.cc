@@ -34,7 +34,7 @@ limitations under the License.
 namespace {
 
 void SkipWhitespace(absl::string_view json, size_t& index) {
-  while (index < json.size() && std::isspace(json[index])) {
+  while (index < json.size() && absl::ascii_isspace(json[index])) {
     ++index;
   }
 }
@@ -134,8 +134,8 @@ bool LiteralIsFinished(absl::string_view outer_json, size_t& index,
     return c == '"';
   }
 
-  return std::isspace(c) || c == ',' || c == '{' || c == '}' || c == '[' ||
-         c == ']' || c == ':';
+  return absl::ascii_isspace(c) || c == ',' || c == '{' || c == '}' ||
+         c == '[' || c == ']' || c == ':';
 }
 
 absl::StatusOr<absl::string_view> ParseLiteral(absl::string_view outer_json,

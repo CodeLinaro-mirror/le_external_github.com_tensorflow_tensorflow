@@ -392,7 +392,7 @@ TEST(RamFileBlockCacheTest, RemoveFile) {
     char c = (filename == "a") ? 'a' : (filename == "b") ? 'b' : 'x';
     if (offset > 0) {
       // The first block is lower case and all subsequent blocks are upper case.
-      c = toupper(c);
+      c = absl::ascii_toupper(c);
     }
     memset(buffer, c, n);
     TF_SetStatus(status, TF_OK, "");

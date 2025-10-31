@@ -323,8 +323,7 @@ SetOperation SetOperationFromContext(OpKernelConstruction* ctx) {
   if (!ctx->GetAttr("set_operation", &set_operation_str).ok()) {
     ctx->CtxFailure(errors::InvalidArgument("Missing set_operation."));
   } else {
-    std::transform(set_operation_str.begin(), set_operation_str.end(),
-                   set_operation_str.begin(), ::tolower);
+    absl::AsciiStrToLower(&set_operation_str);
     if ("a-b" == set_operation_str) {
       return A_MINUS_B;
     }

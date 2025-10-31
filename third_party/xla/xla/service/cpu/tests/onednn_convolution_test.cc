@@ -756,8 +756,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(F32, BF16, F16),
     [](const ::testing::TestParamInfo<ConvolutionTest::ParamType>& info) {
       auto test_name = primitive_util::LowercasePrimitiveTypeName(info.param);
-      std::transform(test_name.begin(), test_name.end(), test_name.begin(),
-                     [](auto c) { return std::toupper(c); });
+      absl::AsciiStrToUpper(&test_name);
       return test_name;
     });
 

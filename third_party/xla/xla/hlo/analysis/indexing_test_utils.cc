@@ -171,10 +171,10 @@ bool ApproximateMatch(absl::string_view lhs, absl::string_view rhs) {
   size_t rhs_length = rhs.size();
   size_t l = 0, r = 0;
   while (l < lhs_length || r < rhs_length) {
-    while (l < lhs_length && std::isspace(lhs[l])) {
+    while (l < lhs_length && absl::ascii_isspace(lhs[l])) {
       ++l;
     }
-    while (r < rhs_length && std::isspace(rhs[r])) {
+    while (r < rhs_length && absl::ascii_isspace(rhs[r])) {
       ++r;
     }
     if (l == lhs_length || r == rhs_length) {
