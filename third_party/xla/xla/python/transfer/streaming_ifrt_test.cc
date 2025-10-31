@@ -154,6 +154,53 @@ absl::StatusOr<std::vector<int32_t>> FetchResult(
   return result;
 }
 
+TEST(PremappedCopierState, FreeCycle) {
+  TF_ASSERT_OK_AND_ASSIGN(auto client, xla::ifrt::test_util::GetClient());
+  std::shared_ptr<xla::PjRtClient> pjrt_client =
+      tensorflow::down_cast<xla::ifrt::PjRtClient*>(client.get())
+          ->shared_ptr_pjrt_client();
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto scratch, AllocateAndMapPjrtMemory(pjrt_client, 1024 * 1024 * 16));
+  auto cstate = std::make_shared<PremappedCopierState>(scratch, 4, 4096);
+  void* buffer_to_return = nullptr;
+  cstate->ScheduleCopy({.copy_fn = [](void* dst, int64_t offset,
+                                      int64_t transfer_size) -> xla::Future<> {
+                          return xla::Future<>(absl::OkStatus());
+                        },
+                        .buffer_id = 0,
+                        .offset = 100,
+                        .size = 100},
+                       [&buffer_to_return](PremappedCopierState* state,
+                                           absl::StatusOr<void*> buf,
+                                           const DmaCopyChunk& chunk) {
+                         TF_CHECK_OK(buf.status());
+                         buffer_to_return = buf.value();
+                       });
+  class BufferReturner {
+   public:
+    explicit BufferReturner(absl::AnyInvocable<void() &&> on_done)
+        : on_done_(std::move(on_done)) {}
+    ~BufferReturner() { std::move(on_done_)(); }
+
+   private:
+    absl::AnyInvocable<void() &&> on_done_;
+  };
+  cstate->ScheduleCopy(
+      {.copy_fn = [tmp = std::make_shared<BufferReturner>(
+                       [buffer_to_return, cstate]() {
+                         cstate->ReturnBuffer(buffer_to_return);
+                       })](void* dst, int64_t offset, int64_t transfer_size)
+           -> xla::Future<> { return xla::Future<>(absl::OkStatus()); },
+       .buffer_id = 1,
+       .offset = 100,
+       .size = 100},
+      [](PremappedCopierState* state, absl::StatusOr<void*> buf,
+         const DmaCopyChunk& chunk) {
+        TF_CHECK_OK(buf.status());
+        state->ReturnBuffer(buf.value());
+      });
+}
+
 TEST(PremappedCopierState, RoundTrip) {
   TF_ASSERT_OK_AND_ASSIGN(auto client, xla::ifrt::test_util::GetClient());
   size_t xfer_size = 1024 * 1024;
