@@ -1356,9 +1356,46 @@ class DictionaryBase {
  public:
   explicit DictionaryBase(const XLA_FFI_Attrs* attrs) : attrs_(attrs) {}
 
+  // Iterator for iterating over dictionary attribute names.
+  class Iterator {
+   public:
+    using iterator_category = std::input_iterator_tag;
+    using difference_type = ptrdiff_t;
+    using value_type = std::string_view;
+
+    friend bool operator==(const Iterator& a, const Iterator& b) {
+      return a.idx_ == b.idx_;
+    }
+
+    friend bool operator!=(const Iterator& a, const Iterator& b) {
+      return !(a == b);
+    }
+
+    std::string_view operator*() const {
+      return std::string_view{attrs_->names[idx_]->ptr,
+                              attrs_->names[idx_]->len};
+    }
+
+    Iterator& operator++() {
+      ++idx_;
+      return *this;
+    }
+
+   private:
+    friend class DictionaryBase;
+    Iterator(const XLA_FFI_Attrs* attrs, size_t idx)
+        : attrs_(attrs), idx_(idx) {}
+
+    const XLA_FFI_Attrs* attrs_;
+    size_t idx_ = 0;
+  };
+
   size_t size() const { return attrs_->size; }
 
   bool contains(std::string_view name) const { return Find(name).has_value(); }
+
+  Iterator begin() const { return Iterator(attrs_, 0); }
+  Iterator end() const { return Iterator(attrs_, size()); }
 
   template <typename T>
   bool contains(std::string_view name) const {
@@ -1372,9 +1409,24 @@ class DictionaryBase {
     return AttrDecoding<T>::Isa(attr_type, attr);
   }
 
+  template <typename T>
+  bool isa(const Iterator& it) {
+    XLA_FFI_AttrType attr_type = attrs_->types[it.idx_];
+    void* attr = attrs_->attrs[it.idx_];
+    return AttrDecoding<T>::Isa(attr_type, attr);
+  }
+
  protected:
   template <typename T, typename... Ts>
   friend struct DecodeDictionaryAttr;
+
+  template <typename T>
+  std::optional<size_t> get(const Iterator& it,
+                            DiagnosticEngine& diagnostic) const {
+    XLA_FFI_AttrType attr_type = attrs_->types[it.idx_];
+    void* attr = attrs_->attrs[it.idx_];
+    return AttrDecoding<T>::Decode(attr_type, attr, diagnostic);
+  }
 
   template <typename T>
   std::optional<T> get(std::string_view name,
