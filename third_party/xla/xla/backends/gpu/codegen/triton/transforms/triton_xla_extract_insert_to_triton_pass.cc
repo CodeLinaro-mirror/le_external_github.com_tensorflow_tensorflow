@@ -60,6 +60,7 @@ limitations under the License.
 #include "xla/codegen/emitters/ir/xla_ops.h"
 #include "xla/permutation_util.h"
 #include "xla/stream_executor/gpu/tma_metadata.h"
+#include "third_party/triton/include/triton/Dialect/Triton/IR/Types.h"
 
 namespace mlir::triton::xla {
 
@@ -287,13 +288,12 @@ class RewriteFuncOp : public mlir::OpRewritePattern<func::FuncOp> {
     SmallVector<Type> new_operand_types(input_types);
     for (auto&& [index, operand_type] : llvm::enumerate(new_operand_types)) {
       mlir::BlockArgument func_arg = op.getArgument(index);
-      auto element_type =
-          mlir::cast<PointerType>(operand_type).getPointeeType();
-
       auto attr = op.getArgAttr(index, "tt.tma_descriptor");
       if (!attr) {
         continue;
       }
+      auto element_type =
+          mlir::cast<PointerType>(operand_type).getPointeeType();
       auto tma_descriptor = mlir::cast<TmaDescriptorAttr>(attr);
       auto layout = tma_descriptor.getLayout();
       auto block_shape = tma_descriptor.getTileShape();
