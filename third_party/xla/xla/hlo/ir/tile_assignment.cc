@@ -551,21 +551,21 @@ int64_t TileAssignment::operator()(absl::Span<const int64_t> indexes) const {
 
 absl::Span<const int64_t> TileAssignment::dimensions() const {
   absl::MutexLock lock(mu_);
-  return array_ ? array_->dimensions() : iota_->dims();
+  return iota_ ? iota_->dims() : array().dimensions();
 }
 
 int64_t TileAssignment::num_dimensions() const {
   absl::MutexLock lock(mu_);
-  return array_ ? array_->num_dimensions() : iota_->ndims();
+  return iota_ ? iota_->ndims() : array().num_dimensions();
 }
 
 int64_t TileAssignment::dim(int64_t n) const {
   absl::MutexLock lock(mu_);
-  return array_ ? array_->dim(n) : iota_->dim(n);
+  return iota_ ? iota_->dim(n) : array().dim(n);
 }
 int64_t TileAssignment::num_elements() const {
   absl::MutexLock lock(mu_);
-  return array_ ? array_->num_elements() : iota_->num_elements();
+  return iota_ ? iota_->num_elements() : array().num_elements();
 }
 
 int64_t TileAssignment::first() const {
@@ -600,10 +600,8 @@ absl::Status TileAssignment::EachStatus(
     absl::Span<const int64_t> new_dimensions) const {
   if (iota_) {
     CHECK_EQ(Product(new_dimensions), iota_->num_elements());
-    return TileAssignment(
-        IotaTileAssignment(new_dimensions, iota_->reshape_dims(),
-                           iota_->transpose_perm()),
-        /*shared_array=*/nullptr);
+    return TileAssignment(new_dimensions, iota_->reshape_dims(),
+                          iota_->transpose_perm());
   }
   std::shared_ptr<Array<int64_t>> reshaped = shared_array_clone();
   reshaped->Reshape(new_dimensions);
@@ -682,13 +680,15 @@ std::shared_ptr<Array<int64_t>> TileAssignment::shared_array_clone() const {
 }
 
 void TileAssignment::MaybeMaterializeFullArray() const {
-  if (array_ == nullptr) {
-    DCHECK(shared_array_ == nullptr);
-    DCHECK(iota_.has_value());
-    auto full = std::make_shared<Array<int64_t>>(iota_->ToArray());
-    shared_array_ = std::move(full);
-    array_ = shared_array_.get();
+  if (array_ != nullptr) {
+    return;
   }
+  DCHECK(shared_array_ == nullptr);
+
+  Array<int64_t> full_array =
+      iota_.has_value() ? iota_->ToArray() : Array<int64_t>({0});
+  shared_array_ = std::make_shared<Array<int64_t>>(std::move(full_array));
+  array_ = shared_array_.get();
 }
 
 }  // namespace xla
