@@ -65,7 +65,7 @@ absl::Status DecodeTensorNameSlice(const string& code, string* name,
     return errors::Internal("Expecting positive rank of the tensor, got ", x,
                             ", src = ", src);
   }
-  if (x >= kint32max) {
+  if (x >= std::numeric_limits<int32_t>::max()) {
     return errors::Internal("Too many elements ", x);
   }
   slice->SetFullSlice(x);

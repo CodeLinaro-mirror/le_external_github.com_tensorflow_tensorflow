@@ -15,6 +15,7 @@ limitations under the License.
 #include "tensorflow/core/framework/shape_inference.h"
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 
 #include "tensorflow/core/framework/bounds_check.h"
@@ -316,7 +317,7 @@ string InferenceContext::DebugString(
 
 absl::Status InferenceContext::WithRank(ShapeHandle shape, int64_t rank,
                                         ShapeHandle* out) {
-  if (rank > kint32max) {
+  if (rank > std::numeric_limits<int32_t>::max()) {
     return errors::InvalidArgument("Rank cannot exceed kint32max");
   }
   const int32_t existing = Rank(shape);
@@ -341,7 +342,7 @@ absl::Status InferenceContext::WithRank(ShapeHandle shape, int64_t rank,
 
 absl::Status InferenceContext::WithRankAtLeast(ShapeHandle shape, int64_t rank,
                                                ShapeHandle* out) {
-  if (rank > kint32max) {
+  if (rank > std::numeric_limits<int32_t>::max()) {
     return errors::InvalidArgument("Rank cannot exceed kint32max");
   }
   const int32_t existing = Rank(shape);
@@ -356,7 +357,7 @@ absl::Status InferenceContext::WithRankAtLeast(ShapeHandle shape, int64_t rank,
 
 absl::Status InferenceContext::WithRankAtMost(ShapeHandle shape, int64_t rank,
                                               ShapeHandle* out) {
-  if (rank > kint32max) {
+  if (rank > std::numeric_limits<int32_t>::max()) {
     return errors::InvalidArgument("Rank cannot exceed kint32max");
   }
   const int32_t existing = Rank(shape);

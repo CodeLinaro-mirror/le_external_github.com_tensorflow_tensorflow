@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <algorithm>
+#include <limits>
 #include <ostream>
 #include <vector>
 
@@ -2863,7 +2864,7 @@ REGISTER_OP("QuantizeAndDequantizeV2")
                                        axis);
       } else if (axis != -1) {
         ShapeHandle input;
-        if (axis >= kint32max) {
+        if (axis >= std::numeric_limits<int32_t>::max()) {
           return errors::InvalidArgument(
               "Axis cannot be >= kint32max value, got ", axis);
         }
@@ -2902,7 +2903,7 @@ REGISTER_OP("QuantizeAndDequantizeV4")
                                        axis);
       } else if (axis != -1) {
         ShapeHandle input;
-        if (axis >= kint32max) {
+        if (axis >= std::numeric_limits<int32_t>::max()) {
           return errors::InvalidArgument(
               "Axis cannot be >= kint32max value, got ", axis);
         }
