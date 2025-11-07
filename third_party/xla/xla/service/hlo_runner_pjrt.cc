@@ -17,7 +17,6 @@ limitations under the License.
 
 #include <array>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,6 +25,7 @@ limitations under the License.
 
 #include "absl/algorithm/container.h"
 #include "absl/base/nullability.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/log/die_if_null.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -581,9 +581,9 @@ absl::StatusOr<std::vector<Literal>> HloRunnerPjRt::ExecuteReplicated(
 }
 
 absl::StatusOr<std::vector<Literal>> HloRunnerPjRt::ExecuteReplicated(
-    std::function<OpaqueExecutable*(int64_t)> executable_provider,
-    std::function<int64_t(int64_t)> argument_count_provider,
-    std::function<const Literal*(int64_t, int64_t)> argument_provider,
+    absl::AnyInvocable<OpaqueExecutable*(int64_t)> executable_provider,
+    absl::AnyInvocable<int64_t(int64_t)> argument_count_provider,
+    absl::AnyInvocable<const Literal*(int64_t, int64_t)> argument_provider,
     const HloRunnerInterface::ReplicatedExecuteOptions& options,
     DeviceAssignment* device_assignment) {
   TF_RET_CHECK(device_assignment->computation_count() == 1)
@@ -650,18 +650,18 @@ absl::StatusOr<std::vector<Literal>> HloRunnerPjRt::ExecuteReplicated(
         }
         return results;
       },
-      executable_provider, argument_count_provider, argument_provider, options,
-      device_assignment);
+      std::move(executable_provider), std::move(argument_count_provider),
+      std::move(argument_provider), options, device_assignment);
 }
 
 absl::StatusOr<std::vector<Literal>> HloRunnerPjRt::ExecuteReplicatedImpl(
-    std::function<
+    absl::AnyInvocable<
         absl::StatusOr<std::vector<std::vector<std::unique_ptr<PjRtBuffer>>>>(
             absl::Span<const std::vector<PjRtBuffer*>>)>
         execution_helper,
-    std::function<OpaqueExecutable*(int64_t)> executable_provider,
-    std::function<int64_t(int64_t)> argument_count_provider,
-    std::function<const Literal*(int64_t, int64_t)> argument_provider,
+    absl::AnyInvocable<OpaqueExecutable*(int64_t)> executable_provider,
+    absl::AnyInvocable<int64_t(int64_t)> argument_count_provider,
+    absl::AnyInvocable<const Literal*(int64_t, int64_t)> argument_provider,
     const ReplicatedExecuteOptions& options,
     DeviceAssignment* device_assignment) {
   TF_RET_CHECK(options.infeed_values.empty() ||
