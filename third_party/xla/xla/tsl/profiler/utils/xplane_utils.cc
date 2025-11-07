@@ -320,6 +320,9 @@ void NormalizeTimestamps(XPlane* plane, uint64_t start_time_ns) {
   for (XLine& line : *plane->mutable_lines()) {
     if (line.timestamp_ns() >= static_cast<int64_t>(start_time_ns)) {
       line.set_timestamp_ns(line.timestamp_ns() - start_time_ns);
+    } else {
+      // Make it more robust to avoid non-normalized lines.
+      line.set_timestamp_ns(0);
     }
   }
 }
