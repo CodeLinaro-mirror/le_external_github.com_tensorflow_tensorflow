@@ -23,6 +23,7 @@ limitations under the License.
 
 #include "absl/log/check.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
@@ -264,6 +265,25 @@ class ExportNamedComputationsPass
         }
       }
     });
+
+    // Drop uncalled inlineable manual computation funcs.
+    // TODO(enver): Drop generically, not just manual computation funcs.
+    llvm::SmallDenseSet<StringRef> uncalledInlineableManualComputationCallees;
+    moduleOp.walk([&](FuncOp funcOp) {
+      if (StringRef funcSymName = funcOp.getName();
+          funcSymName.contains(kInlineableManualComputationFuncName)) {
+        uncalledInlineableManualComputationCallees.insert(funcSymName);
+      }
+    });
+    moduleOp.walk([&](CallOp callOp) {
+      if (StringRef funcSymName = callOp.getCallee();
+          funcSymName.contains(kInlineableManualComputationFuncName)) {
+        uncalledInlineableManualComputationCallees.erase(funcSymName);
+      }
+    });
+    for (auto funcSymName : uncalledInlineableManualComputationCallees) {
+      symbolTable.erase(symbolTable.lookup(funcSymName));
+    }
   }
 
   StringRef getArgument() const override {
