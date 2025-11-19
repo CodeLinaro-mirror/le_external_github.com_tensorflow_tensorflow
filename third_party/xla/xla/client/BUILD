@@ -91,7 +91,6 @@ xla_cc_test(
         "//xla/service:test_compilation_environment_proto_cc",
         "//xla/tsl/lib/core:status_test_util",
         "//xla/tsl/platform:env",
-        "//xla/tsl/platform:status_matchers",
         "//xla/tsl/platform:statusor",
         "//xla/tsl/platform:test_main",
         "//xla/tsl/util/proto:proto_matchers",

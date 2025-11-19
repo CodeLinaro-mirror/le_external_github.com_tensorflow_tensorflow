@@ -26,7 +26,6 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/testlib/hlo_hardware_independent_test_base.h"
 #include "xla/shape_util.h"
-#include "xla/tsl/platform/status_matchers.h"
 #include "xla/xla_data.pb.h"
 
 namespace xla {

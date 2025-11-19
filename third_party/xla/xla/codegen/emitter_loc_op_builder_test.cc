@@ -32,14 +32,12 @@ limitations under the License.
 #include "xla/hlo/testlib/filecheck.h"
 #include "xla/hlo/testlib/hlo_hardware_independent_test_base.h"
 #include "xla/service/llvm_ir/llvm_util.h"
-#include "tsl/platform/status_matchers.h"
 
 namespace xla {
 namespace {
 
 using mlir::NameLoc;
 using mlir::StringAttr;
-using ::tsl::testing::IsOkAndHolds;
 
 using ::xla::gpu::ir_emitter_triton_internal::DumpTritonIR;
 

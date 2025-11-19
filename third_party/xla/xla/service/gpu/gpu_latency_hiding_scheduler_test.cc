@@ -23,6 +23,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/algorithm/container.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
@@ -49,7 +50,6 @@ namespace {
 
 using ::testing::Property;
 using ::testing::UnorderedElementsAre;
-using ::tsl::testing::StatusIs;
 
 int GetIndexByName(absl::Span<HloInstruction* const> instruction_sequence,
                    absl::string_view hlo_name) {

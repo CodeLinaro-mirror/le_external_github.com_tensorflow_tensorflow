@@ -16,17 +16,16 @@ limitations under the License.
 
 #include <vector>
 
+#include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
 #include "xla/tsl/framework/device_id_manager.h"
 #include "xla/tsl/lib/core/status_test_util.h"
-#include "xla/tsl/platform/status_matchers.h"
 #include "xla/tsl/util/device_name_utils.h"
 
 namespace tsl {
 namespace {
 
 using ::testing::HasSubstr;
-using ::tsl::testing::StatusIs;
 
 constexpr absl::string_view kTestDeviceType = "CPU";
 

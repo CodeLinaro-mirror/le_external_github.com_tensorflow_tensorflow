@@ -54,7 +54,6 @@ xla_cc_test(
         "@com_google_googletest//:gtest_main",
         "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:IR",
-        "@local_tsl//tsl/platform:status_matchers",
     ],
 )
 
