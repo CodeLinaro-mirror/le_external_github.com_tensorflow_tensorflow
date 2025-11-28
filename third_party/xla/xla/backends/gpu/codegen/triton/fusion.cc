@@ -120,6 +120,8 @@ absl::StatusOr<FusionEmissionResult> TritonFusion::Emit(
   llvm::IRBuilder builder(ir_emitter_context.llvm_module()->getContext());
   VLOG(3) << fusion.ToString();
   std::string suggested_kernel_name = std::string(fusion.name());
+  auto local_module =
+      ir_emitter_context.CreateLocalLLVMModule(suggested_kernel_name);
   TF_ASSIGN_OR_RETURN(
       auto kernel_arguments,
       emitters::KernelArguments::Create(
@@ -139,10 +141,9 @@ absl::StatusOr<FusionEmissionResult> TritonFusion::Emit(
 
     TF_ASSIGN_OR_RETURN(
         TritonWrapperResult triton_wrapper_result,
-        GenerateTritonKernelAndWrapper(fusion, sanitized_kernel_name,
-                                       ir_emitter_context.gpu_device_info(),
-                                       ir_emitter_context.llvm_module(),
-                                       ir_emitter_context.mlir_context()));
+        GenerateTritonKernelAndWrapper(
+            fusion, sanitized_kernel_name, ir_emitter_context.gpu_device_info(),
+            local_module.get(), ir_emitter_context.mlir_context()));
 
     auto backend_config =
         fusion.backend_config<GpuBackendConfig>()->fusion_backend_config();
@@ -207,7 +208,7 @@ absl::StatusOr<FusionEmissionResult> TritonFusion::Emit(
           &fusion, ir_emitter_context.GetNextThunkId()),
       entry->kernel_name, kernel_arguments, entry->launch_dimensions,
       entry->cluster_dim, entry->shmem_bytes, entry->tma_metadata));
-
+  result.module = std::move(local_module);
   return result;
 }
 
