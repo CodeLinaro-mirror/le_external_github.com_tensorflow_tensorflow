@@ -2,6 +2,7 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//xla:xla.default.bzl", "xla_cc_test")
 load("//xla/backends/gpu/target_config:build_defs.bzl", "embed_files")
+load("//xla/tsl:tsl.default.bzl", "get_compatible_with_portable")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -30,9 +31,15 @@ cc_library(
     name = "target_config",
     srcs = ["target_config.cc"],
     hdrs = ["target_config.h"],
+    compatible_with = get_compatible_with_portable(),
     deps = [
         ":embed_gpu_specs",
+        "//xla/stream_executor:device_description",
         "//xla/stream_executor:device_description_proto_cc",
+        "//xla/stream_executor:dnn",
+        "//xla/stream_executor:platform",
+        "//xla/stream_executor:semantic_version",
+        "//xla/stream_executor:stream_executor_h",
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
