@@ -15,7 +15,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 
-project(tensorflow-lite-c C CXX)
+project(tensorflow-lite-c VERSION 2.15.0 LANGUAGES C CXX)
 
 if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
   add_definitions(-DTFLITE_PROFILING_ENABLED)
@@ -101,6 +101,11 @@ if (TFLITE_C_BUILD_SHARED_LIBS)
     target_link_options(tensorflowlite_c PRIVATE "-Wl,--version-script,${TFLITE_SOURCE_DIR}/c/version_script.lds")
   endif()
 endif()
+
+set_target_properties(tensorflowlite_c PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
+)
 
 target_link_libraries(tensorflowlite_c
   tensorflow-lite
