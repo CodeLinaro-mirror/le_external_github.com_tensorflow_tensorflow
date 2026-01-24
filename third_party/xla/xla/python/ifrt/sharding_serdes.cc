@@ -90,6 +90,10 @@ class SingleDeviceShardingSerDes
           absl::StrCat("Unsupported ", version_number,
                        " for SingleDeviceSharding deserialization"));
     }
+    if (deserialize_sharding_options == nullptr) {
+      return absl::InvalidArgumentError(
+          "NULL options for SingleDeviceSharding");
+    }
     TF_ASSIGN_OR_RETURN(Device * device,
                         deserialize_sharding_options->client->LookupDevice(
                             DeviceId(proto.device_id())));
@@ -146,6 +150,9 @@ class OpaqueShardingSerDes
       return absl::FailedPreconditionError(
           absl::StrCat("Unsupported ", version_number,
                        " for OpaqueSharding deserialization"));
+    }
+    if (deserialize_sharding_options == nullptr) {
+      return absl::InvalidArgumentError("NULL options for OpaqueSharding");
     }
     TF_ASSIGN_OR_RETURN(auto devices, DeviceList::FromProto(
                                           deserialize_sharding_options->client,
@@ -216,6 +223,9 @@ class ConcreteShardingSerDes
       return absl::FailedPreconditionError(
           absl::StrCat("Unsupported ", version_number,
                        " for ConcreteSharding deserialization"));
+    }
+    if (deserialize_sharding_options == nullptr) {
+      return absl::InvalidArgumentError("NULL options for ConcreteSharding");
     }
     TF_ASSIGN_OR_RETURN(auto devices, DeviceList::FromProto(
                                           deserialize_sharding_options->client,
@@ -306,6 +316,10 @@ class ConcreteEvenShardingSerDes
           absl::StrCat("Unsupported ", version_number,
                        " for ConcreteEvenSharding deserialization"));
     }
+    if (deserialize_sharding_options == nullptr) {
+      return absl::InvalidArgumentError(
+          "NULL options for ConcreteEvenSharding");
+    }
     TF_ASSIGN_OR_RETURN(auto devices, DeviceList::FromProto(
                                           deserialize_sharding_options->client,
                                           proto.devices()));
@@ -368,6 +382,10 @@ class ShardingParamShardingSerDes
       return absl::FailedPreconditionError(
           absl::StrCat("Unsupported ", version_number,
                        " for ShardingParamSharding deserialization"));
+    }
+    if (deserialize_sharding_options == nullptr) {
+      return absl::InvalidArgumentError(
+          "NULL options for ShardingParamSharding");
     }
     TF_ASSIGN_OR_RETURN(auto devices, DeviceList::FromProto(
                                           deserialize_sharding_options->client,

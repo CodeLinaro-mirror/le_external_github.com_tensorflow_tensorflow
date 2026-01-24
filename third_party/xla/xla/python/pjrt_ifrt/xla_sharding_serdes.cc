@@ -82,6 +82,9 @@ class HloShardingSerDes : public llvm::RTTIExtends<HloSharding, SerDes> {
       return absl::FailedPreconditionError(absl::StrCat(
           "Unsupported ", version_number, " for HloSharding deserialization"));
     }
+    if (deserialize_sharding_options == nullptr) {
+      return absl::InvalidArgumentError("NULL options for HloSharding");
+    }
     TF_ASSIGN_OR_RETURN(auto devices, DeviceList::FromProto(
                                           deserialize_sharding_options->client,
                                           proto.devices()));

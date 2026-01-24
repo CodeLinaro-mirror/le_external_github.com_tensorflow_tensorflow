@@ -98,6 +98,9 @@ class CustomCallProgramSerDes
                        " for CustomCallProgram deserialization"));
     }
 
+    if (deserialize_program_options == nullptr) {
+      return absl::InvalidArgumentError("NULL options for CustomCallProgram");
+    }
     TF_ASSIGN_OR_RETURN(
         DeviceListRef devices,
         DeviceList::FromProto(deserialize_program_options->client,
