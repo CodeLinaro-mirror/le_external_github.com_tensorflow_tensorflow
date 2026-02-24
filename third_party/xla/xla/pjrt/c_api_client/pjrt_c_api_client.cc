@@ -598,6 +598,19 @@ std::string GetPluginStablehloVersionOrDefault(PjRtClient* client) {
 
 }  // namespace
 
+absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCApiClient::Compile(
+    mlir::ModuleOp module, CompileOptions options) {
+  TF_ASSIGN_OR_RETURN(const PjRtTopologyDescription* const topology,
+                      GetTopologyDescription());
+  std::optional<PjRtCompiler*> compiler = topology->compiler();
+  if (!compiler.has_value()) {
+    return absl::UnimplementedError(
+        "Compile with MLIR module requires a PjRtCompiler, but none was "
+        "provided by the topology.");
+  }
+  return (*compiler)->Compile(options, module, *topology, this);
+}
+
 absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
 PjRtCApiClient::CompileAndLoad(mlir::ModuleOp module, CompileOptions options) {
   if (!pjrt_c_api()) llvm::report_fatal_error("pjrt_c_api is null");
@@ -649,6 +662,42 @@ PjRtCApiClient::LoadSerializedExecutable(absl::string_view serialized,
   CHECK(c_exec != nullptr);
   return std::unique_ptr<PjRtLoadedExecutable>(
       std::make_unique<PjRtCApiLoadedExecutable>(this, c_exec));
+}
+
+absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> PjRtCApiClient::Load(
+    std::shared_ptr<PjRtExecutable> executable,
+    const LoadOptions& load_options) {
+  if (pjrt_c_api()->PJRT_Client_LoadFromExecutable == nullptr) {
+    return absl::UnimplementedError(
+        "PJRT_Client_LoadFromExecutable not available in this version of "
+        "the PjRT plugin");
+  }
+
+  auto c_executable = std::static_pointer_cast<PjRtCApiExecutable>(executable);
+
+  PJRT_Client_LoadFromExecutable_Args load_args;
+  load_args.struct_size = PJRT_Client_LoadFromExecutable_Args_STRUCT_SIZE;
+  load_args.extension_start = nullptr;
+  load_args.client = c_client_.get();
+  load_args.executable = c_executable->c_executable();
+
+  TF_ASSIGN_OR_RETURN(CompileOptions compile_options,
+                      c_executable->GetCompileOptions());
+  TF_ASSIGN_OR_RETURN(const CompileOptionsProto options_proto,
+                      compile_options.ToProto());
+  std::string options_str = options_proto.SerializeAsString();
+  load_args.compile_options = options_str.c_str();
+  load_args.compile_options_size = options_str.size();
+  load_args.loaded_executable = nullptr;
+
+  const PJRT_Api* api = pjrt_c_api();
+  RETURN_STATUS_IF_PJRT_ERROR(api->PJRT_Client_LoadFromExecutable(&load_args),
+                              api);
+
+  PJRT_LoadedExecutable* loaded_c_exec = load_args.loaded_executable;
+  CHECK(loaded_c_exec != nullptr);
+  return std::unique_ptr<PjRtLoadedExecutable>(
+      std::make_unique<PjRtCApiLoadedExecutable>(this, loaded_c_exec));
 }
 
 absl::StatusOr<std::unique_ptr<PjRtBuffer>>
