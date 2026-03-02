@@ -31,6 +31,7 @@ limitations under the License.
 #include "xla/service/executable.h"
 #include "xla/service/gpu/nvptx_compiler.h"
 #include "xla/service/platform_util.h"
+#include "xla/shape.h"
 #include "xla/stream_executor/blas.h"
 #include "xla/stream_executor/device_description.pb.h"
 #include "xla/stream_executor/stream_executor.h"
@@ -233,8 +234,12 @@ TEST_F(CublasBackendTest, Compile) {
       backend_.GetDefaultConfig(
           *(module->entry_computation()->root_instruction()->operand(0))));
   absl::StatusOr<std::unique_ptr<Executable>> executable = backend_.Compile(
-      *(module->entry_computation()->root_instruction()), *config);
+      *(module->entry_computation()->root_instruction()->operand(0)), *config);
   EXPECT_THAT(executable, IsOk());
+  const ProgramShape& program_shape =
+      (*executable)->compute_computation_layout().ComputeProgramShape();
+  EXPECT_EQ(program_shape.parameters_size(), 2);
+  EXPECT_FALSE(program_shape.result().IsTuple());
 }
 
 }  // namespace gpu
