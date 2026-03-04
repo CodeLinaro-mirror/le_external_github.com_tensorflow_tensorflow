@@ -200,11 +200,51 @@ void AppendToMessage(absl::Status* status, Args... args) {
 //   switch (status.code()) { case error::INVALID_ARGUMENT: ... }
 
 // CANCELLED
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::CancelledError() instead.")
-absl::Status Cancelled(Args... args) {
-  return absl::CancelledError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::CancelledError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Cancelled(Arg1 arg1) {
+  return absl::CancelledError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::CancelledError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Cancelled(Arg1 arg1, Arg2 arg2) {
+  return absl::CancelledError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::CancelledError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Cancelled(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::CancelledError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::CancelledError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Cancelled(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::CancelledError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::CancelledError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Cancelled(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::CancelledError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::CancelledError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Cancelled(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+              Arg6 arg6) {
+  return absl::CancelledError(absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::CancelledError(absl::StrCat(args...)) instead.")
+absl::Status Cancelled(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                       Arg6 arg6, Args... args) {
+  return absl::CancelledError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 template <typename... Args>
 absl::Status CancelledWithPayloads(
@@ -214,54 +254,67 @@ absl::Status CancelledWithPayloads(
 }
 
 // InvalidArgument
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::InvalidArgumentError() instead.")
-absl::Status InvalidArgument(Args... args) {
-  return absl::InvalidArgumentError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
-}
-// Specialized overloads to capture source location for up to four arguments.
 #if defined(PLATFORM_GOOGLE)
-template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
-ABSL_DEPRECATED("Use absl::InvalidArgumentError() instead.")
-absl::Status InvalidArgument(
-    Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
-    absl::SourceLocation loc = absl::SourceLocation::current()) {
-  return absl::InvalidArgumentError(
-      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(arg1),
-                             ::tsl::errors::internal::PrepareForStrCat(arg2),
-                             ::tsl::errors::internal::PrepareForStrCat(arg3),
-                             ::tsl::errors::internal::PrepareForStrCat(arg4)),
-      loc);
-}
-template <typename Arg1, typename Arg2, typename Arg3>
-ABSL_DEPRECATED("Use absl::InvalidArgumentError() instead.")
-absl::Status InvalidArgument(
-    Arg1 arg1, Arg2 arg2, Arg3 arg3,
-    absl::SourceLocation loc = absl::SourceLocation::current()) {
-  return absl::InvalidArgumentError(
-      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(arg1),
-                             ::tsl::errors::internal::PrepareForStrCat(arg2),
-                             ::tsl::errors::internal::PrepareForStrCat(arg3)),
-      loc);
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::InvalidArgumentError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status InvalidArgument(
+    Arg1 arg1, absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::InvalidArgumentError(arg1, loc);
 }
 template <typename Arg1, typename Arg2>
-ABSL_DEPRECATED("Use absl::InvalidArgumentError() instead.")
-absl::Status InvalidArgument(
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status InvalidArgument(
     Arg1 arg1, Arg2 arg2,
     absl::SourceLocation loc = absl::SourceLocation::current()) {
-  return absl::InvalidArgumentError(
-      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(arg1),
-                             ::tsl::errors::internal::PrepareForStrCat(arg2)),
-      loc);
+  return absl::InvalidArgumentError(absl::StrCat(arg1, arg2), loc);
 }
-template <typename Arg1>
-ABSL_DEPRECATED("Use absl::InvalidArgumentError() instead.")
-absl::Status InvalidArgument(
-    Arg1 arg1, absl::SourceLocation loc = absl::SourceLocation::current()) {
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status InvalidArgument(
+    Arg1 arg1, Arg2 arg2, Arg3 arg3,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::InvalidArgumentError(absl::StrCat(arg1, arg2, arg3), loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status InvalidArgument(
+    Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::InvalidArgumentError(absl::StrCat(arg1, arg2, arg3, arg4), loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status InvalidArgument(
+    Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::InvalidArgumentError(absl::StrCat(arg1, arg2, arg3, arg4, arg5),
+                                    loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status InvalidArgument(
+    Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
   return absl::InvalidArgumentError(
-      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(arg1)),
-      loc);
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6), loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+absl::Status InvalidArgument(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                             Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::InvalidArgumentError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)),
+      absl::SourceLocation::current());
 }
 inline absl::Status InvalidArgumentWithPayloads(
     absl::string_view message,
@@ -271,6 +324,59 @@ inline absl::Status InvalidArgumentWithPayloads(
                         loc);
 }
 #else
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::InvalidArgumentError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status InvalidArgument(Arg1 arg1) {
+  return absl::InvalidArgumentError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status InvalidArgument(Arg1 arg1, Arg2 arg2) {
+  return absl::InvalidArgumentError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    InvalidArgument(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::InvalidArgumentError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    InvalidArgument(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::InvalidArgumentError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    InvalidArgument(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::InvalidArgumentError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    InvalidArgument(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                    Arg6 arg6) {
+  return absl::InvalidArgumentError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED(
+    "Use absl::InvalidArgumentError(absl::StrCat(args...)) instead.")
+absl::Status InvalidArgument(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                             Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::InvalidArgumentError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
+}
 inline absl::Status InvalidArgumentWithPayloads(
     absl::string_view message,
     const std::unordered_map<std::string, std::string>& payloads) {
@@ -279,43 +385,61 @@ inline absl::Status InvalidArgumentWithPayloads(
 #endif
 
 // NotFound
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::NotFoundError() instead.")
-absl::Status NotFound(Args... args) {
-  return absl::NotFoundError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
-}
-// Specialized overloads to capture source location for up to three arguments.
 #if defined(PLATFORM_GOOGLE)
-template <typename Arg1, typename Arg2, typename Arg3>
-ABSL_DEPRECATED("Use absl::NotFoundError() instead.")
-absl::Status
-    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3,
-             absl::SourceLocation loc = absl::SourceLocation::current()) {
-  return absl::NotFoundError(
-      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(arg1),
-                             ::tsl::errors::internal::PrepareForStrCat(arg2),
-                             ::tsl::errors::internal::PrepareForStrCat(arg3)),
-      loc);
-}
-template <typename Arg1, typename Arg2>
-ABSL_DEPRECATED("Use absl::NotFoundError() instead.")
-absl::Status
-    NotFound(Arg1 arg1, Arg2 arg2,
-             absl::SourceLocation loc = absl::SourceLocation::current()) {
-  return absl::NotFoundError(
-      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(arg1),
-                             ::tsl::errors::internal::PrepareForStrCat(arg2)),
-      loc);
-}
 template <typename Arg1>
-ABSL_DEPRECATED("Use absl::NotFoundError() instead.")
-absl::Status
+ABSL_DEPRECATED("Use absl::NotFoundError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
     NotFound(Arg1 arg1,
              absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::NotFoundError(arg1, loc);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2,
+             absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2), loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3,
+             absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2, arg3), loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+             absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2, arg3, arg4), loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+             absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2, arg3, arg4, arg5), loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6,
+             absl::SourceLocation loc = absl::SourceLocation::current()) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6),
+                             loc);
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+absl::Status NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                      Arg6 arg6, Args... args) {
   return absl::NotFoundError(
-      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(arg1)),
-      loc);
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)),
+      absl::SourceLocation::current());
 }
 inline absl::Status NotFoundWithPayloads(
     absl::string_view message,
@@ -324,6 +448,51 @@ inline absl::Status NotFoundWithPayloads(
   return errors::Create(absl::StatusCode::kNotFound, message, payloads, loc);
 }
 #else
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::NotFoundError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status NotFound(Arg1 arg1) {
+  return absl::NotFoundError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status NotFound(Arg1 arg1, Arg2 arg2) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) {
+  return absl::NotFoundError(absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::NotFoundError(absl::StrCat(args...)) instead.")
+absl::Status NotFound(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                      Arg6 arg6, Args... args) {
+  return absl::NotFoundError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
+}
 inline absl::Status NotFoundWithPayloads(
     absl::string_view message,
     const std::unordered_map<std::string, std::string>& payloads) {
@@ -332,11 +501,52 @@ inline absl::Status NotFoundWithPayloads(
 #endif
 
 // AlreadyExists
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::AlreadyExistsError() instead.")
-absl::Status AlreadyExists(Args... args) {
-  return absl::AlreadyExistsError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::AlreadyExistsError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status AlreadyExists(Arg1 arg1) {
+  return absl::AlreadyExistsError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::AlreadyExistsError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status AlreadyExists(Arg1 arg1, Arg2 arg2) {
+  return absl::AlreadyExistsError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::AlreadyExistsError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    AlreadyExists(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::AlreadyExistsError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::AlreadyExistsError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    AlreadyExists(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::AlreadyExistsError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::AlreadyExistsError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    AlreadyExists(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::AlreadyExistsError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::AlreadyExistsError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    AlreadyExists(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                  Arg6 arg6) {
+  return absl::AlreadyExistsError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::AlreadyExistsError(absl::StrCat(args...)) instead.")
+absl::Status AlreadyExists(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                           Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::AlreadyExistsError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status AlreadyExistsWithPayloads(
     absl::string_view message,
@@ -345,11 +555,60 @@ inline absl::Status AlreadyExistsWithPayloads(
 }
 
 // ResourceExhausted
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::ResourceExhaustedError() instead.")
-absl::Status ResourceExhausted(Args... args) {
-  return absl::ResourceExhaustedError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::ResourceExhaustedError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status ResourceExhausted(Arg1 arg1) {
+  return absl::ResourceExhaustedError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED(
+    "Use absl::ResourceExhaustedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    ResourceExhausted(Arg1 arg1, Arg2 arg2) {
+  return absl::ResourceExhaustedError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED(
+    "Use absl::ResourceExhaustedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    ResourceExhausted(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::ResourceExhaustedError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED(
+    "Use absl::ResourceExhaustedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    ResourceExhausted(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::ResourceExhaustedError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED(
+    "Use absl::ResourceExhaustedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    ResourceExhausted(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::ResourceExhaustedError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED(
+    "Use absl::ResourceExhaustedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    ResourceExhausted(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                      Arg6 arg6) {
+  return absl::ResourceExhaustedError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED(
+    "Use absl::ResourceExhaustedError(absl::StrCat(args...)) instead.")
+absl::Status ResourceExhausted(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                               Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::ResourceExhaustedError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status ResourceExhaustedWithPayloads(
     absl::string_view message,
@@ -359,11 +618,52 @@ inline absl::Status ResourceExhaustedWithPayloads(
 }
 
 // Unavailable
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::UnavailableError() instead.")
-absl::Status Unavailable(Args... args) {
-  return absl::UnavailableError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::UnavailableError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Unavailable(Arg1 arg1) {
+  return absl::UnavailableError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::UnavailableError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Unavailable(Arg1 arg1, Arg2 arg2) {
+  return absl::UnavailableError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::UnavailableError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unavailable(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::UnavailableError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::UnavailableError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unavailable(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::UnavailableError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::UnavailableError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unavailable(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::UnavailableError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::UnavailableError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unavailable(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                Arg6 arg6) {
+  return absl::UnavailableError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::UnavailableError(absl::StrCat(args...)) instead.")
+absl::Status Unavailable(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                         Arg6 arg6, Args... args) {
+  return absl::UnavailableError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status UnavailableWithPayloads(
     absl::string_view message,
@@ -372,11 +672,60 @@ inline absl::Status UnavailableWithPayloads(
 }
 
 // FailedPrecondition
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::FailedPreconditionError() instead.")
-absl::Status FailedPrecondition(Args... args) {
-  return absl::FailedPreconditionError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::FailedPreconditionError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status FailedPrecondition(Arg1 arg1) {
+  return absl::FailedPreconditionError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED(
+    "Use absl::FailedPreconditionError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    FailedPrecondition(Arg1 arg1, Arg2 arg2) {
+  return absl::FailedPreconditionError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED(
+    "Use absl::FailedPreconditionError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    FailedPrecondition(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::FailedPreconditionError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED(
+    "Use absl::FailedPreconditionError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    FailedPrecondition(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::FailedPreconditionError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED(
+    "Use absl::FailedPreconditionError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    FailedPrecondition(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::FailedPreconditionError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED(
+    "Use absl::FailedPreconditionError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    FailedPrecondition(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                       Arg6 arg6) {
+  return absl::FailedPreconditionError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED(
+    "Use absl::FailedPreconditionError(absl::StrCat(args...)) instead.")
+absl::Status FailedPrecondition(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                                Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::FailedPreconditionError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status FailedPreconditionWithPayloads(
     absl::string_view message,
@@ -386,11 +735,52 @@ inline absl::Status FailedPreconditionWithPayloads(
 }
 
 // OutOfRange
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::OutOfRangeError() instead.")
-absl::Status OutOfRange(Args... args) {
-  return absl::OutOfRangeError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::OutOfRangeError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status OutOfRange(Arg1 arg1) {
+  return absl::OutOfRangeError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::OutOfRangeError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status OutOfRange(Arg1 arg1, Arg2 arg2) {
+  return absl::OutOfRangeError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::OutOfRangeError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    OutOfRange(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::OutOfRangeError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::OutOfRangeError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    OutOfRange(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::OutOfRangeError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::OutOfRangeError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    OutOfRange(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::OutOfRangeError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::OutOfRangeError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    OutOfRange(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+               Arg6 arg6) {
+  return absl::OutOfRangeError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::OutOfRangeError(absl::StrCat(args...)) instead.")
+absl::Status OutOfRange(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                        Arg6 arg6, Args... args) {
+  return absl::OutOfRangeError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status OutOfRangeWithPayloads(
     absl::string_view message,
@@ -399,11 +789,52 @@ inline absl::Status OutOfRangeWithPayloads(
 }
 
 // Unimplemented
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::UnimplementedError() instead.")
-absl::Status Unimplemented(Args... args) {
-  return absl::UnimplementedError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::UnimplementedError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Unimplemented(Arg1 arg1) {
+  return absl::UnimplementedError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::UnimplementedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Unimplemented(Arg1 arg1, Arg2 arg2) {
+  return absl::UnimplementedError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::UnimplementedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unimplemented(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::UnimplementedError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::UnimplementedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unimplemented(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::UnimplementedError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::UnimplementedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unimplemented(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::UnimplementedError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::UnimplementedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unimplemented(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                  Arg6 arg6) {
+  return absl::UnimplementedError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::UnimplementedError(absl::StrCat(args...)) instead.")
+absl::Status Unimplemented(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                           Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::UnimplementedError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status UnimplementedWithPayloads(
     absl::string_view message,
@@ -412,11 +843,50 @@ inline absl::Status UnimplementedWithPayloads(
 }
 
 // Internal
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::InternalError() instead.")
-absl::Status Internal(Args... args) {
-  return absl::InternalError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::InternalError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Internal(Arg1 arg1) {
+  return absl::InternalError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::InternalError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Internal(Arg1 arg1, Arg2 arg2) {
+  return absl::InternalError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::InternalError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Internal(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::InternalError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::InternalError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Internal(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::InternalError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::InternalError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Internal(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::InternalError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::InternalError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Internal(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) {
+  return absl::InternalError(absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::InternalError(absl::StrCat(args...)) instead.")
+absl::Status Internal(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                      Arg6 arg6, Args... args) {
+  return absl::InternalError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status InternalWithPayloads(
     absl::string_view message,
@@ -425,11 +895,50 @@ inline absl::Status InternalWithPayloads(
 }
 
 // Aborted
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::AbortedError() instead.")
-absl::Status Aborted(Args... args) {
-  return absl::AbortedError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::AbortedError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Aborted(Arg1 arg1) {
+  return absl::AbortedError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::AbortedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Aborted(Arg1 arg1, Arg2 arg2) {
+  return absl::AbortedError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::AbortedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Aborted(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::AbortedError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::AbortedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Aborted(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::AbortedError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::AbortedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Aborted(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::AbortedError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::AbortedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Aborted(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) {
+  return absl::AbortedError(absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::AbortedError(absl::StrCat(args...)) instead.")
+absl::Status Aborted(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                     Arg6 arg6, Args... args) {
+  return absl::AbortedError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status AbortedWithPayloads(
     absl::string_view message,
@@ -438,11 +947,60 @@ inline absl::Status AbortedWithPayloads(
 }
 
 // DeadlineExceeded
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::DeadlineExceededError() instead.")
-absl::Status DeadlineExceeded(Args... args) {
-  return absl::DeadlineExceededError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::DeadlineExceededError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status DeadlineExceeded(Arg1 arg1) {
+  return absl::DeadlineExceededError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED(
+    "Use absl::DeadlineExceededError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DeadlineExceeded(Arg1 arg1, Arg2 arg2) {
+  return absl::DeadlineExceededError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED(
+    "Use absl::DeadlineExceededError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DeadlineExceeded(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::DeadlineExceededError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED(
+    "Use absl::DeadlineExceededError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DeadlineExceeded(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::DeadlineExceededError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED(
+    "Use absl::DeadlineExceededError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DeadlineExceeded(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::DeadlineExceededError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED(
+    "Use absl::DeadlineExceededError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DeadlineExceeded(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                     Arg6 arg6) {
+  return absl::DeadlineExceededError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED(
+    "Use absl::DeadlineExceededError(absl::StrCat(args...)) instead.")
+absl::Status DeadlineExceeded(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                              Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::DeadlineExceededError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status DeadlineExceededWithPayloads(
     absl::string_view message,
@@ -451,11 +1009,50 @@ inline absl::Status DeadlineExceededWithPayloads(
 }
 
 // DataLoss
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::DataLossError() instead.")
-absl::Status DataLoss(Args... args) {
-  return absl::DataLossError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::DataLossError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status DataLoss(Arg1 arg1) {
+  return absl::DataLossError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::DataLossError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status DataLoss(Arg1 arg1, Arg2 arg2) {
+  return absl::DataLossError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::DataLossError(absl::StrCat(args...))) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DataLoss(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::DataLossError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::DataLossError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DataLoss(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::DataLossError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::DataLossError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DataLoss(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::DataLossError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::DataLossError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    DataLoss(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) {
+  return absl::DataLossError(absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::DataLossError(absl::StrCat(args...)) instead.")
+absl::Status DataLoss(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                      Arg6 arg6, Args... args) {
+  return absl::DataLossError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status DataLossWithPayloads(
     absl::string_view message,
@@ -464,11 +1061,50 @@ inline absl::Status DataLossWithPayloads(
 }
 
 // Unknown
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::UnknownError() instead.")
-absl::Status Unknown(Args... args) {
-  return absl::UnknownError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::UnknownError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Unknown(Arg1 arg1) {
+  return absl::UnknownError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED("Use absl::UnknownError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Unknown(Arg1 arg1, Arg2 arg2) {
+  return absl::UnknownError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED("Use absl::UnknownError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unknown(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::UnknownError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED("Use absl::UnknownError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unknown(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::UnknownError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED("Use absl::UnknownError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unknown(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::UnknownError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED("Use absl::UnknownError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unknown(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) {
+  return absl::UnknownError(absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED("Use absl::UnknownError(absl::StrCat(args...)) instead.")
+absl::Status Unknown(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                     Arg6 arg6, Args... args) {
+  return absl::UnknownError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status UnknownPayloads(
     absl::string_view message,
@@ -476,11 +1112,60 @@ inline absl::Status UnknownPayloads(
   return errors::Create(absl::StatusCode::kUnknown, message, payloads);
 }
 // PermissionDenied
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::PermissionDeniedError() instead.")
-absl::Status PermissionDenied(Args... args) {
-  return absl::PermissionDeniedError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::PermissionDeniedError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status PermissionDenied(Arg1 arg1) {
+  return absl::PermissionDeniedError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED(
+    "Use absl::PermissionDeniedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    PermissionDenied(Arg1 arg1, Arg2 arg2) {
+  return absl::PermissionDeniedError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED(
+    "Use absl::PermissionDeniedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    PermissionDenied(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::PermissionDeniedError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED(
+    "Use absl::PermissionDeniedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    PermissionDenied(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::PermissionDeniedError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED(
+    "Use absl::PermissionDeniedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    PermissionDenied(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::PermissionDeniedError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED(
+    "Use absl::PermissionDeniedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    PermissionDenied(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                     Arg6 arg6) {
+  return absl::PermissionDeniedError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED(
+    "Use absl::PermissionDeniedError(absl::StrCat(args...)) instead.")
+absl::Status PermissionDenied(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                              Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::PermissionDeniedError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status PermissionDeniedWithPayloads(
     absl::string_view message,
@@ -489,11 +1174,58 @@ inline absl::Status PermissionDeniedWithPayloads(
 }
 
 // Unauthenticated
-template <typename... Args>
-ABSL_DEPRECATED("Use absl::UnauthenticatedError() instead.")
-absl::Status Unauthenticated(Args... args) {
-  return absl::UnauthenticatedError(::tsl::strings::StrCat(
-      ::tsl::errors::internal::PrepareForStrCat(args)...));
+template <typename Arg1>
+ABSL_DEPRECATED("Use absl::UnauthenticatedError(arg1) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Unauthenticated(Arg1 arg1) {
+  return absl::UnauthenticatedError(arg1);
+}
+template <typename Arg1, typename Arg2>
+ABSL_DEPRECATED(
+    "Use absl::UnauthenticatedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status Unauthenticated(Arg1 arg1, Arg2 arg2) {
+  return absl::UnauthenticatedError(absl::StrCat(arg1, arg2));
+}
+template <typename Arg1, typename Arg2, typename Arg3>
+ABSL_DEPRECATED(
+    "Use absl::UnauthenticatedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unauthenticated(Arg1 arg1, Arg2 arg2, Arg3 arg3) {
+  return absl::UnauthenticatedError(absl::StrCat(arg1, arg2, arg3));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+ABSL_DEPRECATED(
+    "Use absl::UnauthenticatedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unauthenticated(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) {
+  return absl::UnauthenticatedError(absl::StrCat(arg1, arg2, arg3, arg4));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5>
+ABSL_DEPRECATED(
+    "Use absl::UnauthenticatedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unauthenticated(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) {
+  return absl::UnauthenticatedError(absl::StrCat(arg1, arg2, arg3, arg4, arg5));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6>
+ABSL_DEPRECATED(
+    "Use absl::UnauthenticatedError(absl::StrCat(args...)) instead.")
+ABSL_REFACTOR_INLINE inline absl::Status
+    Unauthenticated(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5,
+                    Arg6 arg6) {
+  return absl::UnauthenticatedError(
+      absl::StrCat(arg1, arg2, arg3, arg4, arg5, arg6));
+}
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+          typename Arg5, typename Arg6, typename... Args>
+ABSL_DEPRECATED(
+    "Use absl::UnauthenticatedError(absl::StrCat(args...)) instead.")
+absl::Status Unauthenticated(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4,
+                             Arg5 arg5, Arg6 arg6, Args... args) {
+  return absl::UnauthenticatedError(
+      ::tsl::strings::StrCat(::tsl::errors::internal::PrepareForStrCat(
+          arg1, arg2, arg3, arg4, arg5, arg6, args...)));
 }
 inline absl::Status UnauthenticatedWithPayloads(
     absl::string_view message,
