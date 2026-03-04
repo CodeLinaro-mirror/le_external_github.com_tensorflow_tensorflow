@@ -32,9 +32,11 @@ limitations under the License.
 #include "xla/hlo/builder/xla_computation.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/hlo/parser/hlo_parser.h"
+#include "xla/layout.h"
 #include "xla/literal.h"
 #include "xla/literal_util.h"
 #include "xla/mlir_hlo/mhlo/IR/hlo_ops.h"
+#include "xla/pjrt/compiled_memory_stats.h"
 #include "xla/pjrt/gpu/se_gpu_pjrt_client.h"
 #include "xla/pjrt/gpu/se_gpu_pjrt_compiler.h"
 #include "xla/pjrt/maybe_owning_mlir_module.h"
@@ -43,6 +45,8 @@ limitations under the License.
 #include "xla/pjrt/pjrt_executable.h"
 #include "xla/pjrt/plugin/xla_gpu/xla_gpu_client_options.h"
 #include "xla/service/compiler.h"
+#include "xla/shape.h"
+#include "xla/shape_util.h"
 #include "xla/tests/literal_test_util.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/xla_data.pb.h"
@@ -94,7 +98,8 @@ TEST(StreamExecutorGpuCompilerTest, SuccessAotCompileMlirAndLoad) {
       tensorflow::down_cast<StreamExecutorGpuClient*>(client.release()));
   Compiler::GpuTargetConfig gpu_target_config = xla::Compiler::GpuTargetConfig(
       se_client->client()->backend().default_stream_executor());
-  StreamExecutorGpuCompiler compiler(se_client->client()->platform()->id());
+  StreamExecutorGpuCompiler compiler(client->platform_id(),
+                                     se_client->client()->platform()->id());
 
   auto context = std::make_unique<mlir::MLIRContext>();
   context->loadDialect<mlir::mhlo::MhloDialect, mlir::func::FuncDialect>();
@@ -128,7 +133,8 @@ TEST(StreamExecutorGpuCompilerTest, SuccessAotCompileXlaAndLoad) {
       tensorflow::down_cast<StreamExecutorGpuClient*>(client.release()));
   Compiler::GpuTargetConfig gpu_target_config{
       se_client->client()->backend().default_stream_executor()};
-  StreamExecutorGpuCompiler compiler(se_client->client()->platform()->id());
+  StreamExecutorGpuCompiler compiler(client->platform_id(),
+                                     se_client->client()->platform()->id());
 
   TF_ASSERT_OK_AND_ASSIGN(XlaComputation computation,
                           GetXlaComputation(kProgram));
@@ -155,7 +161,8 @@ TEST(StreamExecutorGpuCompilerTest, SuccessLoadFromSerializedExecutable) {
                           GetStreamExecutorGpuClient(GpuClientOptions()));
   auto se_client = absl::WrapUnique(
       tensorflow::down_cast<StreamExecutorGpuClient*>(client.release()));
-  StreamExecutorGpuCompiler compiler(se_client->client()->platform()->id());
+  StreamExecutorGpuCompiler compiler(client->platform_id(),
+                                     se_client->client()->platform()->id());
   xla::CompileOptions opts;
   opts.gpu_target_config = Compiler::GpuTargetConfig(
       se_client->client()->backend().default_stream_executor());
@@ -193,7 +200,8 @@ TEST(StreamExecutorGpuCompilerTest, SuccessSerializeDeserialize) {
                           GetStreamExecutorGpuClient(GpuClientOptions()));
   auto se_client = absl::WrapUnique(
       tensorflow::down_cast<StreamExecutorGpuClient*>(client.release()));
-  StreamExecutorGpuCompiler compiler(se_client->client()->platform()->id());
+  StreamExecutorGpuCompiler compiler(client->platform_id(),
+                                     se_client->client()->platform()->id());
   xla::CompileOptions opts;
   opts.gpu_target_config = Compiler::GpuTargetConfig(
       se_client->client()->backend().default_stream_executor());
@@ -237,7 +245,8 @@ TEST(StreamExecutorGpuCompilerTest, UnloadedExecutableMemoryStats) {
                           GetStreamExecutorGpuClient(GpuClientOptions()));
   auto se_client = absl::WrapUnique(
       tensorflow::down_cast<StreamExecutorGpuClient*>(client.release()));
-  StreamExecutorGpuCompiler compiler(se_client->client()->platform()->id());
+  StreamExecutorGpuCompiler compiler(client->platform_id(),
+                                     se_client->client()->platform()->id());
   xla::CompileOptions options;
   options.gpu_target_config = Compiler::GpuTargetConfig(
       se_client->client()->backend().default_stream_executor());
@@ -286,7 +295,8 @@ TEST(StreamExecutorGpuCompilerTest, AutoLayoutIsSupported) {
                           GetStreamExecutorGpuClient(GpuClientOptions()));
   auto se_client = absl::WrapUnique(
       tensorflow::down_cast<StreamExecutorGpuClient*>(client.release()));
-  StreamExecutorGpuCompiler compiler(se_client->client()->platform()->id());
+  StreamExecutorGpuCompiler compiler(client->platform_id(),
+                                     se_client->client()->platform()->id());
   TF_ASSERT_OK_AND_ASSIGN(const PjRtTopologyDescription* topology,
                           se_client->GetTopologyDescription());
   TF_ASSERT_OK_AND_ASSIGN(

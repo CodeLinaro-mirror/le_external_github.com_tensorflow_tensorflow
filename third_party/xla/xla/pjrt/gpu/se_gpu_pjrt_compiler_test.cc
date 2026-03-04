@@ -85,7 +85,7 @@ std::shared_ptr<xla::GpuTopology> GetGpuTopology(
 }
 
 TEST(StreamExecutorGpuCompilerTest, NoClientXla) {
-  StreamExecutorGpuCompiler compiler;
+  StreamExecutorGpuCompiler compiler(CudaId());
   StreamExecutorGpuTopologyDescription topology(
       CudaId(), CudaName(), GetGpuTopology(kFakeDeviceName, 1, 1, 2, 10));
 
@@ -96,7 +96,7 @@ TEST(StreamExecutorGpuCompilerTest, NoClientXla) {
 }
 
 TEST(StreamExecutorGpuCompilerTest, TopologyNotSameXla) {
-  StreamExecutorGpuCompiler compiler;
+  StreamExecutorGpuCompiler compiler(CudaId());
   StreamExecutorGpuTopologyDescription topology(
       CudaId(), CudaName(), GetGpuTopology(kFakeDeviceName, 1, 1, 2, 10));
 
@@ -109,7 +109,7 @@ TEST(StreamExecutorGpuCompilerTest, TopologyNotSameXla) {
 }
 
 TEST(StreamExecutorGpuCompilerTest, SuccessXla) {
-  StreamExecutorGpuCompiler compiler;
+  StreamExecutorGpuCompiler compiler(CudaId());
 
   TF_ASSERT_OK_AND_ASSIGN(auto client,
                           GetStreamExecutorGpuClient(GpuClientOptions()));
@@ -132,7 +132,7 @@ TEST(StreamExecutorGpuCompilerTest, SuccessXla) {
 }
 
 TEST(StreamExecutorGpuCompilerTest, NoClientMlir) {
-  StreamExecutorGpuCompiler compiler;
+  StreamExecutorGpuCompiler compiler(CudaId());
 
   auto context = std::make_unique<mlir::MLIRContext>();
   context->loadDialect<mlir::mhlo::MhloDialect, mlir::func::FuncDialect>();
@@ -152,7 +152,7 @@ TEST(StreamExecutorGpuCompilerTest, NoClientMlir) {
 }
 
 TEST(StreamExecutorGpuCompilerTest, TopologyNotSameMlir) {
-  StreamExecutorGpuCompiler compiler;
+  StreamExecutorGpuCompiler compiler(CudaId());
 
   auto context = std::make_unique<mlir::MLIRContext>();
   context->loadDialect<mlir::mhlo::MhloDialect, mlir::func::FuncDialect>();
@@ -173,7 +173,7 @@ TEST(StreamExecutorGpuCompilerTest, TopologyNotSameMlir) {
 }
 
 TEST(StreamExecutorGpuCompilerTest, SuccessMlir) {
-  StreamExecutorGpuCompiler compiler;
+  StreamExecutorGpuCompiler compiler(CudaId());
 
   auto context = std::make_unique<mlir::MLIRContext>();
   context->loadDialect<mlir::mhlo::MhloDialect, mlir::func::FuncDialect>();
@@ -203,7 +203,7 @@ TEST(StreamExecutorGpuCompilerTest, SuccessMlir) {
 }
 
 TEST(StreamExecutorGpuCompilerTest, SuccessMlirCanBeSerialized) {
-  StreamExecutorGpuCompiler compiler;
+  StreamExecutorGpuCompiler compiler(CudaId());
 
   auto context = std::make_unique<mlir::MLIRContext>();
   context->loadDialect<mlir::mhlo::MhloDialect, mlir::func::FuncDialect>();
