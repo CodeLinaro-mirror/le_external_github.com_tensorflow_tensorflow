@@ -11,6 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# To update the database, find failing test in gpu_compiler_test.cc.
+# Change set_xla_gpu_require_complete_aot_autotune_results in the test to false.
+# bazel test @tensorflow/compiler/xla/service/gpu:gpu_compiler_test_h100 \
+#   --config=cuda --test_sharding_strategy=disabled \
+#   --test_filter="ADD_FAILING_TEST_FILTER" \
+#   --test_env=XLA_FLAGS=" --xla_dump_to=sponge"
+# Navigate to "Artifacts" tab. Open file with *autotune_results.pbtxt.
+# Copy contents to this file.
+# Remove version field within each result.
+# Revert change to set_xla_gpu_require_complete_aot_autotune_results.
+# Rerun the test to confirm it passes.
 version: 3
 results {
   device: "CUDA: 9.0, Cores: 132, GPU clock: 1.98 GHz, Memory bandwidth: 3352 GB/s, L2 cache: 50 MB, DNN version: 9.10.0"
@@ -39,7 +51,32 @@ results {
 }
 results {
   device: "CUDA: 9.0, Cores: 132, GPU clock: 1.98 GHz, Memory bandwidth: 3352 GB/s, L2 cache: 50 MB, DNN version: 9.10.0"
+  hlo: "{\n  tmp_0 = bf16[128,1024,1024]{2,1,0} parameter(0)\n  tmp_1 = bf16[] constant({...})\n  tmp_2 = bf16[128,1024,1024]{2,1,0} broadcast(bf16[] tmp_1), dimensions={}\n  tmp_3 = bf16[128,1024,1024]{2,1,0} multiply(bf16[128,1024,1024]{2,1,0} tmp_0, bf16[128,1024,1024]{2,1,0} tmp_2)\n  tmp_4 = bf16[128,1024,1024]{2,1,0} transpose(bf16[128,1024,1024]{2,1,0} tmp_3), dimensions={0,2,1}\n  tmp_5 = bf16[128,1024,1024]{2,1,0} parameter(1)\n  ROOT tmp_6 = bf16[128,1024,1024]{2,1,0} dot(bf16[128,1024,1024]{2,1,0} tmp_4, bf16[128,1024,1024]{2,1,0} tmp_5), lhs_batch_dims={0}, lhs_contracting_dims={2}, rhs_batch_dims={0}, rhs_contracting_dims={1}\n}"
+  result {
+    other {
+      name: "CUBLAS_FISSION"
+      config {
+        type_url: "type.googleapis.com/xla.AutotuneResult.GemmKey"
+        value: "\010\377\377\377\377\377\377\377\377\377\001"
+      }
+    }
+  }
+}
+results {
+  device: "CUDA: 9.0, Cores: 132, GPU clock: 1.98 GHz, Memory bandwidth: 3352 GB/s, L2 cache: 50 MB, DNN version: 9.10.0"
   hlo: "{\n  tmp_0 = bf16[3,32,1024,4,1024]{4,3,2,1,0} parameter(0)\n  tmp_1 = bf16[3,4,32,1024,1024]{4,3,2,1,0} transpose(bf16[3,32,1024,4,1024]{4,3,2,1,0} tmp_0), dimensions={0,3,1,2,4}\n  tmp_2 = bf16[1,3,32,1024]{3,2,1,0} parameter(1)\n  tmp_3 = bf16[3,32,1024]{2,1,0} bitcast(bf16[1,3,32,1024]{3,2,1,0} tmp_2)\n  tmp_4 = bf16[3,4,32,1024,1024]{4,3,2,1,0} broadcast(bf16[3,32,1024]{2,1,0} tmp_3), dimensions={0,2,3}\n  tmp_5 = bf16[3,4,32,1024,1024]{4,3,2,1,0} add(bf16[3,4,32,1024,1024]{4,3,2,1,0} tmp_1, bf16[3,4,32,1024,1024]{4,3,2,1,0} tmp_4)\n  tmp_6 = bf16[1,4,32,1024,1024]{4,3,2,1,0} slice(bf16[3,4,32,1024,1024]{4,3,2,1,0} tmp_5), slice={[1:2], [0:4], [0:32], [0:1024], [0:1024]}\n  tmp_7 = bf16[1,4,32,1024,1024]{4,3,2,1,0} slice(bf16[3,4,32,1024,1024]{4,3,2,1,0} tmp_5), slice={[0:1], [0:4], [0:32], [0:1024], [0:1024]}\n  ROOT tmp_8 = (bf16[1,4,32,1024,1024]{4,3,2,1,0}, bf16[1,4,32,1024,1024]{4,3,2,1,0}) tuple(bf16[1,4,32,1024,1024]{4,3,2,1,0} tmp_6, bf16[1,4,32,1024,1024]{4,3,2,1,0} tmp_7)\n}"
+  result {
+    other {
+      name: "NATIVE_EMITTER"
+      config {
+        type_url: "type.googleapis.com/xla.gpu.NativeEmitterBackendConfig"
+      }
+    }
+  }
+}
+results {
+  device: "CUDA: 9.0, Cores: 132, GPU clock: 1.98 GHz, Memory bandwidth: 3352 GB/s, L2 cache: 50 MB, DNN version: 9.10.0"
+  hlo: "{\n  tmp_0 = bf16[3,32,1024,4,1024]{4,3,2,1,0} parameter(0)\n  tmp_1 = bf16[3,4,32,1024,1024]{4,3,2,1,0} transpose(bf16[3,32,1024,4,1024]{4,3,2,1,0} tmp_0), dimensions={0,3,1,2,4}\n  tmp_2 = bf16[1,3,32,1024]{3,2,1,0} parameter(1)\n  tmp_3 = bf16[3,32,1024]{2,1,0} bitcast(bf16[1,3,32,1024]{3,2,1,0} tmp_2)\n  tmp_4 = bf16[3,4,32,1024,1024]{4,3,2,1,0} broadcast(bf16[3,32,1024]{2,1,0} tmp_3), dimensions={0,2,3}\n  tmp_5 = bf16[3,4,32,1024,1024]{4,3,2,1,0} add(bf16[3,4,32,1024,1024]{4,3,2,1,0} tmp_1, bf16[3,4,32,1024,1024]{4,3,2,1,0} tmp_4)\n  tmp_6 = bf16[1,4,32,1024,1024]{4,3,2,1,0} slice(bf16[3,4,32,1024,1024]{4,3,2,1,0} tmp_5), slice={[1:2], [0:4], [0:32], [0:1024], [0:1024]}\n  tmp_7 = bf16[1,4,32,1024,1024]{4,3,2,1,0} slice(bf16[3,4,32,1024,1024]{4,3,2,1,0} tmp_5), slice={[0:1], [0:4], [0:32], [0:1024], [0:1024]}\n  tmp_8 = bf16[128,1024,1024]{2,1,0} bitcast(bf16[1,4,32,1024,1024]{4,3,2,1,0} tmp_7)\n  tmp_9 = bf16[] constant({...})\n  tmp_10 = bf16[128,1024,1024]{2,1,0} broadcast(bf16[] tmp_9), dimensions={}\n  tmp_11 = bf16[128,1024,1024]{2,1,0} multiply(bf16[128,1024,1024]{2,1,0} tmp_8, bf16[128,1024,1024]{2,1,0} tmp_10)\n  tmp_12 = bf16[128,1024,1024]{2,1,0} transpose(bf16[128,1024,1024]{2,1,0} tmp_11), dimensions={0,2,1}\n  ROOT tmp_13 = (bf16[1,4,32,1024,1024]{4,3,2,1,0}, bf16[128,1024,1024]{2,1,0}) tuple(bf16[1,4,32,1024,1024]{4,3,2,1,0} tmp_6, bf16[128,1024,1024]{2,1,0} tmp_12)\n}"
   result {
     other {
       name: "NATIVE_EMITTER"
