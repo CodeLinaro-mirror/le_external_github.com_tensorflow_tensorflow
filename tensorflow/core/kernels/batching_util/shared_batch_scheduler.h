@@ -154,6 +154,9 @@ class SharedBatchScheduler
     // the options provided in the first Create() call will be used to
     // initialize the global scheduler.
     bool use_global_scheduler = false;
+
+    // The startup delay for the batch threads. Useful for testing.
+    int64_t batch_threads_startup_delay_micros = 0;
   };
   // Ownership is shared between the caller of Create() and any queues created
   // via AddQueue().
@@ -459,16 +462,23 @@ class PriorityTaskQueue {
   // considered first. Within a priority, tasks that came first are
   // considered first.
   std::vector<std::unique_ptr<TaskType>> RemoveTask(int size) {
-    std::vector<std::unique_ptr<TaskType>> tasks;
+    std::vector<std::unique_ptr<TaskType>> tasks_to_schedule;
     int remaining_size = size;
 
     while (remaining_size > 0 && !tasks_.empty()) {
       auto it = tasks_.begin();
-      QueueEntry highest_priority_entry = RemoveEntryInternal(it);
 
-      if (enable_large_batch_splitting_ &&
-          highest_priority_entry.task->size() > remaining_size) {
-        // Split
+      // If task fits just add it to tasks_to_schedule.
+      if (it->task->size() <= remaining_size) {
+        QueueEntry highest_priority_entry = RemoveEntryInternal(it);
+        remaining_size -= highest_priority_entry.task->size();
+        tasks_to_schedule.push_back(std::move(highest_priority_entry.task));
+        continue;
+      }
+
+      // If task does not fit, check if we can split it.
+      if (CanSplitTask(*(it->task))) {
+        QueueEntry highest_priority_entry = RemoveEntryInternal(it);
         std::unique_ptr<TaskType> highest_priority_task_ptr =
             std::move(highest_priority_entry.task);
         std::vector<std::unique_ptr<TaskType>> output_tasks;
@@ -486,7 +496,7 @@ class PriorityTaskQueue {
         // First task fits.
         remaining_size -= output_tasks[0]->size();
 
-        tasks.push_back(std::move(output_tasks[0]));
+        tasks_to_schedule.push_back(std::move(output_tasks[0]));
 
         for (size_t i = 1; i < output_tasks.size(); ++i) {
           QueueEntry new_entry;
@@ -496,12 +506,13 @@ class PriorityTaskQueue {
           new_entry.criticality = highest_priority_entry.criticality;
           AddEntryInternal(std::move(new_entry));
         }
-      } else {
-        remaining_size -= highest_priority_entry.task->size();
-        tasks.push_back(std::move(highest_priority_entry.task));
       }
+
+      // The task does not fit and we cannot split it. Leave it for the next
+      // batch.
+      break;
     }
-    return tasks;
+    return tasks_to_schedule;
   }
 
   std::optional<uint64_t> EarliestTaskStartTime() const {
@@ -598,6 +609,13 @@ class PriorityTaskQueue {
   std::multiset<uint64_t> start_times_;
   const size_t max_queue_depth_;
   size_t current_queue_size_ = 0;
+  bool CanSplitTask(const TaskType& task) const {
+    if constexpr (std::is_base_of_v<BatchTask, TaskType>) {
+      return enable_large_batch_splitting_ && !task.is_subtask();
+    }
+    return enable_large_batch_splitting_;
+  }
+
   const std::function<absl::Status(
       std::unique_ptr<TaskType>* input_task, int first_output_task_size,
       int input_batch_size_limit,
@@ -1059,6 +1077,8 @@ SharedBatchScheduler<TaskType>::SharedBatchScheduler(const Options& options)
   PeriodicFunction::Options periodic_fn_options;
   periodic_fn_options.thread_name_prefix =
       strings::StrCat(options.thread_pool_name, "_");
+  periodic_fn_options.startup_delay_micros =
+      options.batch_threads_startup_delay_micros;
   for (int i = 0; i < options.num_batch_threads; ++i) {
     std::unique_ptr<PeriodicFunction> thread(new PeriodicFunction(
         [this] { this->ThreadLogic(); },
