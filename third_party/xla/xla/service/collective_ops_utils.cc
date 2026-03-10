@@ -27,11 +27,11 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/numbers.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "xla/core/collectives/reduction_kind.h"
+#include "xla/hlo/ir/collective_op_group_mode.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
@@ -54,12 +54,9 @@ limitations under the License.
 namespace xla {
 using CycleType = collective_permute_cycle::CycleType;
 
-// Match the instruction to a reduction kind. We can represent and/or of pred as
-// min/max. This works because pred is stored as an 8-bit int of value 0 or 1.
-std::optional<ReductionKind> MatchReductionInstruction(
-    const HloInstruction* hlo) {
-  PrimitiveType type = hlo->shape().element_type();
-  switch (hlo->opcode()) {
+std::optional<ReductionKind> OpcodeToReductionKind(HloOpcode hlo_opcode,
+                                                   PrimitiveType type) {
+  switch (hlo_opcode) {
     case HloOpcode::kAdd:
       return ReductionKind::SUM;
     case HloOpcode::kMultiply:
@@ -77,6 +74,14 @@ std::optional<ReductionKind> MatchReductionInstruction(
     default:
       return std::nullopt;
   }
+}
+
+// Match the instruction to a reduction kind. We can represent and/or of pred as
+// min/max. This works because pred is stored as an 8-bit int of value 0 or 1.
+std::optional<ReductionKind> MatchReductionInstruction(
+    const HloInstruction* hlo) {
+  PrimitiveType type = hlo->shape().element_type();
+  return OpcodeToReductionKind(hlo->opcode(), type);
 }
 
 std::optional<ReductionKind> MatchReductionComputation(
