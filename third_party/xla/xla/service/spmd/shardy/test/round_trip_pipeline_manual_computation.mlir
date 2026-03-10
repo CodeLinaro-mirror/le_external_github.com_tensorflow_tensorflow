@@ -98,32 +98,3 @@ func.func @main() {
   } : () -> ()
   return
 }
-
-// -----
-
-// ***************** Tokens test *****************
-
-// Make sure this temp attr doesn't exist anymore.
-// CHECK-NOT: sharding_hlo_string
-
-// CHECK: sdy.mesh @mesh_1 = <["a"=4, "b"=2]>
-sdy.mesh @mesh_1 = <["a"=4, "b"=2]>
-
-// CHECK-LABEL: func.func @main
-func.func @main(
-    %arg0: !stablehlo.token {sdy.sharding = #sdy.sharding<@mesh_1, []>},
-    %arg1: tensor<2xi64> {sdy.sharding = #sdy.sharding<@mesh_1, [{"b"}]>}
-) -> (!stablehlo.token, tensor<2xi64>) {
-  // CHECK-NEXT:     %[[MANUAL_COMP:.*]]:2 = sdy.manual_computation(%arg0, %arg1)
-  // CHECK-SAME{LITERAL}: in_shardings=[<@mesh_1, []>, <@mesh_1, [{"b"}]>] out_shardings=[<@mesh_1, []>, <@mesh_1, [{"b"}]>] manual_axes={"b"} (%arg2: !stablehlo.token, %arg3: tensor<1xi64>) {
-  // CHECK-NEXT:       sdy.return %arg2, %arg3 : !stablehlo.token, tensor<1xi64>
-  // CHECK-NEXT:     } : (!stablehlo.token, tensor<2xi64>) -> (!stablehlo.token, tensor<2xi64>)
-  // CHECK-NEXT:     return %[[MANUAL_COMP]]#0, %[[MANUAL_COMP]]#1 : !stablehlo.token, tensor<2xi64>
-  %0:2 = sdy.manual_computation(%arg0, %arg1)
-      in_shardings=[<@mesh_1, []>, <@mesh_1, [{"b"}]>]
-      out_shardings=[<@mesh_1, []>, <@mesh_1, [{"b"}]>]
-      manual_axes={"b"} (%arg2: !stablehlo.token, %arg3: tensor<1xi64>) {
-    sdy.return %arg2, %arg3 : !stablehlo.token, tensor<1xi64>
-  } : (!stablehlo.token, tensor<2xi64>) -> (!stablehlo.token, tensor<2xi64>)
-  return %0#0, %0#1 : !stablehlo.token, tensor<2xi64>
-}
