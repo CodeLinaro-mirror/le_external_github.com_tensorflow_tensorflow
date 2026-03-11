@@ -22,16 +22,12 @@ limitations under the License.
 #include "absl/algorithm/container.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
-#include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "xla/backends/gpu/autotuner/gpu_codegen_backend.h"
 #include "xla/executable_run_options.h"
-#include "xla/hlo/ir/hlo_clone_context.h"
-#include "xla/hlo/ir/hlo_computation.h"
-#include "xla/hlo/ir/hlo_instruction.h"
-#include "xla/hlo/ir/hlo_module.h"
 #include "xla/service/compiler.h"
 #include "xla/service/executable.h"
 #include "xla/service/gpu/gpu_executable_run_options.h"
@@ -45,7 +41,6 @@ limitations under the License.
 #include "xla/stream_executor/stream.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
-#include "xla/util.h"
 #include "xla/xla.pb.h"
 #include "tsl/profiler/lib/traceme.h"
 
@@ -71,21 +66,43 @@ std::vector<ExecutionInput> ExecutionInputsFromBuffers(
 
 }  // namespace
 
+absl::StatusOr<std::unique_ptr<AutotunerCompileUtil>>
+AutotunerCompileUtil::Create(se::StreamExecutor* stream_executor,
+                             se::DeviceAddressAllocator* allocator,
+                             const DebugOptions& opts) {
+  if (stream_executor == nullptr) {
+    return absl::InvalidArgumentError("stream_executor may not be null.");
+  }
+  if (allocator == nullptr) {
+    return absl::InvalidArgumentError("allocator may not be null.");
+  }
+  TF_ASSIGN_OR_RETURN(se::Stream * stream,
+                      allocator->GetStream(stream_executor->device_ordinal()));
+  if (stream == nullptr) {
+    return absl::InternalError("allocator returned null stream.");
+  }
+  TF_ASSIGN_OR_RETURN(
+      std::unique_ptr<Compiler> compiler,
+      Compiler::GetForPlatform(stream_executor->GetPlatform()->id()));
+  return absl::WrapUnique(new AutotunerCompileUtil(
+      std::move(compiler), stream_executor, allocator, *stream, opts));
+}
+
 AutotunerCompileUtil::AutotunerCompileUtil(
-    std::unique_ptr<Compiler> compiler, se::StreamExecutor& stream_executor,
-    se::Stream& stream, se::DeviceAddressAllocator& allocator,
+    std::unique_ptr<Compiler> compiler, se::StreamExecutor* stream_executor,
+    se::DeviceAddressAllocator* allocator, se::Stream& stream,
     const DebugOptions& opts)
     : compiler_(std::move(compiler)),
       stream_executor_(stream_executor),
-      stream_(stream),
       allocator_(allocator),
+      stream_(stream),
       opts_(opts) {
   GpuCodegenBackend::AdjustDebugOptionsForAutotuning(opts_);
 }
 
 absl::StatusOr<AutotunerCompileUtil::ProfilingOutput>
 AutotunerCompileUtil::ProfileExecutable(
-    Executable* executable, se::Stream* stream,
+    Executable* executable,
     absl::Span<se::DeviceAddressBase const> input_buffers,
     absl::Span<Shape const> input_shapes) {
   tsl::profiler::TraceMe traceme("ProfileExecutable");
@@ -97,7 +114,7 @@ AutotunerCompileUtil::ProfileExecutable(
     TF_ASSIGN_OR_RETURN(ExecutionOutput execution_output,
                         Execute(*executable, std::move(execution_inputs)));
 
-    TF_RETURN_IF_ERROR(stream->BlockHostUntilDone());
+    TF_RETURN_IF_ERROR(stream_.BlockHostUntilDone());
   }
   std::vector<ExecutionInput> execution_inputs =
       ExecutionInputsFromBuffers(input_buffers, input_shapes);
@@ -125,10 +142,10 @@ absl::StatusOr<std::unique_ptr<Executable>> AutotunerCompileUtil::Compile(
     return new_hlo_module.status();
   }
   Compiler::CompileOptions compile_options;
-  compile_options.device_allocator = &allocator_;
+  compile_options.device_allocator = allocator_;
   compile_options.embed_hlo_module = false;
   absl::StatusOr<std::unique_ptr<Executable>> out = compiler_->RunBackend(
-      std::move(*new_hlo_module), &stream_executor_, compile_options);
+      std::move(*new_hlo_module), stream_executor_, compile_options);
   if (out.status().code() == absl::StatusCode::kResourceExhausted ||
       out.status().code() == absl::StatusCode::kCancelled) {
     // Being out of shared memory budget or registers is an expected failure.
@@ -160,23 +177,6 @@ absl::StatusOr<std::unique_ptr<HloModule>> AutotunerCompileUtil::ExtractModule(
   return extractor(opts_);
 }
 
-/*static*/ absl::StatusOr<AutotunerCompileUtil> AutotunerCompileUtil::Create(
-    const DeviceOrDevicelessConfig& config, const DebugOptions& opts) {
-  tsl::profiler::TraceMe traceme("AutotunerCreate");
-  if (config.IsDeviceless()) {
-    return absl::InvalidArgumentError(
-        "Deviceless autotuning is not supported.");
-  }
-  se::StreamExecutor* stream_exec = config.GetExecutor();
-  se::DeviceAddressAllocator* allocator = config.GetAllocator();
-  TF_ASSIGN_OR_RETURN(se::Stream* const stream, config.GetStream());
-  TF_ASSIGN_OR_RETURN(
-      std::unique_ptr<Compiler> compiler,
-      Compiler::GetForPlatform(stream_exec->GetPlatform()->id()));
-  return AutotunerCompileUtil(std::move(compiler), *stream_exec, *stream,
-                              *allocator, opts);
-}
-
 absl::StatusOr<ExecutionOutput> AutotunerCompileUtil::Execute(
     Executable& executable, std::vector<ExecutionInput> arguments,
     ExecutionProfile* profile) {
@@ -186,9 +186,9 @@ absl::StatusOr<ExecutionOutput> AutotunerCompileUtil::Execute(
   gpu_opts.set_requires_exclusive_lock_on_gpu();
 
   ExecutableRunOptions run_options;
-  run_options.set_device_ordinal(stream_executor_.device_ordinal());
+  run_options.set_device_ordinal(stream_executor_->device_ordinal());
   run_options.set_stream(&stream_);
-  run_options.set_allocator(&allocator_);
+  run_options.set_allocator(allocator_);
   run_options.set_gpu_executable_run_options(&gpu_opts);
   run_options.set_execution_profile(profile);
   ServiceExecutableRunOptions service_run_options(run_options);
