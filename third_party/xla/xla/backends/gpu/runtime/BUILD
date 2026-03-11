@@ -4044,6 +4044,7 @@ xla_cc_test(
         ":sequential_thunk",
         ":thunk",
         ":thunk_pass_pipeline",
+        "//xla:debug_options_flags",
         "//xla:xla_proto_cc",
         "//xla/hlo/ir:hlo",
         "//xla/service:buffer_assignment",

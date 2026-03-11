@@ -129,18 +129,8 @@ const char kUnsupportedHlo[] = R"(
 
 class CudnnBackendTest : public HloHardwareIndependentTestBase {
  protected:
-  DebugOptions debug_options_;
-  NVPTXCompiler compiler_;
-  se::StreamExecutor* stream_executor_;
-  Compiler::GpuTargetConfig target_config_;
-  CudnnBackend backend_;
-
   CudnnBackendTest()
-      : debug_options_([]() {
-          DebugOptions debug_options;
-          debug_options.set_xla_gpu_cudnn_gemm_fusion_level(2);
-          return debug_options;
-        }()),
+      : debug_options_(GetDebugOptionsForTest()),
         stream_executor_(PlatformUtil::GetDefaultPlatform()
                              .value()
                              ->ExecutorForDevice(0)
@@ -148,6 +138,19 @@ class CudnnBackendTest : public HloHardwareIndependentTestBase {
         target_config_(stream_executor_),
         backend_(stream_executor_, &debug_options_, &compiler_,
                  &target_config_) {}
+
+  DebugOptions GetDebugOptionsForTest() const override {
+    DebugOptions debug_options =
+        HloHardwareIndependentTestBase::GetDebugOptionsForTest();
+    debug_options.set_xla_gpu_cudnn_gemm_fusion_level(2);
+    return debug_options;
+  }
+
+  DebugOptions debug_options_;
+  NVPTXCompiler compiler_;
+  se::StreamExecutor* stream_executor_;
+  Compiler::GpuTargetConfig target_config_;
+  CudnnBackend backend_;
 };
 
 TEST_F(CudnnBackendTest, CanCreateCublasBackend) {
