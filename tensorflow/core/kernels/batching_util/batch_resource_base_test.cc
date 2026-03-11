@@ -271,7 +271,8 @@ TEST_P(BatchResourceBaseWithPriorityTest, BatchingWithMixedPriorityPolicy) {
           /*low_priority_allowed_batch_sizes=*/allowed_batch_sizes,
           /*mixed_priority_batching_policy=*/
           GetParam().mixed_priority_batching_policy,
-          /*enable_priority_aware_batch_scheduler=*/false);
+          /*enable_priority_aware_batch_scheduler=*/false,
+          /*enable_priority_aware_batch_scheduler_resplit=*/false);
   tsl::core::RefCountPtr<BatchResourceBase> batch_resource(
       new TestBatchResourceBase(true, batcher, queue_options,
                                 allowed_batch_sizes));
@@ -431,7 +432,7 @@ INSTANTIATE_TEST_SUITE_P(
 // from the priority queue (FinishTask called with UnavailableError before
 // outputs are populated), the IncrementalBarrier callback must not crash trying
 // to Concat uninitialized tensor data.
-class SplitInputTaskEvictionTest : public ::testing::Test {
+class SplitInputTaskTest : public ::testing::Test {
  protected:
   void SetUp() override {
     device_ = DeviceFactory::NewDevice("CPU", SessionOptions{},
@@ -480,7 +481,7 @@ class SplitInputTaskEvictionTest : public ::testing::Test {
   std::unique_ptr<OpKernelContext> context_;
 };
 
-TEST_F(SplitInputTaskEvictionTest, EvictedSubtasksDoNotCrash) {
+TEST_F(SplitInputTaskTest, EvictedSubtasksDoNotCrash) {
   // Set up a BatchTask with a real OpKernelContext, shared output and status.
   auto task = std::make_unique<BatchResourceBase::BatchTask>();
   task->inputs.push_back(
@@ -526,6 +527,248 @@ TEST_F(SplitInputTaskEvictionTest, EvictedSubtasksDoNotCrash) {
   // set_output, so no output is set on the context. Without the fix, Concat
   // runs on empty tensors and set_output IS called.
   EXPECT_EQ(context_->mutable_output(0), nullptr);
+}
+
+TEST_F(SplitInputTaskTest, ResplitAlreadySplitTask) {
+  auto task = std::make_unique<BatchResourceBase::BatchTask>();
+  task->inputs.push_back(Tensor(DataType::DT_INT64, TensorShape({6, 4})));
+  task->context = context_.get();
+  task->output = std::make_shared<BatchResourceBase::TensorMatrix>();
+  task->status = std::make_shared<ThreadSafeStatus>();
+  task->guid = 0;
+  task->start_time = 0;
+
+  std::shared_ptr<BatchResourceBase::TensorMatrix> parent_output = task->output;
+  std::shared_ptr<ThreadSafeStatus> shared_status = task->status;
+
+  absl::Notification done;
+  task->set_done_callback([&done]() { done.Notify(); });
+
+  std::vector<std::unique_ptr<BatchResourceBase::BatchTask>> first_split;
+  TF_ASSERT_OK(
+      BatchResourceBase::SplitInputTask(&task, /*open_batch_remaining_slot=*/2,
+                                        /*max_batch_size=*/4, &first_split));
+  ASSERT_EQ(first_split.size(), 2);
+  EXPECT_EQ(first_split[0]->size(), 2);
+  EXPECT_EQ(first_split[1]->size(), 4);
+  EXPECT_TRUE(first_split[0]->is_partial);
+  EXPECT_TRUE(first_split[1]->is_partial);
+
+  std::vector<std::unique_ptr<BatchResourceBase::BatchTask>> second_split;
+  auto subtask1 = std::move(first_split[1]);
+  TF_ASSERT_OK(BatchResourceBase::SplitInputTask(
+      &subtask1, /*open_batch_remaining_slot=*/1,
+      /*max_batch_size=*/4, &second_split));
+  ASSERT_EQ(second_split.size(), 2);
+  EXPECT_EQ(second_split[0]->size(), 1);
+  EXPECT_EQ(second_split[1]->size(), 3);
+  EXPECT_TRUE(second_split[0]->is_partial);
+  EXPECT_TRUE(second_split[1]->is_partial);
+
+  std::vector<std::unique_ptr<BatchResourceBase::BatchTask>> third_split;
+  auto subtask2 = std::move(second_split[1]);
+  TF_ASSERT_OK(BatchResourceBase::SplitInputTask(
+      &subtask2, /*open_batch_remaining_slot=*/1,
+      /*max_batch_size=*/4, &third_split));
+  ASSERT_EQ(third_split.size(), 2);
+  EXPECT_EQ(third_split[0]->size(), 1);
+  EXPECT_EQ(third_split[1]->size(), 2);
+  EXPECT_TRUE(third_split[0]->is_partial);
+  EXPECT_TRUE(third_split[1]->is_partial);
+
+  EXPECT_EQ(parent_output->size(), 2);
+
+  Tensor out0(DataType::DT_INT64, TensorShape({2, 4}));
+  out0.flat<int64_t>().setConstant(10);
+  (*first_split[0]->output)[first_split[0]->split_index][0] = out0;
+
+  Tensor out_resplit0(DataType::DT_INT64, TensorShape({1, 4}));
+  out_resplit0.flat<int64_t>().setConstant(20);
+  (*second_split[0]->output)[second_split[0]->split_index][0] = out_resplit0;
+
+  Tensor out_resplit1(DataType::DT_INT64, TensorShape({1, 4}));
+  out_resplit1.flat<int64_t>().setConstant(30);
+  (*third_split[0]->output)[third_split[0]->split_index][0] = out_resplit1;
+
+  Tensor out_resplit2(DataType::DT_INT64, TensorShape({2, 4}));
+  out_resplit2.flat<int64_t>().setConstant(40);
+  (*third_split[1]->output)[third_split[1]->split_index][0] = out_resplit2;
+
+  // Finish the subtasks. Note that the resplitted parent subtasks will be
+  // finished when its children are finished.
+  first_split[0]->FinishTask(absl::OkStatus());
+
+  second_split[0]->FinishTask(absl::OkStatus());
+
+  for (auto& sub : third_split) {
+    sub->FinishTask(absl::OkStatus());
+  }
+
+  ASSERT_TRUE(done.WaitForNotificationWithTimeout(absl::Seconds(5)));
+
+  EXPECT_TRUE(shared_status->status().ok());
+
+  const Tensor* final_output = context_->mutable_output(0);
+  ASSERT_NE(final_output, nullptr);
+  EXPECT_EQ(final_output->shape(), TensorShape({6, 4}));
+
+  auto flat = final_output->flat<int64_t>();
+  for (int i = 0; i < 2 * 4; ++i) {
+    EXPECT_EQ(flat(i), 10);
+  }
+  for (int i = 2 * 4; i < 3 * 4; ++i) {
+    EXPECT_EQ(flat(i), 20);
+  }
+  for (int i = 3 * 4; i < 4 * 4; ++i) {
+    EXPECT_EQ(flat(i), 30);
+  }
+  for (int i = 4 * 4; i < 6 * 4; ++i) {
+    EXPECT_EQ(flat(i), 40);
+  }
+}
+
+TEST_F(SplitInputTaskTest, EvictedResplitSubtasksDoNotCrash) {
+  auto task = std::make_unique<BatchResourceBase::BatchTask>();
+  task->inputs.push_back(
+      Tensor(DataType::DT_INT64, TensorShape({6, 4})));  // size = 6
+  task->context = context_.get();
+  task->output = std::make_shared<BatchResourceBase::TensorMatrix>();
+  task->status = std::make_shared<ThreadSafeStatus>();
+  task->guid = 0;
+  task->start_time = 0;
+
+  auto shared_status = task->status;
+
+  absl::Notification done;
+  task->set_done_callback([&done]() { done.Notify(); });
+
+  // First split: [2, 4]
+  std::vector<std::unique_ptr<BatchResourceBase::BatchTask>> first_split;
+  TF_ASSERT_OK(
+      BatchResourceBase::SplitInputTask(&task, /*open_batch_remaining_slot=*/2,
+                                        /*max_batch_size=*/4, &first_split));
+  ASSERT_EQ(first_split.size(), 2);
+  EXPECT_EQ(first_split[0]->size(), 2);
+  EXPECT_EQ(first_split[1]->size(), 4);
+  EXPECT_TRUE(first_split[0]->is_partial);
+  EXPECT_TRUE(first_split[1]->is_partial);
+
+  // Re-split the second subtask (size 4) into [1, 3].
+  auto subtask1 = std::move(first_split[1]);
+  std::vector<std::unique_ptr<BatchResourceBase::BatchTask>> second_split;
+  TF_ASSERT_OK(BatchResourceBase::SplitInputTask(
+      &subtask1, /*open_batch_remaining_slot=*/1,
+      /*max_batch_size=*/4, &second_split));
+  ASSERT_EQ(second_split.size(), 2);
+  EXPECT_EQ(second_split[0]->size(), 1);
+  EXPECT_EQ(second_split[1]->size(), 3);
+  EXPECT_TRUE(second_split[0]->is_partial);
+  EXPECT_TRUE(second_split[1]->is_partial);
+
+  // Third split: re-split second_split[1] (size 3) into [1, 2].
+  auto subtask2 = std::move(second_split[1]);
+  std::vector<std::unique_ptr<BatchResourceBase::BatchTask>> third_split;
+  TF_ASSERT_OK(BatchResourceBase::SplitInputTask(
+      &subtask2, /*open_batch_remaining_slot=*/1,
+      /*max_batch_size=*/4, &third_split));
+  ASSERT_EQ(third_split.size(), 2);
+  EXPECT_EQ(third_split[0]->size(), 1);
+  EXPECT_EQ(third_split[1]->size(), 2);
+  EXPECT_TRUE(third_split[0]->is_partial);
+  EXPECT_TRUE(third_split[1]->is_partial);
+
+  // first_split[0] and second_split[0] finish OK (outputs unpopulated — they
+  // will never be concat'd because the error from the third split causes the
+  // barrier callbacks to skip concat).
+  first_split[0]->FinishTask(absl::OkStatus());
+  second_split[0]->FinishTask(absl::OkStatus());
+
+  // Evict all third-split subtasks without populating outputs.
+  for (auto& sub : third_split) {
+    sub->FinishTask(
+        absl::UnavailableError("Task evicted due to priority queue full."));
+  }
+
+  // The chained barrier callbacks should fire without crashing:
+  //   third_split barrier  → sees error, skips concat, FinishTask(error)
+  //   second_split barrier → sees error, skips concat, FinishTask(error)
+  //   first_split barrier  → sees error, skips concat, FinishTask(error)
+  //   → done notification
+  ASSERT_TRUE(done.WaitForNotificationWithTimeout(absl::Seconds(5)));
+
+  // Verify the error was propagated through all three levels.
+  EXPECT_EQ(shared_status->status().code(), absl::StatusCode::kUnavailable);
+  EXPECT_EQ(context_->mutable_output(0), nullptr);
+}
+
+TEST_F(SplitInputTaskTest, EvictedSiblingTaskAllowsResplit) {
+  auto task = std::make_unique<BatchResourceBase::BatchTask>();
+  task->inputs.push_back(Tensor(DataType::DT_INT64, TensorShape({12, 4})));
+  task->context = context_.get();
+  task->output = std::make_shared<BatchResourceBase::TensorMatrix>();
+  task->status = std::make_shared<ThreadSafeStatus>();
+  task->guid = 0;
+  task->start_time = 0;
+
+  auto shared_status = task->status;
+
+  absl::Notification done;
+  task->set_done_callback([&done]() { done.Notify(); });
+
+  // Split the task: open_batch_remaining_slot=2, max_batch_size=4.
+  // Input size 12 > 2, so it splits into [2, 4, 4, 2] = 4 subtasks.
+  std::vector<std::unique_ptr<BatchResourceBase::BatchTask>> first_split;
+  TF_ASSERT_OK(
+      BatchResourceBase::SplitInputTask(&task, /*open_batch_remaining_slot=*/2,
+                                        /*max_batch_size=*/4, &first_split));
+  ASSERT_EQ(first_split.size(), 4);
+  EXPECT_EQ(first_split[0]->size(), 2);
+  EXPECT_EQ(first_split[1]->size(), 4);
+  EXPECT_EQ(first_split[2]->size(), 4);
+  EXPECT_EQ(first_split[3]->size(), 2);
+  EXPECT_TRUE(first_split[0]->is_partial);
+  EXPECT_TRUE(first_split[1]->is_partial);
+  EXPECT_TRUE(first_split[2]->is_partial);
+  EXPECT_TRUE(first_split[3]->is_partial);
+
+  // Finish the first subtask OK.
+  first_split[0]->FinishTask(absl::OkStatus());
+
+  // Evict the fourth subtask.
+  first_split[3]->FinishTask(
+      absl::UnavailableError("Task evicted due to priority queue full."));
+
+  // Verify that the shared status is now an error.
+  EXPECT_FALSE(shared_status->status().ok());
+  EXPECT_EQ(shared_status->status().code(), absl::StatusCode::kUnavailable);
+
+  // Re-split the second subtask (size 4) into [1, 3].
+  auto subtask1 = std::move(first_split[1]);
+  std::vector<std::unique_ptr<BatchResourceBase::BatchTask>> second_split;
+  TF_ASSERT_OK(BatchResourceBase::SplitInputTask(
+      &subtask1, /*open_batch_remaining_slot=*/1,
+      /*max_batch_size=*/4, &second_split));
+  ASSERT_EQ(second_split.size(), 2);
+  EXPECT_EQ(second_split[0]->size(), 1);
+  EXPECT_EQ(second_split[1]->size(), 3);
+  EXPECT_TRUE(second_split[0]->is_partial);
+  EXPECT_TRUE(second_split[1]->is_partial);
+
+  // Verify that the shared status is still an error.
+  EXPECT_FALSE(shared_status->status().ok());
+  EXPECT_EQ(shared_status->status().code(), absl::StatusCode::kUnavailable);
+
+  first_split[2]->FinishTask(absl::OkStatus());
+  // Finish the new subtasks.
+  for (auto& sub : second_split) {
+    sub->FinishTask(absl::OkStatus());
+  }
+
+  // The done callback should fire.
+  ASSERT_TRUE(done.WaitForNotificationWithTimeout(absl::Seconds(5)));
+
+  // Verify that the error was preserved.
+  EXPECT_EQ(shared_status->status().code(), absl::StatusCode::kUnavailable);
 }
 
 class TestTpuCostMeasurement : public CostMeasurement {
