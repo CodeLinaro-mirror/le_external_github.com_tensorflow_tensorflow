@@ -1783,14 +1783,14 @@ ShapeUtil::DecomposeBitcastToTrt(const Shape& input_shape,
     return std::nullopt;
   }
 
-  if (ShapeUtil::ReshapeIsBitcast(input_shape, output_shape,
-                                  /*ignore_element_type=*/true)) {
-    return BitcastDecompositionReshape{};
-  }
-
   if (std::optional<std::vector<int64_t>> transpose_dims =
           DeduceTransposeDimensionsForBitcast(input_shape, output_shape)) {
     return BitcastDecompositionTranspose{transpose_dims.value()};
+  }
+
+  if (ShapeUtil::ReshapeIsBitcast(input_shape, output_shape,
+                                  /*ignore_element_type=*/true)) {
+    return BitcastDecompositionReshape{};
   }
 
   return DecomposeBitcastToTrt(input_shape, output_shape);
