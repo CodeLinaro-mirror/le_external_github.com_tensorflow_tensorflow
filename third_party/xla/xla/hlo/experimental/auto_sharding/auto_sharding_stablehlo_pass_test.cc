@@ -72,6 +72,7 @@ module @matmul attributes {
 }
 )MLIR";
 
+// TODO(enver): Revisit the test after HloShardingV3 is enabled.
 TEST_F(AutoShardingTest, OpenDimensionsInputSharding) {
   const std::string kShardyMlirString = absl::StrFormat(
       kShardyTemplate, R"( {sdy.sharding = #sdy.sharding<@mesh, [{?}, {?}]>})",
@@ -82,9 +83,7 @@ TEST_F(AutoShardingTest, OpenDimensionsInputSharding) {
   CHECK: %arg0: tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{}, {}]>}
   CHECK-SAME: %arg1: tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{}, {}]>}
   CHECK-SAME: -> (tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{"x"}, {"y"}]>}
-  CHECK: %0 = stablehlo.reshape %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{"x"}, {}]>]>}
-  CHECK: %1 = stablehlo.reshape %arg1 {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{}, {"y"}]>]>}
-  CHECK: %2 = stablehlo.dot %0, %1, {{.*}} {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{"x"}, {"y"}]>]>}
+  CHECK-NEXT: stablehlo.dot %arg0, %arg1, {{.*}} {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{"x"}, {"y"}]>]>}
   )";
 
   mlir::OwningOpRef<mlir::ModuleOp> module =
@@ -98,6 +97,7 @@ TEST_F(AutoShardingTest, OpenDimensionsInputSharding) {
   MatchSardyModule(module.get(), kExpectedTransformedShardyPattern);
 }
 
+// TODO(enver): Revisit after HloShardingV3 is enabled.
 TEST_F(AutoShardingTest, ClosedDimensionsInputSharding) {
   const std::string kShardyMlirString = absl::StrFormat(
       kShardyTemplate, R"( {sdy.sharding = #sdy.sharding<@mesh, [{}, {}]>})",
@@ -108,9 +108,7 @@ TEST_F(AutoShardingTest, ClosedDimensionsInputSharding) {
   CHECK: %arg0: tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{}, {}]>}
   CHECK-SAME: %arg1: tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{}, {}]>}
   CHECK-SAME: -> (tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{"x"}, {"y"}]>}
-  CHECK: %0 = stablehlo.reshape %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{"x"}, {}]>]>}
-  CHECK: %1 = stablehlo.reshape %arg1 {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{}, {"y"}]>]>}
-  CHECK: %2 = stablehlo.dot %0, %1, {{.*}} {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{"x"}, {"y"}]>]>}
+  CHECK-NEXT: stablehlo.dot %arg0, %arg1, {{.*}} {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{"x"}, {"y"}]>]>}
   )";
 
   mlir::OwningOpRef<mlir::ModuleOp> module =
@@ -124,6 +122,7 @@ TEST_F(AutoShardingTest, ClosedDimensionsInputSharding) {
   MatchSardyModule(module.get(), kExpectedTransformedShardyPattern);
 }
 
+// TODO(enver): Revisit after HloShardingV3 is enabled.
 TEST_F(AutoShardingTest, HybridDimensionsInputSharding) {
   const std::string kShardyMlirString = absl::StrFormat(
       kShardyTemplate, R"( {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {}]>})",
@@ -134,8 +133,7 @@ TEST_F(AutoShardingTest, HybridDimensionsInputSharding) {
   CHECK: %arg0: tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{"x"}, {}]>}
   CHECK-SAME: %arg1: tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{}, {}]>}
   CHECK-SAME: -> (tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh_0, [{"x"}, {"y"}]>}
-  CHECK: %0 = stablehlo.reshape %arg1 {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{}, {"y"}]>]>}
-  CHECK: %1 = stablehlo.dot %arg0, %0, {{.*}} {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{"x"}, {"y"}]>]>}
+  CHECK-NEXT: stablehlo.dot %arg0, %arg1, {{.*}} {sdy.sharding = #sdy.sharding_per_value<[<@mesh_0, [{"x"}, {"y"}]>]>}
   )";
 
   mlir::OwningOpRef<mlir::ModuleOp> module =

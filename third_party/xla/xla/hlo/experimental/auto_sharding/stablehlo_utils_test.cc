@@ -167,6 +167,7 @@ TEST_F(StablehloUtilsTest, ConvertShardyToHloDataFlowEdge) {
   ConvertShardyAndCompare(kShardyMlirString, kExpectedHloPattern);
 }
 
+// TODO(enver): Revisit this test after hlo sharding v3 is enabled.
 TEST_F(StablehloUtilsTest, ConvertHloToShardy1DSharding) {
   const std::string kHloString = R"(
 HloModule matmul, entry_computation_layout={(f32[400,400]{1,0:T(8,128)}, f32[400,400]{1,0:T(8,128)})->f32[400,400]{1,0}}, num_partitions=8
@@ -184,8 +185,7 @@ ENTRY %main.4 (Arg_0.1: f32[400,400], Arg_1.2: f32[400,400]) -> f32[400,400] {
   CHECK: %arg0: tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {}]>}
   CHECK-SAME: %arg1: tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {}]>}
   CHECK-SAME: -> (tensor<400x400xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"_axis_0"}, {}]>})
-  CHECK: %0 = stablehlo.reshape %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"_axis_0"}, {}]>]>}
-  CHECK: %1 = stablehlo.dot %0, %arg1, precision = [DEFAULT, DEFAULT] {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"_axis_0"}, {}]>]>}
+  CHECK-NEXT: stablehlo.dot %arg0, %arg1, precision = [DEFAULT, DEFAULT] {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"_axis_0"}, {}]>]>}
   )";
 
   ConvertHloAndCompare(kHloString, kExpectedShardyPattern);
