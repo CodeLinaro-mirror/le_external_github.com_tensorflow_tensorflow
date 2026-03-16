@@ -208,6 +208,17 @@ class Env {
     return absl::OkStatus();
   }
 
+  // TODO(b/485502789): Remove the const std::string& versions of these
+  // functions and move the actual implementation here, avoiding the string
+  // copy.
+  inline absl::Status FileExists(absl::string_view fname) {
+    return FileExists(std::string(fname));
+  }
+  inline absl::Status FileExists(absl::string_view fname,
+                                 TransactionToken* token) {
+    return FileExists(std::string(fname), token);
+  }
+
   /// Returns true if all the listed files exist, false otherwise.
   /// if status is not null, populate the vector with a detailed status
   /// for each file.
@@ -302,6 +313,18 @@ class Env {
                                     TransactionToken* token) {
     return absl::OkStatus();
   }
+
+  // TODO(b/485502789): Remove the const std::string& versions of these
+  // functions and move the actual implementation here, avoiding the string
+  // copy.
+  inline absl::Status RecursivelyCreateDir(absl::string_view dirname) {
+    return RecursivelyCreateDir(std::string(dirname));
+  }
+  inline absl::Status RecursivelyCreateDir(absl::string_view dirname,
+                                           TransactionToken* token) {
+    return RecursivelyCreateDir(std::string(dirname), token);
+  }
+
   /// \brief Creates the specified directory. Typical return codes
   ///  * OK - successfully created the directory.
   ///  * ALREADY_EXISTS - directory already exists.
@@ -335,6 +358,12 @@ class Env {
   ///  * PERMISSION_DENIED - Insufficient permissions.
   ///  * UNIMPLEMENTED - The file factory doesn't support directories.
   absl::Status IsDirectory(const std::string& fname);
+
+  // TODO(b/485502789): Remove the const std::string& version of this function
+  // and move the actual implementation here, avoiding the string copy.
+  inline absl::Status IsDirectory(absl::string_view fname) {
+    return IsDirectory(std::string(fname));
+  }
 
   /// \brief Returns whether the given path is on a file system
   /// that has atomic move capabilities. This can be used
@@ -653,10 +682,24 @@ absl::Status FileSystemCopyFile(FileSystem* src_fs, const std::string& src,
 absl::Status ReadFileToString(Env* env, const std::string& fname,
                               std::string* data);
 
+// TODO(b/485502789): Remove the const std::string& version of this function
+// and move the actual implementation here, avoiding the string copy.
+inline absl::Status ReadFileToString(Env* env, absl::string_view fname,
+                                     std::string* data) {
+  return ReadFileToString(env, std::string(fname), data);
+}
+
 /// A utility routine: write contents of `data` to file named `fname`
 /// (overwriting existing contents, if any).
 absl::Status WriteStringToFile(Env* env, const std::string& fname,
                                absl::string_view data);
+
+// TODO(b/485502789): Remove the const std::string& version of this function
+// and move the actual implementation here, avoiding the string copy.
+inline absl::Status WriteStringToFile(Env* env, absl::string_view fname,
+                                      absl::string_view data) {
+  return WriteStringToFile(env, std::string(fname), data);
+}
 
 /// A utility routine: append contents of `data` to file named `fname`.
 /// If the file does not exist, it is created.
