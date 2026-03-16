@@ -140,6 +140,9 @@ class ThunkEmitter {
   absl::StatusOr<ThunkSequence> EmitCublasLtMatmulThunkF8(
       const HloCustomCallInstruction* hlo);
 
+  absl::StatusOr<ThunkSequence> EmitCublasLtGroupedMatmulThunk(
+      const HloCustomCallInstruction* hlo);
+
   absl::StatusOr<ThunkSequence> EmitCublasLtMatmulThunkMx(
       const HloCustomCallInstruction* hlo);
 
