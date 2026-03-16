@@ -1,5 +1,9 @@
 # PJRT C API changelog
 
+## 0.101
+
+* Added `payload` and `num_payload` to `PJRT_Client_CreateErrorBuffer_Args` to support passing status payloads during error buffer creation.
+
 ## 0.100
 
 * Added `payload` and `num_payload` to `PJRT_Device_PoisonExecution_Args` to support passing status payloads during execution poisoning.
