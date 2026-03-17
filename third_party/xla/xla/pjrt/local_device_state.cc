@@ -198,7 +198,8 @@ absl::Status LocalDeviceState::ThenMemcpyDeviceToDevice(
 }
 
 absl::Status LocalDeviceState::ThenExecuteCallback(
-    se::Stream* stream, absl::AnyInvocable<void() &&> callback) {
+    se::Stream* stream, absl::AnyInvocable<void() &&> callback,
+    absl::AnyInvocable<void(absl::Status) &&> error_cb) {
   tsl::profiler::TraceMe traceme("ThenExecuteCallback");
   if (callback_stream_map_.has_value()) {
     // Prevent concurrent updates to the callback stream map.
@@ -214,10 +215,20 @@ absl::Status LocalDeviceState::ThenExecuteCallback(
     TF_RETURN_IF_ERROR(callback_stream->second->WaitFor(stream));
     stream = callback_stream->second.get();
   }
+  if (error_cb) {
+    error_cb = [this,
+                callback{std::move(error_cb)}](absl::Status status) mutable {
+      auto void_callback = [callback = std::move(callback), status]() mutable {
+        std::move(callback)(status);
+      };
+      callback_thread_->Schedule(std::move(void_callback));
+    };
+  }
   return stream->DoHostCallback(
       [this, callback{std::move(callback)}]() mutable {
         callback_thread_->Schedule(std::move(callback));
-      });
+      },
+      std::move(error_cb));
 }
 
 se::Stream* LocalDeviceState::GetDeviceToHostStream() {
@@ -330,7 +341,9 @@ absl::Status LocalDeviceState::AllocateAndRecordEvent(
         event_pool().AllocateEvent(async_work_runner, stream->parent()));
     event_pool().ThenRecordEvent(stream, device_event);
     event->SetSequencingEvent(std::move(device_event), stream);
-    return ThenExecuteCallback(stream, [event]() { event.SetStateConcrete(); });
+    return ThenExecuteCallback(
+        stream, [event]() { event.SetStateConcrete(); },
+        [event](absl::Status status) { event.SetError(status); });
   }();
   if (!status.ok()) {
     event.SetError(status);

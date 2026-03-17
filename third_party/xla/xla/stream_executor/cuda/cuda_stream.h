@@ -16,20 +16,17 @@ limitations under the License.
 #ifndef XLA_STREAM_EXECUTOR_CUDA_CUDA_STREAM_H_
 #define XLA_STREAM_EXECUTOR_CUDA_CUDA_STREAM_H_
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
 #include <variant>
 
-#include "absl/base/thread_annotations.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
-#include "absl/synchronization/mutex.h"
+#include "absl/time/time.h"
 #include "third_party/gpus/cuda/include/cuda.h"
 #include "xla/stream_executor/cuda/cuda_event.h"
 #include "xla/stream_executor/device_address.h"
@@ -42,6 +39,9 @@ limitations under the License.
 
 namespace stream_executor {
 namespace gpu {
+
+class StreamStatusMonitor;
+class HostCallbackRegistry;
 
 class CudaStream : public StreamCommon {
  public:
@@ -60,7 +60,11 @@ class CudaStream : public StreamCommon {
                       const DeviceAddressBase& gpu_src, uint64_t size) override;
   absl::Status DoHostCallbackWithStatus(
       absl::AnyInvocable<absl::Status() &&> callback) override;
+  absl::Status DoHostCallbackWithStatus(
+      absl::AnyInvocable<absl::Status() &&> callback,
+      absl::AnyInvocable<void(absl::Status) &&> error_cb) override;
   absl::Status BlockHostUntilDone() override;
+  absl::Status RefreshStatus() override;
 
   void SetName(std::string name) override;
 
@@ -75,7 +79,8 @@ class CudaStream : public StreamCommon {
 
   static absl::StatusOr<std::unique_ptr<CudaStream>> Create(
       StreamExecutor* executor,
-      std::optional<std::variant<StreamPriority, int>> priority);
+      std::optional<std::variant<StreamPriority, int>> priority,
+      absl::Duration monitor_poll_interval = absl::Seconds(5));
 
   ~CudaStream() override;
 
@@ -84,11 +89,7 @@ class CudaStream : public StreamCommon {
  private:
   CudaStream(StreamExecutor* executor, CudaEvent completed_event,
              std::optional<std::variant<StreamPriority, int>> priority,
-             CUstream stream_handle)
-      : StreamCommon(executor, priority),
-        executor_(executor),
-        completed_event_(std::move(completed_event)),
-        stream_handle_(stream_handle) {}
+             CUstream stream_handle, absl::Duration monitor_poll_interval);
 
   absl::Status RecordCompletedEvent();
 
@@ -101,9 +102,7 @@ class CudaStream : public StreamCommon {
   StreamExecutor* executor_;
   CudaEvent completed_event_;
   CUstream stream_handle_;
-  absl::Mutex mutex_;
-  bool no_pending_host_callbacks_ ABSL_GUARDED_BY(mutex_) = true;
-  std::atomic<int> num_pending_host_callbacks_ = 0;
+  std::unique_ptr<HostCallbackRegistry> host_callback_registry_{nullptr};
 };
 }  // namespace gpu
 

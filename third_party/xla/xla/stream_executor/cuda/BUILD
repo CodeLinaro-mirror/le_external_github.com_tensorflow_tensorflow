@@ -1723,6 +1723,7 @@ cc_library(
         ":cuda_context",
         ":cuda_event",
         ":cuda_status",
+        ":host_callback_registry",
         "//xla/stream_executor:activate_context",
         "//xla/stream_executor:device_address",
         "//xla/stream_executor:event",
@@ -1734,7 +1735,6 @@ cc_library(
         "//xla/tsl/platform:errors",
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/base",
-        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
@@ -1742,7 +1742,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
         "@local_config_cuda//cuda:cuda_headers",
         "@tsl//tsl/profiler/lib:nvtx_utils",
         "@tsl//tsl/profiler/lib:traceme",
@@ -1759,6 +1759,7 @@ xla_test(
         ":cuda_event",
         ":cuda_executor",
         ":cuda_platform_id",
+        ":cuda_status",
         ":cuda_stream",
         "//xla/stream_executor:device_address",
         "//xla/stream_executor:kernel",
@@ -1772,6 +1773,35 @@ xla_test(
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@local_config_cuda//cuda:cuda_headers",
+    ],
+)
+
+xla_test(
+    name = "cuda_stream_error_test",
+    srcs = ["cuda_stream_error_test.cc"],
+    backends = ["gpu"],
+    # Stream error tests poison the entire process, so we need to run them in a separate
+    # process.
+    shard_count = 2,
+    tags = ["cuda-only"],
+    deps = [
+        ":cuda_executor",
+        ":cuda_platform_id",
+        ":cuda_stream",
+        "//xla/service/gpu:launch_dimensions",
+        "//xla/service/gpu:stream_executor_util",
+        "//xla/stream_executor:kernel",
+        "//xla/stream_executor:platform",
+        "//xla/stream_executor:platform_manager",
+        "//xla/stream_executor:stream_executor_h",
+        "//xla/tsl/concurrency:future",
+        "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -2990,4 +3020,35 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = 1,
+)
+
+cc_library(
+    name = "host_callback_registry",
+    srcs = ["host_callback_registry.cc"],
+    hdrs = ["host_callback_registry.h"],
+    deps = [
+        "//xla/tsl/platform:env",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+xla_cc_test(
+    name = "host_callback_registry_test",
+    srcs = ["host_callback_registry_test.cc"],
+    deps = [
+        ":host_callback_registry",
+        "//xla/tsl/platform:env",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
