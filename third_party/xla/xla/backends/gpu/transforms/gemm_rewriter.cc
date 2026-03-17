@@ -2140,14 +2140,6 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       return absl::string_view(kGemmCallTarget);
     }
 
-    // cublasLt is enabled, check if other internal conditions are met.
-    const HloInstruction* lhs = instr.operand(0);
-    const HloInstruction* rhs = instr.operand(1);
-    if (lhs->shape().element_type() == S8 ||
-        rhs->shape().element_type() == S8) {
-      return absl::string_view(kGemmCallTarget);
-    }
-
     // All internal conditions are met, check if we meet the requirements of
     // cublasLt.
     TF_ASSIGN_OR_RETURN(bool gemm_is_supported_by_cublas_lt,
