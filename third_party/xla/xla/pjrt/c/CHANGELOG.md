@@ -1,5 +1,9 @@
 # PJRT C API changelog
 
+## 0.101
+
+* Added `PJRT_Executable_ParameterMemoryKinds`. This API complements `PJRT_Executable_OutputMemoryKinds`.
+
 ## 0.100
 
 * Added `payload` and `num_payload` to `PJRT_Device_PoisonExecution_Args` to support passing status payloads during execution poisoning.
