@@ -1967,14 +1967,15 @@ class HloOutfeedInstruction : public HloInstruction {
 
 class HloConvolutionInstruction : public HloInstruction {
  public:
+  enum class ConvKind { UNSET, FPROP, WGRAD, DGRAD };
   explicit HloConvolutionInstruction(
       const Shape& shape, HloInstruction* lhs, HloInstruction* rhs,
       int64_t feature_group_count, int64_t batch_group_count,
       const Window& window,
       const ConvolutionDimensionNumbers& dimension_numbers,
       const PrecisionConfig& precision_config,
-      const SparsityConfig& sparsity_config);
-  enum class ConvKind { UNSET, FPROP, WGRAD, DGRAD };
+      const SparsityConfig& sparsity_config,
+      ConvKind conv_kind = ConvKind::UNSET);
   const Window& window() const override { return window_; }
   void set_window(const Window& window) override { window_ = window; }
   const ConvolutionDimensionNumbers& convolution_dimension_numbers() const {

@@ -3133,14 +3133,15 @@ HloConvolutionInstruction::HloConvolutionInstruction(
     int64_t feature_group_count, int64_t batch_group_count,
     const Window& window, const ConvolutionDimensionNumbers& dimension_numbers,
     const PrecisionConfig& precision_config,
-    const SparsityConfig& sparsity_config)
+    const SparsityConfig& sparsity_config, ConvKind conv_kind)
     : HloInstruction(HloOpcode::kConvolution, shape),
       feature_group_count_(feature_group_count),
       batch_group_count_(batch_group_count),
       window_(window),
       convolution_dimension_numbers_(dimension_numbers),
       precision_config_(precision_config),
-      sparsity_config_(sparsity_config) {
+      sparsity_config_(sparsity_config),
+      conv_kind_(conv_kind) {
   if (window_util::HasBaseDilation(window)) {
     SetAndSanitizeName(StrCat(name(), "-base-dilated"));
   }
@@ -3214,6 +3215,12 @@ void HloConvolutionInstruction::PrintExtraAttributesImpl(
       AppendCat(printer, "batch_group_count=", batch_group_count_);
     });
   }
+
+  if (conv_kind_ != ConvKind::UNSET) {
+    printer.Next([this](Printer* printer) {
+      AppendCat(printer, "conv_kind=", ConvKindToString(conv_kind_));
+    });
+  }
   PrintPrecisionConfig(printer, precision_config_);
   if (sparsity_config_.has_lhs() || sparsity_config_.has_rhs()) {
     printer.Next([this](Printer* printer) {
@@ -3236,6 +3243,9 @@ bool HloConvolutionInstruction::IdenticalSlowPath(
   if (batch_group_count_ != other.batch_group_count()) {
     return false;
   }
+  if (conv_kind_ != casted_other.conv_kind_) {
+    return false;
+  }
   return protobuf_util::HaveSameSerialization(window(),
                                               casted_other.window()) &&
          protobuf_util::HaveSameSerialization(
@@ -3255,7 +3265,7 @@ HloConvolutionInstruction::CloneWithNewOperandsImpl(
   return std::make_unique<HloConvolutionInstruction>(
       shape, new_operands[0], new_operands[1], feature_group_count_,
       batch_group_count_, window(), convolution_dimension_numbers_,
-      precision_config_, sparsity_config_);
+      precision_config_, sparsity_config_, conv_kind_);
 }
 
 HloReduceWindowInstruction::HloReduceWindowInstruction(

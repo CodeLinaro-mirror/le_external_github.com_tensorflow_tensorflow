@@ -2596,14 +2596,26 @@ HloInstruction* HloParserImpl::CreateInstruction(  // NOLINT
           })) {
         return nullptr;
       }
-      auto convolution = builder->AddInstruction(HloInstruction::CreateConvolve(
+      ConvolutionKind kind = CONVOLUTION_KIND_UNSET;
+      if (conv_kind) {
+        switch (*conv_kind) {
+          case HloConvolutionInstruction::ConvKind::FPROP:
+            kind = CONVOLUTION_KIND_FPROP;
+            break;
+          case HloConvolutionInstruction::ConvKind::DGRAD:
+            kind = CONVOLUTION_KIND_DGRAD;
+            break;
+          case HloConvolutionInstruction::ConvKind::WGRAD:
+            kind = CONVOLUTION_KIND_WGRAD;
+            break;
+          default:
+            break;
+        }
+      }
+      return builder->AddInstruction(HloInstruction::CreateConvolve(
           *shape, /*lhs=*/operands[0], /*rhs=*/operands[1],
           feature_group_count.value(), batch_group_count.value(), *window,
-          *dnums, precision_config, sparsity_config));
-      if (conv_kind) {
-        Cast<HloConvolutionInstruction>(convolution)->set_conv_kind(*conv_kind);
-      }
-      return convolution;
+          *dnums, precision_config, sparsity_config, kind));
     }
     case HloOpcode::kFft: {
       optional<FftType> fft_type;
