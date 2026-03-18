@@ -48,6 +48,7 @@ limitations under the License.
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "google/protobuf/repeated_ptr_field.h"
 #include "xla/comparison_util.h"
 #include "xla/hlo/ir/backend_config.h"
 #include "xla/hlo/ir/dfs_hlo_visitor.h"
@@ -288,12 +289,26 @@ HloInstruction* HloInstruction::AddInstruction(
   return derived;
 }
 
+namespace {
+std::string GetStringFromPayload(
+    const Payload& payload,
+    const tsl::protobuf::RepeatedPtrField<std::string>* payloads) {
+  if (payload.id() > 0) {
+    if (payloads != nullptr && payload.id() < payloads->size()) {
+      return payloads->at(payload.id());
+    }
+  }
+  return payload.value();
+}
+}  // namespace
+
 /* static */
 absl::StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     const HloInstructionProto& proto,
     const absl::flat_hash_map<int64_t, HloInstruction*>& instruction_map,
     const absl::flat_hash_map<int64_t, HloComputation*>& computation_map,
-    bool prohibit_empty_literal) {
+    bool prohibit_empty_literal,
+    const tsl::protobuf::RepeatedPtrField<std::string>* payloads) {
   TF_RET_CHECK(!proto.opcode().empty());
   HloOpcode opcode;
   auto opcode_or = StringToHloOpcode(proto.opcode());
@@ -1425,7 +1440,12 @@ absl::StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
                                                        *kEmptyMetadata)) {
     instruction->mutable_metadata() = proto.metadata();
   }
-  instruction->backend_config_ = BackendConfigWrapper(proto.backend_config());
+  if (proto.has_backend_config_payload()) {
+    instruction->backend_config_ = BackendConfigWrapper(
+        GetStringFromPayload(proto.backend_config_payload(), payloads));
+  } else {
+    instruction->backend_config_ = BackendConfigWrapper(proto.backend_config());
+  }
 
   TF_RET_CHECK(proto.id() >= 0)
       << "Instruction with negative id: " << proto.id();

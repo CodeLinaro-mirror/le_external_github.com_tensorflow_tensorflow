@@ -129,7 +129,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
-        "@com_google_protobuf//:protobuf_lite",
+        "@com_google_protobuf//:protobuf",
         "@llvm-project//llvm:Support",
         "@tsl//tsl/platform:fingerprint",
         "@tsl//tsl/platform:protobuf",
