@@ -4127,6 +4127,11 @@ absl::StatusOr<std::string> PjRtCApiTopologyDescription::Serialize() const {
 }
 
 absl::StatusOr<uint64_t> PjRtCApiTopologyDescription::Fingerprint() const {
+  if (c_api_->struct_size <
+      PJRT_STRUCT_SIZE(PJRT_Api, PJRT_TopologyDescription_Fingerprint)) {
+    TF_ASSIGN_OR_RETURN(std::string serialized, Serialize());
+    return tsl::Fingerprint64(serialized);
+  }
   PJRT_TopologyDescription_Fingerprint_Args args{};
   args.struct_size = PJRT_TopologyDescription_Fingerprint_Args_STRUCT_SIZE;
   args.extension_start = nullptr;
