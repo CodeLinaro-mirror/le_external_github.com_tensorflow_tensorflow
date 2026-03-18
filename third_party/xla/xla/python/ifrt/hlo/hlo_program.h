@@ -37,15 +37,16 @@ class HloProgram : public llvm::RTTIExtends<HloProgram, Program> {
  public:
   HloProgram() = default;
 
+  explicit HloProgram(xla::MaybeOwningMlirModule mlir_module)
+      : mlir_module_(std::move(mlir_module)) {}
+
   explicit HloProgram(mlir::ModuleOp module) : mlir_module_(module) {}
 
   HloProgram(std::unique_ptr<mlir::MLIRContext> context,
              mlir::OwningOpRef<mlir::ModuleOp> module)
-      : mlir_context_(std::move(context)),
-        owning_mlir_module_(std::move(module)),
-        mlir_module_(*owning_mlir_module_) {}
+      : mlir_module_(std::move(context), std::move(module)) {}
 
-  mlir::ModuleOp mlir_module() const { return mlir_module_; }
+  mlir::ModuleOp mlir_module() const { return mlir_module_.mlir_module(); }
 
   // Serializes the HloProgram into bytes such that deserialization via
   // `HloProgram::FromBytes()` results in the exact same program when
@@ -72,9 +73,7 @@ class HloProgram : public llvm::RTTIExtends<HloProgram, Program> {
   static char ID;  // NOLINT
 
  private:
-  std::unique_ptr<mlir::MLIRContext> mlir_context_;
-  mlir::OwningOpRef<mlir::ModuleOp> owning_mlir_module_;
-  mlir::ModuleOp mlir_module_;
+  xla::MaybeOwningMlirModule mlir_module_;
 };
 
 }  // namespace ifrt

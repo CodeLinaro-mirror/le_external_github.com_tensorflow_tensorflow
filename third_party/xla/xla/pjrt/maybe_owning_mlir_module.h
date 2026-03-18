@@ -56,7 +56,7 @@ class MaybeOwningMlirModule {
     return *this;
   }
 
-  mlir::ModuleOp mlir_module() { return module_; }
+  mlir::ModuleOp mlir_module() const { return module_; }
 
  private:
   std::unique_ptr<mlir::MLIRContext> owned_context_;
