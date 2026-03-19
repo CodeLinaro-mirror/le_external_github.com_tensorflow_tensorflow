@@ -992,7 +992,9 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitCustomCallThunk(
         std::move(attributes),
         called_computations.empty() ? nullptr : called_computations[0],
         ir_emitter_context_->platform_name(),
-        ir_emitter_context_->gpu_compute_capability());
+        ir_emitter_context_->gpu_compute_capability(),
+        /*execution_state=*/nullptr,
+        ir_emitter_context_->cpu_target_machine_options());
   };
 
   auto legacy_thunk =

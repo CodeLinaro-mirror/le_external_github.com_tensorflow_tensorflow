@@ -235,10 +235,10 @@ absl::StatusOr<std::unique_ptr<Thunk>> DeserializeThunkProtoImpl(
                                           buffer_allocations, deserializer);
     }
     case ThunkProto::kCustomCallThunk:
-      return CustomCallThunk::FromProto(std::move(thunk_info),
-                                        thunk_proto.custom_call_thunk(),
-                                        buffer_allocations, hlo_module,
-                                        platform_name, gpu_compute_capability);
+      return CustomCallThunk::FromProto(
+          std::move(thunk_info), thunk_proto.custom_call_thunk(),
+          buffer_allocations, hlo_module, platform_name, gpu_compute_capability,
+          cpu_target_machine_options);
     case ThunkProto::kHostExecuteStartThunk:
       return HostExecuteStartThunk::FromProto(
           std::move(thunk_info), thunk_proto.host_execute_start_thunk(),
