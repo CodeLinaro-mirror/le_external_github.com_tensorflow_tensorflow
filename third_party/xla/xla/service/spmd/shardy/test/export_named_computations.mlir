@@ -37,11 +37,13 @@ func.func @vanilla_named_computation(%arg0: tensor<8x2xi32>) -> tensor<8x2xi32> 
 
 // CHECK-LABEL: func private @foo
 // CHECK-SAME:    (%arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {"y"}]>})
-// CHECK-SAME:    -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {}]>}) {
+// CHECK-SAME:    -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %[[MULT:.*]] = stablehlo.multiply %arg0, %arg0 {mhlo.frontend_attributes = {_xla_compute_type = "host"}, sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x", ?}, {"y", ?}]>]>} : tensor<8x2xi32>
 // CHECK-NEXT:    return %0 : tensor<8x2xi32>
 
-// CHECK-LABEL: func private @bar(%arg0: tensor<8x2xi32>) -> tensor<8x2xi32> {
+// CHECK-LABEL: func private @bar(%arg0: tensor<8x2xi32>) -> tensor<8x2xi32>
+// CHECK-SSAME: attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %[[MULT:.*]] = stablehlo.multiply %arg0, %arg0 : tensor<8x2xi32>
 // CHECK-NEXT:    return %0 : tensor<8x2xi32>
 
@@ -68,6 +70,7 @@ func.func @multiple_same_named_computations_same_shardings(%arg0: tensor<8x2xi32
 // CHECK-LABEL: func private @baz(
 // CHECK-SAME:    %arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {"y"}]>})
 // CHECK-SAME:    -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
 
 // -----
 
@@ -92,10 +95,45 @@ func.func @multiple_same_named_computations_different_shardings(%arg0: tensor<8x
 // CHECK-LABEL: func private @baz(
 // CHECK-SAME:    %arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {"y"}]>})
 // CHECK-SAME:    -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
 
 // CHECK-LABEL: func private @baz_0(
 // CHECK-SAME:    %arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {"y"}]>})
 // CHECK-SAME:    -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
+
+// -----
+sdy.mesh @mesh = <["x"=2, "y"=2]>
+// CHECK-LABEL: func @multiple_same_named_computations_different_shardings_one_sharding_appears_twice
+func.func @multiple_same_named_computations_different_shardings_one_sharding_appears_twice(%arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {"y"}]>}) -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {"y"}]>}) {
+  // CHECK-NEXT: %[[CALL0:.*]] = call @baz(%arg0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}, {}]>]>}
+  // CHECK-NEXT: %[[CALL1:.*]] = call @baz_0(%arg0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}, {"y"}]>]>}
+  // CHECK-NEXT: %[[CALL2:.*]] = call @baz_0(%arg0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}, {"y"}]>]>}
+  // CHECK-NEXT: return %[[CALL2]] : tensor<8x2xi32>
+  %0 = sdy.named_computation<"baz">(%arg0) in_shardings=[<@mesh, [{}, {"y"}]>] out_shardings=[<@mesh, [{"x"}, {}]>] (%arg1: tensor<8x2xi32>) {
+    %2 = stablehlo.multiply %arg1, %arg1 {mhlo.frontend_attributes = {_xla_compute_type = "host"}, sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x", ?}, {"y", ?}]>]>} : tensor<8x2xi32>
+    sdy.return %2 : tensor<8x2xi32>
+  } : (tensor<8x2xi32>) -> tensor<8x2xi32>
+  %1 = sdy.named_computation<"baz">(%arg0) in_shardings=[<@mesh, [{}, {"y"}]>] out_shardings=[<@mesh, [{"x"}, {"y"}]>] (%arg1: tensor<8x2xi32>) {
+    %3 = stablehlo.multiply %arg1, %arg1 {mhlo.frontend_attributes = {_xla_compute_type = "host"}, sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x", ?}, {"y", ?}]>]>} : tensor<8x2xi32>
+    sdy.return %3 : tensor<8x2xi32>
+  } : (tensor<8x2xi32>) -> tensor<8x2xi32>
+  %2 = sdy.named_computation<"baz">(%arg0) in_shardings=[<@mesh, [{}, {"y"}]>] out_shardings=[<@mesh, [{"x"}, {"y"}]>] (%arg1: tensor<8x2xi32>) {
+    %3 = stablehlo.multiply %arg1, %arg1 {mhlo.frontend_attributes = {_xla_compute_type = "host"}, sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x", ?}, {"y", ?}]>]>} : tensor<8x2xi32>
+    sdy.return %3 : tensor<8x2xi32>
+  } : (tensor<8x2xi32>) -> tensor<8x2xi32>
+  return %2 : tensor<8x2xi32>
+}
+
+// CHECK-LABEL: func private @baz(
+// CHECK-SAME:    %arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {"y"}]>})
+// CHECK-SAME:    -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
+
+// CHECK-LABEL: func private @baz_0(
+// CHECK-SAME:    %arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {"y"}]>})
+// CHECK-SAME:    -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
 
 // -----
 
@@ -146,6 +184,7 @@ func.func @xla.sdy.inlinable_manual_computation_body_1(
 // CHECK-LABEL: func private @baz(
 // CHECK-SAME:    %arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {}]>})
 // CHECK-SAME:    -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
 
 // -----
 
@@ -182,14 +221,16 @@ func.func @non_flat_nested_named_computations_same_shardings(%arg0: tensor<8xf32
 
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:   %0 = stablehlo.add %arg0, %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:   %1 = call @bar(%0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
 // CHECK-NEXT:   return %1 : tensor<8xf32>
@@ -197,7 +238,8 @@ func.func @non_flat_nested_named_computations_same_shardings(%arg0: tensor<8xf32
 
 // CHECK-LABEL: func private @baz(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -237,14 +279,16 @@ func.func @non_flat_nested_named_computations_different_shardings(%arg0: tensor<
 
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.add %arg0, %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    %1 = call @bar(%0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
 // CHECK-NEXT:    return %1 : tensor<8xf32>
@@ -252,14 +296,16 @@ func.func @non_flat_nested_named_computations_different_shardings(%arg0: tensor<
 
 // CHECK-LABEL: func private @baz(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @bar_0(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -299,14 +345,16 @@ func.func @non_flat_nested_named_computations_mixed_shardings(%arg0: tensor<8xf3
 
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.add %arg0, %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    %1 = call @bar(%0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
 // CHECK-NEXT:    return %1 : tensor<8xf32>
@@ -314,7 +362,8 @@ func.func @non_flat_nested_named_computations_mixed_shardings(%arg0: tensor<8xf3
 
 // CHECK-LABEL: func private @bar_0(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -327,7 +376,7 @@ sdy.mesh @mesh = <["x"=2, "y"=2]>
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}
 // CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
 // CHECK:       %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
-// CHECK-NEXT:    %1 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:    %1 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
 // CHECK-NEXT:    sdy.return %1 : tensor<4xf32>
 // CHECK-NEXT:  } : (tensor<8xf32>) -> tensor<8xf32>
 // CHECK-NEXT:  return %0 : tensor<8xf32>
@@ -336,15 +385,16 @@ func.func @named_computations_with_manual_axes_simple(%arg0: tensor<8xf32> {sdy.
     %1 = sdy.named_computation<"foo">(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] (%arg2: tensor<4xf32>) {
       %2 = stablehlo.abs %arg2 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<4xf32>
       sdy.return %2 : tensor<4xf32>
-    } : (tensor<4xf32>) -> tensor<4xf32>
+    } {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
     sdy.return %1 : tensor<4xf32>
   } {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<8xf32>) -> tensor<8xf32>
   return %0 : tensor<8xf32>
 }
 
 // CHECK-LABEL: func private @foo(
-// CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<4xf32>
 // CHECK-NEXT:    return %0 : tensor<4xf32>
 // CHECK-NEXT:  }
@@ -379,7 +429,8 @@ func.func @named_computations_same_func_with_manual_axes(%arg0: tensor<8xf32> {s
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}) {
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<4xf32>
 // CHECK-NEXT:    return %0 : tensor<4xf32>
 // CHECK-NEXT:  }
@@ -393,13 +444,12 @@ sdy.mesh @mesh = <["x"=2, "y"=2]>
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}
 // CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
 // CHECK:       %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
-// CHECK-NEXT:    %3 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:    %4 = func.call @foo(%3) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:    sdy.return %4 : tensor<4xf32>
+// CHECK-NEXT:    %2 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:    %3 = func.call @foo(%2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:    sdy.return %3 : tensor<4xf32>
 // CHECK-NEXT:  } : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:  %1 = mhlo.copy %0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
-// CHECK-NEXT:  %2 = call @bar(%1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:  return %2 : tensor<8xf32>
+// CHECK-NEXT:  %1 = call @bar(%0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
+// CHECK-NEXT:  return %1 : tensor<8xf32>
 func.func @named_computations_different_funcs_with_manual_axes_one_without(%arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
   %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
     %1 = sdy.named_computation<"foo">(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] (%arg2: tensor<4xf32>) {
@@ -421,14 +471,16 @@ func.func @named_computations_different_funcs_with_manual_axes_one_without(%arg0
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}) {
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<4xf32>
 // CHECK-NEXT:    return %0 : tensor<4xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -441,13 +493,12 @@ sdy.mesh @mesh = <["x"=2, "y"=2]>
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}
 // CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
 // CHECK:       %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
-// CHECK-NEXT:    %3 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:    %4 = func.call @foo(%3) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:    sdy.return %4 : tensor<4xf32>
+// CHECK-NEXT:    %2 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:    %3 = func.call @foo(%2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:    sdy.return %3 : tensor<4xf32>
 // CHECK-NEXT:  } : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:  %1 = mhlo.copy %0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
-// CHECK-NEXT:  %2 = call @bar(%1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:  return %2 : tensor<8xf32>
+// CHECK-NEXT:  %1 = call @bar(%0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
+// CHECK-NEXT:  return %1 : tensor<8xf32>
 func.func @named_computations_same_funcs_with_manual_axes_one_without(%arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
   %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
     %1 = sdy.named_computation<"foo">(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] (%arg2: tensor<4xf32>) {
@@ -469,14 +520,16 @@ func.func @named_computations_same_funcs_with_manual_axes_one_without(%arg0: ten
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}) {
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<4xf32>
 // CHECK-NEXT:    return %0 : tensor<4xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -489,16 +542,15 @@ sdy.mesh @mesh = <["x"=2, "y"=2]>
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
 // CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
 // CHECK:       %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] manual_axes={} (%arg1: tensor<8xf32>) {
-// CHECK-NEXT:    %4 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:    sdy.return %4 : tensor<8xf32>
+// CHECK-NEXT:    %3 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
+// CHECK-NEXT:    sdy.return %3 : tensor<8xf32>
 // CHECK-NEXT:  } : (tensor<8xf32>) -> tensor<8xf32>
 // CHECK-NEXT:  %1 = sdy.manual_computation(%0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
-// CHECK-NEXT:    %4 = func.call @bar(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:    sdy.return %4 : tensor<4xf32>
+// CHECK-NEXT:    %3 = func.call @bar(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:    sdy.return %3 : tensor<4xf32>
 // CHECK-NEXT:  } : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:  %2 = mhlo.copy %1 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
-// CHECK-NEXT:  %3 = call @foo(%2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:  return %3 : tensor<8xf32>
+// CHECK-NEXT:  %2 = call @foo(%1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
+// CHECK-NEXT:  return %2 : tensor<8xf32>
 func.func @named_computations_same_funcs_without_manual_axes_one_inside_manual_computation(%arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
   %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] manual_axes={} (%arg1: tensor<8xf32>) {
     %1 = sdy.named_computation<"foo">(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] (%arg2: tensor<8xf32>) {
@@ -523,7 +575,8 @@ func.func @named_computations_same_funcs_without_manual_axes_one_inside_manual_c
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -536,16 +589,14 @@ sdy.mesh @mesh = <["x"=2, "y"=2]>
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}
 // CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
 // CHECK-NEXT: %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
-// CHECK-NEXT:   %6 = func.call @bar(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:   %7 = func.call @bar(%6) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:   sdy.return %7 : tensor<4xf32>
+// CHECK-NEXT:   %4 = func.call @bar(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:   %5 = func.call @bar(%4) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:   sdy.return %5 : tensor<4xf32>
 // CHECK-NEXT: } : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT: %1 = mhlo.copy %0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
+// CHECK-NEXT: %1 = call @foo(%0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
 // CHECK-NEXT: %2 = call @foo(%1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT: %3 = call @foo(%2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT: %4 = mhlo.copy %3 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x", "y"}]>]>} : tensor<8xf32>
-// CHECK-NEXT: %5 = call @foo_0(%4) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x", "y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT: return %5 : tensor<8xf32>
+// CHECK-NEXT: %3 = call @foo_0(%2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x", "y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
+// CHECK-NEXT: return %3 : tensor<8xf32>
 func.func @named_computations_with_manual_axes(%arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
   %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
     %1 = sdy.named_computation<"bar">(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] (%arg2: tensor<4xf32>) {
@@ -574,21 +625,24 @@ func.func @named_computations_with_manual_axes(%arg0: tensor<8xf32> {sdy.shardin
 }
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}) {
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<4xf32>
 // CHECK-NEXT:    return %0 : tensor<4xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @foo_0(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x", "y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -623,7 +677,8 @@ func.func @named_computations_same_funcs_same_shardings_one_inside_manual_comput
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -664,7 +719,8 @@ func.func @named_computations_same_funcs_same_shardings_inside_separate_manual_c
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -705,7 +761,8 @@ func.func @named_computations_same_funcs_same_shardings_inside_separate_manual_c
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}) {
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<4xf32>
 // CHECK-NEXT:    return %0 : tensor<4xf32>
 // CHECK-NEXT:  }
@@ -744,14 +801,16 @@ func.func @named_computations_same_funcs_same_shardings_one_nested_and_inside_ma
 
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = call @bar(%arg0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -764,21 +823,19 @@ sdy.mesh @mesh = <["x"=2, "y"=2]>
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}
 // CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
 // CHECK-NEXT: %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
-// CHECK-NEXT:   %4 = sdy.manual_computation(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] manual_axes={"y"} (%arg2: tensor<2xf32>) {
-// CHECK-NEXT:     %7 = func.call @foo(%arg2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x", "y"}>} : (tensor<2xf32>) -> tensor<2xf32>
-// CHECK-NEXT:     sdy.return %7 : tensor<2xf32>
+// CHECK-NEXT:   %3 = sdy.manual_computation(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] manual_axes={"y"} (%arg2: tensor<2xf32>) {
+// CHECK-NEXT:     %5 = func.call @foo(%arg2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x", "y"}>} : (tensor<2xf32>) -> tensor<2xf32>
+// CHECK-NEXT:     sdy.return %5 : tensor<2xf32>
 // CHECK-NEXT:   } : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:   %5 = mhlo.copy %4 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>} : tensor<4xf32>
-// CHECK-NEXT:   %6 = func.call @bar(%5) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:   sdy.return %6 : tensor<4xf32>
+// CHECK-NEXT:   %4 = func.call @bar(%3) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:   sdy.return %4 : tensor<4xf32>
 // CHECK-NEXT: } : (tensor<8xf32>) -> tensor<8xf32>
 // CHECK-NEXT: %1 = sdy.manual_computation(%0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x", "y"} (%arg1: tensor<2xf32>) {
-// CHECK-NEXT:   %4 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x", "y"}>} : (tensor<2xf32>) -> tensor<2xf32>
-// CHECK-NEXT:   sdy.return %4 : tensor<2xf32>
+// CHECK-NEXT:   %3 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x", "y"}>} : (tensor<2xf32>) -> tensor<2xf32>
+// CHECK-NEXT:   sdy.return %3 : tensor<2xf32>
 // CHECK-NEXT: } : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT: %2 = mhlo.copy %1 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
-// CHECK-NEXT: %3 = call @baz(%2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT: return %3 : tensor<8xf32>
+// CHECK-NEXT: %2 = call @baz(%1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
+// CHECK-NEXT: return %2 : tensor<8xf32>
 func.func @nested_manual_computations(%arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
   %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
     %1 = sdy.manual_computation(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] manual_axes={"y"} (%arg2: tensor<2xf32>) {
@@ -810,21 +867,24 @@ func.func @nested_manual_computations(%arg0: tensor<8xf32> {sdy.sharding = #sdy.
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<2xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x", "y"}>}
-// CHECK-SAME:      -> (tensor<2xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x", "y"}>}) {
+// CHECK-SAME:      -> (tensor<2xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x", "y"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x", "y"}>, xla.sdy.original_func_name = "foo"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>} : tensor<2xf32>
 // CHECK-NEXT:    return %0 : tensor<2xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}) {
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "bar"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>} : tensor<4xf32>
 // CHECK-NEXT:    return %0 : tensor<4xf32>
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: func private @baz(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>}) {
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "baz"} {
 // CHECK-NEXT:    %0 = stablehlo.abs %arg0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}]>]>} : tensor<8xf32>
 // CHECK-NEXT:    return %0 : tensor<8xf32>
 // CHECK-NEXT:  }
@@ -837,14 +897,12 @@ sdy.mesh @mesh = <["x"=2, "y"=2]>
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}
 // CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
 // CHECK:       %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
-// CHECK-NEXT:    %3 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:    %4 = mhlo.copy %3 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>} : tensor<4xf32>
-// CHECK-NEXT:    %5 = func.call @foo_0(%4) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
-// CHECK-NEXT:    sdy.return %5 : tensor<4xf32>
+// CHECK-NEXT:    %2 = func.call @foo(%arg1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:    %3 = func.call @foo_0(%2) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{}]>]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>} : (tensor<4xf32>) -> tensor<4xf32>
+// CHECK-NEXT:    sdy.return %3 : tensor<4xf32>
 // CHECK-NEXT:  } : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:  %1 = mhlo.copy %0 {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : tensor<8xf32>
-// CHECK-NEXT:  %2 = call @bar(%1) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
-// CHECK-NEXT:  return %2 : tensor<8xf32>
+// CHECK-NEXT:  %1 = call @bar(%0) {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"y"}]>]>} : (tensor<8xf32>) -> tensor<8xf32>
+// CHECK-NEXT:  return %1 : tensor<8xf32>
 func.func @named_computations_same_funcs_two_same_manual_axes_different_shardings_one_without_manual_axes(%arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"x", "y"}]>}) {
   %0 = sdy.manual_computation(%arg0) in_shardings=[<@mesh, [{"x", "y"}]>] out_shardings=[<@mesh, [{"x", "y"}]>] manual_axes={"x"} (%arg1: tensor<4xf32>) {
     %1 = sdy.named_computation<"foo">(%arg1) in_shardings=[<@mesh, [{"y"}]>] out_shardings=[<@mesh, [{"y"}]>] (%arg2: tensor<4xf32>) {
@@ -866,13 +924,15 @@ func.func @named_computations_same_funcs_two_same_manual_axes_different_sharding
 
 // CHECK-LABEL: func private @foo(
 // CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}) {
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "foo"} {
 
 // CHECK-LABEL: func private @foo_0(
 // CHECK-SAME:      %arg0: tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}
-// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>}) {
+// CHECK-SAME:      -> (tensor<4xf32> {sdy.sharding = #sdy.sharding<@mesh, [{}]>, xla.sdy.manual_axes = #sdy<manual_axes{"x"}>})
+// CHECK-SAME:  attributes {xla.sdy.manual_axes = #sdy<manual_axes{"x"}>, xla.sdy.original_func_name = "foo"} {
 
 // CHECK-LABEL: func private @bar(
 // CHECK-SAME:      %arg0: tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}
-// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>}) {
-
+// CHECK-SAME:      -> (tensor<8xf32> {sdy.sharding = #sdy.sharding<@mesh, [{"y"}]>})
+// CHECK-SAME:  attributes {xla.sdy.original_func_name = "bar"} {

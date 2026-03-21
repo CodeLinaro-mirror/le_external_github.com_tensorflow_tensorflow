@@ -181,8 +181,10 @@ class UnflattenCallGraphPass
       maybeInsertReshardsOnFuncResults(funcOp, callOp, symbolTable, rewriter);
     });
 
-    moduleOp.walk(
-        [&](FuncOp funcOp) { funcOp->removeAttr(kOriginalFuncName); });
+    moduleOp.walk([&](FuncOp funcOp) {
+      funcOp->removeAttr(kOriginalFuncName);
+      funcOp->removeAttr(kManualAxes);
+    });
   }
 
   StringRef getArgument() const override {
