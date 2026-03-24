@@ -56,8 +56,8 @@ limitations under the License.
 #include "xla/codegen/xtile/ir/xtile_ops.h"
 #include "xla/comparison_util.h"
 #include "xla/hlo/analysis/indexing_map.h"
-#include "xla/hlo/analysis/indexing_map_serialization.h"
-#include "xla/hlo/analysis/symbolic_map_converter.h"
+#include "xla/hlo/analysis/symbolic_expr.h"
+#include "xla/hlo/analysis/symbolic_map.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
@@ -148,17 +148,15 @@ absl::StatusOr<SmallVector<Value>> ComputeOffsets(
     mlir::ImplicitLocOpBuilder& b, Value pid,
     const ge::TiledHloInstruction& tiled_hlo,
     const ::xla::IndexingMap& schedule) {
-  SmallVector<mlir::AffineExpr> affine_exprs;
-  for (const auto& expr : schedule.GetSymbolicMap().GetResults()) {
-    affine_exprs.push_back(SymbolicExprToAffineExpr(expr, 1));
-  }
-  SmallVector<mlir::AffineExpr> offsets;
+  SmallVector<SymbolicExpr> symbolic_exprs(
+      schedule.GetSymbolicMap().GetResults());
+
+  SmallVector<SymbolicExpr> offsets;
   for (const auto& offset : tiled_hlo.tile().offsets()) {
-    offsets.push_back(offset.replaceDims(affine_exprs));
+    offsets.push_back(offset.ReplaceDims(symbolic_exprs));
   }
   IndexingMap offset_indexing_map(
-      AffineMapToSymbolicMap(
-          mlir::AffineMap::get(1, 0, offsets, schedule.GetMLIRContext())),
+      SymbolicMap::Get(schedule.GetMLIRContext(), 1, 0, offsets),
       schedule.GetDimVars(), {}, {});
 
   SmallVector<Value> dims{Cast(b, pid, pid.getType())};
