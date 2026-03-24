@@ -358,6 +358,7 @@ xla_cc_test(
         "//xla/service:shaped_buffer",
         "//xla/stream_executor:device_address",
         "//xla/stream_executor:device_address_allocator",
+        "//xla/stream_executor/cuda:cuda_platform",
         "//xla/tsl/concurrency:async_value",
         # copybara:uncomment "//xla/tsl/framework:allocator",
         "//xla/tsl/platform:env",
