@@ -412,6 +412,22 @@ void GpuPerformanceModelBase::VLogOperandRead(const HloInstruction* operand,
           << ", n_bytes_net: " << n_bytes_net << ", coalesced: " << coalesced;
 }
 
+/*static*/
+void GpuPerformanceModelBase::RecordEstimatedRunTime(
+    const EstimateRunTimeData& data, const se::DeviceDescription& device_info,
+    ReificationCost* reification_cost) {
+  double cycles =
+      absl::ToDoubleNanoseconds(data.exec_time) * device_info.clock_rate_ghz();
+
+  reification_cost->set_end_to_end_cycles(cycles);
+  reification_cost->set_compute_time_us(
+      absl::ToDoubleMicroseconds(data.compute_time));
+  reification_cost->set_memory_access_time_us(
+      absl::ToDoubleMicroseconds(data.read_time + data.write_time));
+  reification_cost->set_exec_time_us(
+      absl::ToDoubleMicroseconds(data.exec_time));
+}
+
 double GetCoalescingUtilizationRate(
     PrimitiveType element_type, const se::DeviceDescription& gpu_device_info,
     bool coalesced) {

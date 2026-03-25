@@ -30,7 +30,6 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/service/gpu/hlo_fusion_analysis.h"
 #include "xla/service/gpu/launch_dimensions.h"
-#include "xla/service/gpu/model/fusion_analysis_cache.h"
 #include "xla/service/gpu/model/gpu_hlo_cost_analysis.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/xla_data.pb.h"
@@ -237,6 +236,11 @@ class GpuPerformanceModelBase {
   static void VLogOperandRead(const HloInstruction* operand,
                               int64_t n_bytes_total, int64_t n_bytes_net,
                               bool coalesced);
+
+  // Fills ReificationCost with the runtime data.
+  static void RecordEstimatedRunTime(const EstimateRunTimeData& data,
+                                     const se::DeviceDescription& device_info,
+                                     ReificationCost* reification_cost);
 };
 
 // Given an element type and whether the read is coalesced, returns the
