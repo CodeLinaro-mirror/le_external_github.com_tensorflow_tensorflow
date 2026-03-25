@@ -29,6 +29,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_schedule.h"
 #include "xla/hlo/pass/hlo_pass_fix.h"
 #include "xla/hlo/pass/hlo_pass_pipeline.h"
+#include "xla/hlo/transforms/collectives/collective_permute_cse.h"
 #include "xla/hlo/transforms/simplifiers/algebraic_simplifier.h"
 #include "xla/hlo/transforms/simplifiers/hlo_constant_folding.h"
 #include "xla/hlo/transforms/simplifiers/hlo_constant_splitter.h"
@@ -134,6 +135,9 @@ void AddSPMDPasses(
       /*disable_ag_rewrite_for_multiple_consumers=*/true,
       /*enable_partial_windowed_einsums=*/true, oper_size_threshold,
       max_windowed_einsum_iteration);
+  if (hlo_module->config().debug_options().xla_enable_enzyme_comms_opt()) {
+    spmd_pipeline.AddPass<CollectivePermuteCse>();
+  }
   // NOTE: even though the inliner is called in `RunPreSPMDPartitionerPasses`,
   // it doesn't inline functions needed for ShardyXLA. ShardyXLA will also leave
   // functions called `kInlineableManualComputationFuncName` not inlined, so
