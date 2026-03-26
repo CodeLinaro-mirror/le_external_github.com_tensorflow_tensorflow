@@ -191,12 +191,22 @@ class IfrtServingExecutable {
 
   struct CachedExecutableBundle {
     std::vector<xla::ifrt::DType> ifrt_input_dtypes;
-    // If populated, these are the input shapes and layouts that the
-    // executable was compiled with. `xla_input_shapes` and `xla_input_layouts`
-    // are either both populated or both empty and they will have the same size.
-    // The index `i` in these vectors corresponds to the i-th argument in the
-    // executable.
-    std::vector<std::shared_ptr<const xla::Shape>> xla_input_shapes;
+    // We need two sets of shapes: one for variable caching
+    // (`xla_compile_shapes`) and one for H2D transfer
+    // (`xla_transfer_shapes`).
+    // `xla_compile_shapes` stores input shapes with layouts determined by the
+    // frontend (TF2HLO bridge). These shapes are used as part of the cache key
+    // in `IfrtLoadedVariableRegistry` for loaded variables. Using frontend
+    // layouts in cache keys allows sharing loaded variables across executables
+    // that may have different backend layouts but the same frontend compilation
+    // parameters.
+    std::vector<std::shared_ptr<const xla::Shape>> xla_compile_shapes;
+    // `xla_transfer_shapes` stores input shapes with layouts determined by the
+    // backend, obtained from `IfrtExecutable::GetParameterLayouts()`. These
+    // shapes are used for host-to-device (H2D) transfer of input tensors to
+    // ensure data is in the correct layout expected by the device, which is
+    // crucial for correctness and performance on some backends.
+    std::vector<std::shared_ptr<const xla::Shape>> xla_transfer_shapes;
     std::vector<absl::InlinedVector<int64_t, 4>> byte_strides;
     std::vector<std::shared_ptr<const xla::ifrt::Shape>> ifrt_input_shapes;
     std::vector<xla::ifrt::LayoutRef> xla_input_layouts;
