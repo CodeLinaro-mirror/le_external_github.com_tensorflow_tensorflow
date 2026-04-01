@@ -39,6 +39,7 @@ limitations under the License.
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/ifrt/sharding.h"
 #include "xla/python/ifrt/user_context.h"
+#include "xla/python/ifrt/value.h"
 #include "xla/tsl/concurrency/future.h"
 #include "xla/tsl/concurrency/ref_count.h"
 #include "xla/tsl/platform/statusor.h"
@@ -145,6 +146,11 @@ void BasicStringArray::DeleteInternal() {
     std::move(on_done_with_buffer_)();
   }
   is_deleted_ = true;
+}
+
+absl::StatusOr<std::optional<int64_t>> BasicStringArray::GetByteSize(
+    ValueByteSizeSemantics semantics) const {
+  return absl::UnimplementedError("GetByteSize is not implemented.");
 }
 
 tsl::Future<> BasicStringArray::GetReadyFuture() const {

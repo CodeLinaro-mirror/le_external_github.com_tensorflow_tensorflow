@@ -16,9 +16,11 @@ limitations under the License.
 #ifndef XLA_PYTHON_IFRT_VALUE_H_
 #define XLA_PYTHON_IFRT_VALUE_H_
 
+#include <cstdint>
+#include <optional>
 #include <string>
 
-#include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "llvm/Support/ExtensibleRTTI.h"
 #include "xla/python/ifrt/user_context.h"
 #include "xla/tsl/concurrency/future.h"
@@ -28,6 +30,17 @@ namespace xla {
 namespace ifrt {
 
 class Client;
+
+// Semantics for computing the byte size of a value.
+enum class ValueByteSizeSemantics : int {
+  // On-device byte size on a single shard (device).
+  kPerShard = 0,
+  // On-device byte size on a single process. If the runtime does not recognize
+  // processes, falls back to per-shard.
+  kPerProcess,
+  // Total on-device byte sizes across all shards.
+  kAllShards,
+};
 
 // Abstract superclass of values such as arrays.
 class Value : public tsl::ReferenceCounted<Value>,
@@ -45,6 +58,22 @@ class Value : public tsl::ReferenceCounted<Value>,
 
   // Returns the user context associated with the creation of this array.
   virtual UserContextRef user_context() const = 0;
+
+  // Returns a byte size of a value. It takes into account the sharding and
+  // layout of the value. This is often called the "on-device" size. Since this
+  // size is typically computed from the metadata of the value, it is
+  // essentially an estimation, but is expected to be close enough to the
+  // actual size for many practical purposes.
+  //
+  // Returns `std::nullopt` if there is no well-defined byte size, e.g., using a
+  // non-array `DType` that has no byte size, or requesting a per-process/-shard
+  // for an array that has multiple byte sizes across shards.
+  //
+  // Returns an error if essential information for the size calculation could
+  // not be obtained, e.g., failing to determine the concrete layout for a value
+  // using a default layout.
+  virtual absl::StatusOr<std::optional<int64_t>> GetByteSize(
+      ValueByteSizeSemantics semantics) const = 0;
 
   // Returns a future that becomes ready when the buffer is computed or has an
   // error.

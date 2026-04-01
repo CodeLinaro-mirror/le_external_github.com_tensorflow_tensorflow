@@ -48,6 +48,7 @@ limitations under the License.
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/ifrt/sharding.h"
 #include "xla/python/ifrt/user_context.h"
+#include "xla/python/ifrt/value.h"
 #include "xla/python/pjrt_ifrt/pjrt_client.h"
 #include "xla/python/pjrt_ifrt/pjrt_device.h"
 #include "xla/python/pjrt_ifrt/pjrt_dtype.h"
@@ -345,6 +346,11 @@ PjRtArray::PjRtArray(PjRtCompatibleClient* client, DType dtype,
       layout_(layout != nullptr ? PjRtLayout::Create(std::move(layout))
                                 : nullptr),
       user_context_(UserContextScope::current()) {}
+
+absl::StatusOr<std::optional<int64_t>> PjRtArray::GetByteSize(
+    ValueByteSizeSemantics semantics) const {
+  return Unimplemented("GetByteSize is not implemented.");
+}
 
 absl::StatusOr<std::vector<ArrayRef>>
 PjRtArray::DisassembleIntoSingleDeviceArrays(

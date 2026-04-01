@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "xla/python/pjrt_ifrt/pjrt_tuple.h"
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,10 +29,14 @@ limitations under the License.
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "llvm/Support/ExtensibleRTTI.h"
+#include "xla/future.h"
 #include "xla/python/ifrt/array.h"
 #include "xla/python/ifrt/client.h"
+#include "xla/python/ifrt/value.h"
+#include "xla/python/pjrt_ifrt/pjrt_client.h"
 #include "xla/tsl/concurrency/future.h"
 #include "xla/tsl/concurrency/ref_count.h"
+#include "xla/util.h"
 
 namespace xla {
 namespace ifrt {
@@ -38,6 +44,11 @@ namespace ifrt {
 /*static*/ absl::StatusOr<tsl::RCReference<PjRtTuple>> PjRtTuple::Create(
     PjRtCompatibleClient* client, absl::Span<ValueRef> values) {
   return tsl::MakeRef<PjRtTuple>(client, values);
+}
+
+absl::StatusOr<std::optional<int64_t>> PjRtTuple::GetByteSize(
+    ValueByteSizeSemantics semantics) const {
+  return Unimplemented("GetByteSize is not implemented.");
 }
 
 tsl::Future<> PjRtTuple::GetReadyFuture() const {

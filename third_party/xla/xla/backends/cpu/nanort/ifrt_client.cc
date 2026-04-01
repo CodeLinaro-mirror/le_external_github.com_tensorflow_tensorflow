@@ -133,6 +133,11 @@ class NanoValue : public llvm::RTTIExtends<Self, Base> {
 
   ifrt::UserContextRef user_context() const override { return user_context_; }
 
+  absl::StatusOr<std::optional<int64_t>> GetByteSize(
+      ifrt::ValueByteSizeSemantics semantics) const override {
+    return absl::UnimplementedError("GetByteSize is not implemented.");
+  }
+
   // All nano values are immediately ready.
   tsl::Future<> GetReadyFuture() const override { return Ready(); }
 

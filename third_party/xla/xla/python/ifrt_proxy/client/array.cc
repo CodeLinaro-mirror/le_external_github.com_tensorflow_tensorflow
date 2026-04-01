@@ -48,6 +48,7 @@
 #include "xla/python/ifrt/remap_plan.h"
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/ifrt/sharding.h"
+#include "xla/python/ifrt/value.h"
 #include "xla/python/ifrt_proxy/client/rpc_helper.h"
 #include "xla/python/ifrt_proxy/common/array_util.h"
 #include "xla/python/ifrt_proxy/common/ifrt_service.pb.h"
@@ -336,6 +337,11 @@ absl::StatusOr<std::vector<xla::ifrt::ArrayRef>> Array::MakeErrorArrays(
 
 void Array::Destruct(RpcHelper* rpc_helper, ArrayHandle handle) {
   rpc_helper->Batch(RpcHelper::kDestructArray, handle);
+}
+
+absl::StatusOr<std::optional<int64_t>> Array::GetByteSize(
+    ValueByteSizeSemantics semantics) const {
+  return absl::UnimplementedError("GetByteSize is not implemented.");
 }
 
 tsl::Future<> Array::GetReadyFuture() const {
