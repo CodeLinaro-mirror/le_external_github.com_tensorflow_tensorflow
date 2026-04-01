@@ -51,6 +51,10 @@ class HloProgram : public llvm::RTTIExtends<HloProgram, Program> {
 
   mlir::ModuleOp mlir_module() const { return mlir_module_; }
 
+  std::string GetName() {
+    return mlir_module_.getName().value_or("unnamed").str();
+  }
+
   // Serializes the HloProgram into bytes such that deserialization via
   // `HloProgram::FromBytes()` results in the exact same program when
   // deserialized at the same binary version.
