@@ -1712,8 +1712,10 @@ PjRtStreamExecutorRawLoadedExecutable::Execute(
         {{"replica", replica_}, {"partition", partition_}});
   });
 
-  VLOG(3) << "Replica " << replica_ << ", partition " << partition_
-          << " mapped to device ordinal for execution: " << device_ordinal;
+  XLA_VLOG_DEVICE(device_ordinal, 1)
+      << "Execute " << executable_->executable()->name()
+      << ", launch_id: " << options.launch_id << ", replica: " << replica_
+      << ", partition: " << partition_;
 
   // Schedule async send operations in the client thread pool.
   auto* async_work_runner = client_->async_work_runner();
@@ -1791,8 +1793,9 @@ PjRtStreamExecutorRawLoadedExecutable::Execute(
     run_options.set_recv_device_memory_function(&recv_device_memory);
     run_options.set_execution_profile(execution_profile);
     if (run_options.launch_id() != 0) {
-      VLOG(3) << "launch id for " << executable->executable()->name() << ": "
-              << run_options.launch_id();
+      XLA_VLOG_DEVICE(device_ordinal, 3)
+          << "launch id for " << executable->executable()->name() << ": "
+          << run_options.launch_id();
     }
     if (context != nullptr) {
       run_options.set_ffi_execution_context(&context->ffi_context());
@@ -1838,18 +1841,22 @@ PjRtStreamExecutorRawLoadedExecutable::Execute(
       }
     }
 
-    VLOG(1) << "Start calling RunAsync for "
-            << executable->executable()->module().name()
-            << ", device=" << device->DebugString()
-            << ", run_id=" << run_options.run_id().ToInt();
+    XLA_VLOG_DEVICE(device_ordinal, 1)
+        << "Start calling RunAsync for "
+        << executable->executable()->module().name()
+        << ", device=" << device->DebugString()
+        << ", run_id=" << run_options.run_id().ToInt()
+        << ", replica=" << replica << ", partition=" << partition;
 
     if (VLOG_IS_ON(2)) {
       absl::string_view executable_name = executable->executable()->name();
       absl::Status host_callback_status = run_options.stream()->DoHostCallback(
-          [executable_name, launch_id(run_options.run_id().ToInt()), device]() {
-            VLOG(2) << "Start device execution for " << executable_name
-                    << ", launch_id: " << launch_id
-                    << ", device: " << device->DebugString();
+          [executable_name, launch_id(run_options.run_id().ToInt()), device,
+           device_ordinal]() {
+            XLA_VLOG_DEVICE(device_ordinal, 2)
+                << "Start device execution for " << executable_name
+                << ", launch_id: " << launch_id
+                << ", device: " << device->DebugString();
           });
       if (!host_callback_status.ok()) {
         LOG(WARNING)
@@ -1871,10 +1878,12 @@ PjRtStreamExecutorRawLoadedExecutable::Execute(
     if (VLOG_IS_ON(2)) {
       absl::string_view executable_name = executable->executable()->name();
       absl::Status host_callback_status = run_options.stream()->DoHostCallback(
-          [executable_name, launch_id(run_options.run_id().ToInt()), device]() {
-            VLOG(2) << "Finish device execution for " << executable_name
-                    << ", launch_id: " << launch_id
-                    << ", device: " << device->DebugString();
+          [executable_name, launch_id(run_options.run_id().ToInt()), device,
+           device_ordinal]() {
+            XLA_VLOG_DEVICE(device_ordinal, 2)
+                << "Finish device execution for " << executable_name
+                << ", launch_id: " << launch_id
+                << ", device: " << device->DebugString();
           });
       if (!host_callback_status.ok()) {
         LOG(WARNING)
@@ -1883,12 +1892,13 @@ PjRtStreamExecutorRawLoadedExecutable::Execute(
       }
     }
 
-    VLOG(1) << "Finish calling RunAsync for "
-            << executable->executable()->module().name()
-            << ", device=" << device->DebugString()
-            << ", run_id=" << run_options.run_id().ToInt()
-            << ", replica=" << replica << ", partition=" << partition
-            << ", completed, ok=" << result_buffer_or_status.ok();
+    XLA_VLOG_DEVICE(device_ordinal, 1)
+        << "Finish calling RunAsync for "
+        << executable->executable()->module().name()
+        << ", device=" << device->DebugString()
+        << ", run_id=" << run_options.run_id().ToInt()
+        << ", replica=" << replica << ", partition=" << partition
+        << ", completed, ok=" << result_buffer_or_status.ok();
 
     // Add a callback on the stream to record the elapsed device time of the
     // executable execution.
@@ -2035,8 +2045,8 @@ PjRtStreamExecutorLoadedExecutable::LoadRawExecutable(
   }
   int replica = device_and_assign.replica;
   int partition = device_and_assign.partition;
-  VLOG(1) << "Replica " << replica << ", partition " << partition
-          << " mapped to device ordinal for execution: " << device_ordinal;
+  XLA_VLOG_DEVICE(device_ordinal, 1)
+      << "Replica " << replica << ", partition " << partition;
   return std::make_unique<PjRtStreamExecutorRawLoadedExecutable>(
       replica, partition, run_id, device,
       std::move(device_and_assign.device_assignment), executable_, client_,
