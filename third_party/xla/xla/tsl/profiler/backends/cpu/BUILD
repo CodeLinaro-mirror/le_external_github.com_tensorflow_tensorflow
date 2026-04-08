@@ -177,6 +177,7 @@ cc_binary(
     testonly = True,
     srcs = ["traceme_encode_benchmark.cc"],
     deps = [
+        "//xla/backends/profiler/cpu:host_tracer",
         "@com_google_absl//absl/log:flags",
         "@com_google_absl//absl/strings",
         "@com_google_benchmark//:benchmark",
@@ -190,6 +191,7 @@ cc_binary(
     testonly = True,
     srcs = ["traceme_benchmark.cc"],
     deps = [
+        "//xla/backends/profiler/cpu:host_tracer",
         "//xla/tsl/profiler/utils:trace_filter_utils",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/log:die_if_null",
@@ -209,6 +211,7 @@ cc_binary(
     testonly = True,
     srcs = ["connected_traceme_benchmark.cc"],
     deps = [
+        "//xla/backends/profiler/cpu:host_tracer",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/log:die_if_null",
         "@com_google_benchmark//:benchmark",
