@@ -2457,9 +2457,11 @@ SpmdPartitioningVisitor::CreateReplicaGroups(
   if (groups.has_iota()) {
     IotaReplicaGroupList iota_list(
         groups.num_groups(), groups.num_devices_per_group(), *groups.iota());
-    return std::make_unique<IotaReplicaGroupList>(
-        ExpandPartitionGroupListAcrossReplicas(iota_list, num_replicas_,
-                                               num_partitions_));
+    if (iota_list.num_total_devices() == num_partitions_) {
+      return std::make_unique<IotaReplicaGroupList>(
+          ExpandPartitionGroupListAcrossReplicas(iota_list, num_replicas_,
+                                                 num_partitions_));
+    }
   }
 
   std::vector<ReplicaGroup> device_groups;
