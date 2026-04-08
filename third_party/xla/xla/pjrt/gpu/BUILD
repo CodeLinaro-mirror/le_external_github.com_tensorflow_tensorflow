@@ -511,6 +511,7 @@ cc_library(
         "//xla/stream_executor:platform_manager",
         "//xla/stream_executor/abi:runtime_abi_version",
         "//xla/tsl/platform:errors",
+        "//xla/tsl/platform:gloop_status_macros",
         "//xla/tsl/platform:status_macros",
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/base:core_headers",

@@ -429,9 +429,10 @@ absl::StatusOr<GpuTopology> InferGpuTopology(
     if (gpu_topology.has_gpu_target_config()) {
       gpu_target_config = gpu_topology.gpu_target_config();
     }
-    // TODO: b/491510579: We likely should double check that the HLO and
-    // topology `num_partitions` match, once we fix the other TODOs from this
-    // bug.
+    TF_RET_CHECK(gpu_topology.num_partitions() == hlo_config.num_partitions())
+        << "Number of partitions in HLO (" << hlo_config.num_partitions()
+        << ") and topology (" << gpu_topology.num_partitions()
+        << ") do not match.";
     num_partitions = gpu_topology.num_partitions();
     num_hosts_per_partition = gpu_topology.num_hosts_per_partition();
     num_devices_per_host = gpu_topology.num_devices_per_host();
