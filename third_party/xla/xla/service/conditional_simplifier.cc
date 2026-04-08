@@ -47,6 +47,14 @@ namespace xla {
 
 namespace {
 
+bool FrontendAttributesAllowInlining(const HloInstruction* instruction) {
+  auto it = instruction->frontend_attributes().map().find("inlineable");
+  if (it != instruction->frontend_attributes().map().end()) {
+    return it->second == "true";
+  }
+  return true;
+}
+
 // A computation with array type that only contains parameters and tuples is
 // considered empty.
 bool ComputationIsEmptyWithArrayRoot(const HloComputation* computation) {
@@ -474,6 +482,8 @@ absl::StatusOr<bool> ConditionalSimplifier::TryRemoveConditional(
         conditional->shape(), {conditional->mutable_operand(1 + branch)},
         conditional->branch_computation(branch)));
     conditional->SetupDerivedInstruction(call);
+    // Copy frontend attributes to the new call instruction.
+    call->set_frontend_attributes(conditional->frontend_attributes());
     return call;
   };
 
@@ -481,7 +491,9 @@ absl::StatusOr<bool> ConditionalSimplifier::TryRemoveConditional(
     HloInstruction* call_op = create_call(0);
     call_op->set_original_value(conditional->original_value());
     TF_RETURN_IF_ERROR(computation->ReplaceInstruction(conditional, call_op));
-    TF_RETURN_IF_ERROR(CallInliner::Inline(call_op).status());
+    if (FrontendAttributesAllowInlining(call_op)) {
+      TF_RETURN_IF_ERROR(CallInliner::Inline(call_op).status());
+    }
     return true;
   }
 
@@ -498,7 +510,9 @@ absl::StatusOr<bool> ConditionalSimplifier::TryRemoveConditional(
     HloInstruction* call_op = create_call(branch_index);
     call_op->set_original_value(conditional->original_value());
     TF_RETURN_IF_ERROR(computation->ReplaceInstruction(conditional, call_op));
-    TF_RETURN_IF_ERROR(CallInliner::Inline(call_op).status());
+    if (FrontendAttributesAllowInlining(call_op)) {
+      TF_RETURN_IF_ERROR(CallInliner::Inline(call_op).status());
+    }
 
     return true;
   }
@@ -586,8 +600,12 @@ absl::StatusOr<bool> ConditionalSimplifier::TryRemoveConditional(
   TF_RETURN_IF_ERROR(computation->ReplaceInstruction(
       conditional, select(true_call_op, false_call_op)));
 
-  TF_RETURN_IF_ERROR(CallInliner::Inline(false_call_op).status());
-  TF_RETURN_IF_ERROR(CallInliner::Inline(true_call_op).status());
+  if (FrontendAttributesAllowInlining(false_call_op)) {
+    TF_RETURN_IF_ERROR(CallInliner::Inline(false_call_op).status());
+  }
+  if (FrontendAttributesAllowInlining(true_call_op)) {
+    TF_RETURN_IF_ERROR(CallInliner::Inline(true_call_op).status());
+  }
   return true;
 }
 
