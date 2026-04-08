@@ -2012,7 +2012,10 @@ absl::Status SpmdPartitioningVisitor::HandleScatterWithoutConflicts(
   }
 
   if (select_operand) {
-    operands[0] = operands[0].CloneWithNewHlo(select_operand);
+    return Internal(
+        "Failed to find a reduction identity for sharded scatter implicit "
+        "batching dimensions. This indicates a mismatch between Shardy "
+        "sharding rules and the GSPMD partitioner.");
   }
 
   std::vector<HloInstruction*> operand_hlos, update_hlos;
@@ -2051,8 +2054,10 @@ absl::Status SpmdPartitioningVisitor::HandleScatter(HloInstruction* hlo) {
   if (hlo->sharding().IsSingleDevice()) {
     return DefaultAction(hlo);
   }
-  // TODO(b/499988914): Re-enable HandleScatterWithoutConflicts after we fix
-  // the bug.
+
+  if (!options_.need_resolve_conflicts) {
+    return HandleScatterWithoutConflicts(hlo);
+  }
 
   const auto scatter = Cast<HloScatterInstruction>(hlo);
   // Check all operands have the same shapes and shardings, and all updates have
