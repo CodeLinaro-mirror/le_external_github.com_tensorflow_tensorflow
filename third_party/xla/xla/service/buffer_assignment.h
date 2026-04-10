@@ -286,6 +286,9 @@ class BufferAllocation {
                                 int64_t more_than_k = 50) const;
 
   BufferAllocationProto ToProto() const;
+  // FromProto constructs a BufferAllocation from a BufferAllocationProto, but
+  // does not restore peak buffers. If peak buffers are needed, construct the
+  // full buffer assignment using BufferAssignment::FromProto.
   static BufferAllocation FromProto(const BufferAllocationProto&);
 
   // Whether the buffer is a parameter to or live out of the entry computation.
