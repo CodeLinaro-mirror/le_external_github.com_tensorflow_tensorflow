@@ -30,6 +30,7 @@ limitations under the License.
 #include "xla/tsl/profiler/rpc/client/profiler_client_test_util.h"
 #include "xla/tsl/profiler/rpc/profiler_server.h"
 #include "xla/tsl/profiler/utils/file_system_utils.h"
+#include "tsl/platform/host_info.h"
 #include "tsl/profiler/lib/profiler_session.h"
 #include "tsl/profiler/protobuf/profiler_options.pb.h"
 #include "tsl/profiler/protobuf/profiler_service.pb.h"
@@ -204,6 +205,44 @@ TEST(RemoteProfilerSessionManagerTest, OverrideHostnames) {
                   ->FileExists(ProfilerJoinPath(
                       request.repository_root(), request.session_id(),
                       absl::StrCat(random_hostname, ".xplane.pb")))
+                  .ok());
+}
+
+TEST(RemoteProfilerSessionManagerTest, UseSystemHostname) {
+  absl::Duration duration = absl::Milliseconds(100);
+  RemoteProfilerSessionManagerOptions options;
+  *options.mutable_profiler_options() = tsl::ProfilerSession::DefaultOptions();
+  options.mutable_profiler_options()->set_duration_ms(
+      absl::ToInt64Milliseconds(duration));
+
+  std::string service_address;
+  std::unique_ptr<ProfilerServer> server =
+      StartServer(duration, &service_address);
+  options.add_service_addresses(service_address);
+  absl::Time approx_start = absl::Now();
+  absl::Duration grace = absl::Seconds(kGracePeriodSeconds);
+  absl::Duration max_duration = duration + grace;
+  options.set_max_session_duration_ms(absl::ToInt64Milliseconds(max_duration));
+  options.set_session_creation_timestamp_ns(absl::ToUnixNanos(approx_start));
+
+  ProfileRequest request =
+      PopulateProfileRequest(TmpDir(), "session_id", service_address, options);
+  (*request.mutable_opts()
+        ->mutable_advanced_configuration())["use_system_hostname"]
+      .set_bool_value(true);
+
+  absl::Status status;
+  std::unique_ptr<RemoteProfilerSessionManager> sessions =
+      RemoteProfilerSessionManager::Create(options, request, status);
+  ASSERT_TRUE(status.ok());
+  EXPECT_THAT(
+      sessions->WaitForCompletion(),
+      ElementsAre(::testing::Field(&Response::status, absl::OkStatus())));
+
+  EXPECT_TRUE(Env::Default()
+                  ->FileExists(ProfilerJoinPath(
+                      request.repository_root(), request.session_id(),
+                      absl::StrCat(tsl::port::Hostname(), ".xplane.pb")))
                   .ok());
 }
 

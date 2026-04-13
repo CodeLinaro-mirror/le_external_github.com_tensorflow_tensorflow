@@ -31,6 +31,7 @@ limitations under the License.
 #include "xla/tsl/platform/status_macros.h"
 #include "grpcpp/server_context.h"
 #include "grpcpp/support/status.h"
+#include "xla/tsl/lib/gtl/map_util.h"
 #include "xla/tsl/platform/env.h"
 #include "xla/tsl/platform/env_time.h"
 #include "xla/tsl/platform/logging.h"
@@ -39,6 +40,7 @@ limitations under the License.
 #include "xla/tsl/profiler/utils/math_utils.h"
 #include "xla/tsl/profiler/utils/time_utils.h"
 #include "xla/tsl/profiler/utils/xplane_utils.h"
+#include "tsl/platform/host_info.h"
 #include "tsl/profiler/lib/profiler_session.h"
 #include "tsl/profiler/protobuf/profiler_service.grpc.pb.h"
 #include "tsl/profiler/protobuf/profiler_service.pb.h"
@@ -59,7 +61,18 @@ using tensorflow::StopContinuousProfilingResponse;
 using tensorflow::TerminateRequest;
 using tensorflow::TerminateResponse;
 
+// Returns the hostname to be used for the profile filename.
+// Priority:
+// 1. advanced_configuration["use_system_hostname"] == true
+//    → tsl::port::Hostname()
+// 2. override_hostname non-empty → literal override_hostname value
+// 3. Default → request.host_name()
 std::string GetHostname(const ProfileRequest& request) {
+  const auto* use_system_hostname = gtl::FindOrNull(
+      request.opts().advanced_configuration(), "use_system_hostname");
+  if (use_system_hostname != nullptr && use_system_hostname->bool_value()) {
+    return tsl::port::Hostname();
+  }
   if (!request.opts().override_hostname().empty()) {
     return request.opts().override_hostname();
   }

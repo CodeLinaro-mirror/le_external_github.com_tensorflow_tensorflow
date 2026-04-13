@@ -186,6 +186,7 @@ tsl_cc_test(
         "//xla/tsl/profiler/utils:file_system_utils",
         "//xla/tsl/profiler/utils:time_utils_impl",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
         "@tsl//tsl/platform:platform_port",
@@ -217,6 +218,7 @@ cc_library(
     hdrs = ["remote_profiler_session_manager.h"],
     copts = tf_profiler_copts(),
     deps = [
+        ":profiler_client",
         ":profiler_client_for_pybind",
         "//xla/tsl/lib/gtl:map_util",
         "//xla/tsl/platform:logging",
@@ -258,6 +260,7 @@ tsl_cc_test(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
+        "@tsl//tsl/platform:platform_port",
         "@tsl//tsl/profiler/lib:profiler_factory_impl",
         "@tsl//tsl/profiler/lib:profiler_session",
         "@tsl//tsl/profiler/lib:profiler_session_impl",
