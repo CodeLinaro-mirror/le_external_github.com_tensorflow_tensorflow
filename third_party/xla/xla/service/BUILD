@@ -587,6 +587,7 @@ cc_library(
     hdrs = ["dump_options.h"],
     visibility = ["//visibility:private"],
     deps = [
+        "//xla:util",
         "//xla:xla_proto_cc",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
