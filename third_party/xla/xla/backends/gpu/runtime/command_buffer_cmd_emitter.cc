@@ -101,12 +101,6 @@ static absl::StatusOr<std::unique_ptr<Command>> Convert(
 }
 
 static absl::StatusOr<std::unique_ptr<Command>> Convert(
-    const DeviceToDeviceCopyThunk& thunk) {
-  return std::make_unique<MemcpyDeviceToDeviceCmd>(
-      thunk.destination(), thunk.source(), thunk.size_bytes());
-}
-
-static absl::StatusOr<std::unique_ptr<Command>> Convert(
     const DynamicMemcpyThunk& thunk) {
   return std::make_unique<DynamicSliceCopyFusionCmd>(
       thunk.source(), thunk.destination(), thunk.mem_size(), thunk.offsets());
@@ -304,9 +298,9 @@ static absl::Status AppendCommands(ConversionContext& ctx,
     case Thunk::Kind::kCopy:
       if (dynamic_cast<const DynamicMemcpyThunk*>(&thunk)) {
         return append(Convert<DynamicMemcpyThunk>(thunk));
-      } else {
-        return append(Convert<DeviceToDeviceCopyThunk>(thunk));
       }
+      cmd_sequence.Append(static_cast<DeviceToDeviceCopyThunk*>(&thunk));
+      return absl::OkStatus();
     case Thunk::Kind::kCustomCall:
       return append(Convert<CustomCallThunk>(thunk));
     case Thunk::Kind::kCustomKernel:
@@ -340,6 +334,7 @@ static absl::Status AppendCommands(ConversionContext& ctx,
     case Thunk::Kind::kSend:
       return append(Convert<SendThunk>(thunk));
     // These thunks implement Command directly; append borrowed pointers.
+    // Note: kCopy also borrows DeviceToDeviceCopyThunk (see case above).
     case Thunk::Kind::kMemset32BitValue:
       cmd_sequence.Append(static_cast<Memset32BitValueThunk*>(&thunk));
       return absl::OkStatus();
