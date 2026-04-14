@@ -4634,6 +4634,7 @@ tf_kernel_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/framework:bounds_check",
         "//tensorflow/core/platform:stream_executor",
+        "@com_google_absl//absl/log:check",
         "@eigen_archive//:eigen3",
     ],
 )
