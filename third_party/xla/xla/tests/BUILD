@@ -628,6 +628,34 @@ xla_test(
 )
 
 xla_test(
+    name = "conv_depthwise_fast_compile_test",
+    srcs = [
+        "conv_depthwise_test.cc",
+    ],
+    backends = [
+        "cpu",
+    ],
+    env = {
+        "XLA_FLAGS": "--xla_cpu_opt_preset=FAST_COMPILE",
+    },
+    shard_count = 30,
+    deps = [
+        ":conv_depthwise_common",
+        ":hlo_pjrt_interpreter_reference_mixin",
+        ":hlo_pjrt_test_base",
+        ":xla_internal_test_main",  # fixdeps: keep
+        "//xla:error_spec",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/testlib:test",
+        "//xla/hlo/transforms:despecializer",
+        "//xla/hlo/transforms/simplifiers:float_normalization",
+        "//xla/tsl/platform:errors",
+        "//xla/tsl/platform:test",
+        "@com_google_absl//absl/status",
+    ],
+)
+
+xla_test(
     name = "conv_depthwise_backprop_filter_test",
     srcs = ["conv_depthwise_backprop_filter_test.cc"],
     shard_count = 50,
@@ -705,6 +733,58 @@ xla_cc_test(
 xla_test(
     name = "while_test",
     srcs = ["while_test.cc"],
+    deps = [
+        ":aot_utils",
+        ":client_library_test_runner_mixin",
+        ":hlo_pjrt_interpreter_reference_mixin",
+        ":hlo_pjrt_test_base",
+        ":literal_test_util",
+        ":pjrt_client_registry",
+        ":xla_internal_test_main",
+        "//xla:error_spec",
+        "//xla:executable_run_options",
+        "//xla:literal",
+        "//xla:literal_util",
+        "//xla:shape_util",
+        "//xla:xla_data_proto_cc",
+        "//xla/client:client_library",
+        "//xla/client:executable_build_options",
+        "//xla/client:local_client",
+        "//xla/hlo/builder:xla_builder",
+        "//xla/hlo/builder:xla_computation",
+        "//xla/hlo/builder/lib:arithmetic",
+        "//xla/hlo/testlib:hlo_hardware_independent_test_base",
+        "//xla/pjrt:pjrt_client",
+        "//xla/service:hlo_runner_interface",
+        "//xla/service:platform_util",
+        "//xla/service:shaped_buffer",
+        "//xla/stream_executor:platform",
+        "//xla/stream_executor:stream_executor_address_allocator",
+        "//xla/tests:xla_test_backend_predicates",
+        "//xla/tsl/platform:env",
+        "//xla/tsl/platform:test_benchmark",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_benchmark//:benchmark",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+xla_test(
+    name = "while_fast_compile_test",
+    srcs = ["while_test.cc"],
+    backends = [
+        "cpu",
+    ],
+    env = {
+        "XLA_FLAGS": "--xla_cpu_opt_preset=FAST_COMPILE",
+    },
     deps = [
         ":aot_utils",
         ":client_library_test_runner_mixin",
@@ -854,6 +934,41 @@ xla_test(
 xla_test(
     name = "conditional_test",
     srcs = ["conditional_test.cc"],
+    shard_count = 2,
+    deps = [
+        ":client_library_test_runner_mixin",
+        ":hlo_pjrt_interpreter_reference_mixin",
+        ":hlo_pjrt_test_base",
+        ":literal_test_util",
+        ":xla_internal_test_main",  # fixdeps: keep
+        "//xla:array2d",
+        "//xla:error_spec",
+        "//xla:literal",
+        "//xla:literal_util",
+        "//xla:shape_util",
+        "//xla/hlo/builder:xla_builder",
+        "//xla/hlo/builder:xla_computation",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/testlib:test_helpers",
+        "//xla/service:hlo_runner_interface",
+        "//xla/tsl/platform:env",
+        "//xla/tsl/platform:statusor",
+        "//xla/tsl/platform:test",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+xla_test(
+    name = "conditional_fast_compile_test",
+    srcs = ["conditional_test.cc"],
+    backends = [
+        "cpu",
+    ],
+    env = {
+        "XLA_FLAGS": "--xla_cpu_opt_preset=FAST_COMPILE",
+    },
     shard_count = 2,
     deps = [
         ":client_library_test_runner_mixin",
@@ -2920,6 +3035,50 @@ xla_test(
         "gpu",
         "interpreter",
     ],
+    deps = [
+        ":client_library_test_runner_mixin",
+        ":hlo_pjrt_interpreter_reference_mixin",
+        ":hlo_pjrt_test_base",
+        ":literal_test_util",
+        ":xla_internal_test_main",  # fixdeps: keep
+        "//xla:array2d",
+        "//xla:comparison_util",
+        "//xla:error_spec",
+        "//xla:executable_run_options",
+        "//xla:literal",
+        "//xla:literal_util",
+        "//xla:shape_util",
+        "//xla:xla_data_proto_cc",
+        "//xla/client:client_library",
+        "//xla/client:executable_build_options",
+        "//xla/hlo/builder:xla_builder",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:platform_util",
+        "//xla/service:shaped_buffer",
+        "//xla/stream_executor:platform",
+        "//xla/stream_executor:stream_executor_memory_allocator",
+        "//xla/tests:xla_test_backend_predicates",
+        "//xla/tsl/platform:env",
+        "//xla/tsl/platform:statusor",
+        "//xla/tsl/platform:test",
+        "//xla/tsl/platform:test_benchmark",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/types:span",
+        "@com_google_benchmark//:benchmark",
+        "@eigen_archive//:eigen3",
+        "@tsl//tsl/platform:protobuf",
+    ],
+)
+
+xla_test(
+    name = "cpu_gpu_fusion_fast_compile_test",
+    srcs = ["cpu_gpu_fusion_test.cc"],
+    backends = [
+        "cpu",
+    ],
+    env = {
+        "XLA_FLAGS": "--xla_cpu_opt_preset=FAST_COMPILE",
+    },
     deps = [
         ":client_library_test_runner_mixin",
         ":hlo_pjrt_interpreter_reference_mixin",

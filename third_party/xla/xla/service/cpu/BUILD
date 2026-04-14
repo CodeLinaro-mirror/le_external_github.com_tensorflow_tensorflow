@@ -452,6 +452,28 @@ xla_test(
     ],
 )
 
+xla_test(
+    name = "cpu_compiler_fast_compile_test",
+    srcs = ["cpu_compiler_test.cc"],
+    backends = [
+        "cpu",
+    ],
+    env = {
+        "XLA_FLAGS": "--xla_cpu_opt_preset=FAST_COMPILE",
+    },
+    deps = [
+        "//xla/hlo/testlib:verified_hlo_module",
+        "//xla/tests:hlo_pjrt_test_base",
+        "//xla/tests:xla_internal_test_main",
+        "//xla/tsl/lib/monitoring:collected_metrics",
+        "//xla/tsl/lib/monitoring:collection_registry",
+        "@com_google_absl//absl/strings:string_view",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:statusor",
+        "@tsl//tsl/platform:test",
+    ],
+)
+
 xla_cc_test(
     name = "cpu_compiler_internals_test",
     srcs = ["cpu_compiler_internals_test.cc"],
