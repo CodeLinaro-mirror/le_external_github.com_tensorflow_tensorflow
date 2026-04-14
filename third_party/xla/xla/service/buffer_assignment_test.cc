@@ -625,8 +625,19 @@ TEST_F(BufferAssignmentTest, BasicToFromProto) {
           orig_value->instruction(), orig_value->index());
       EXPECT_TRUE(buffers_from_proto->HasAllocation(value_proto));
       EXPECT_EQ(orig_value->color(), value_proto.color());
-      EXPECT_EQ(buffers_orig->GetAssignedAllocation(*orig_value).index(),
-                buffers_from_proto->GetAssignedAllocation(value_proto).index());
+      auto& alloc_orig = buffers_orig->GetAssignedAllocation(*orig_value);
+      auto& alloc_from_proto =
+          buffers_from_proto->GetAssignedAllocation(value_proto);
+      EXPECT_EQ(alloc_orig.index(), alloc_from_proto.index());
+
+      // Ensure peak buffers survived the round-trip.
+      auto& peak_buffers_orig = alloc_orig.PeakMemoryLogicalBuffers();
+      auto& peak_buffers_from_proto =
+          alloc_from_proto.PeakMemoryLogicalBuffers();
+      EXPECT_EQ(peak_buffers_orig.size(), peak_buffers_from_proto.size());
+      for (int i = 0; i < peak_buffers_orig.size(); i++) {
+        EXPECT_EQ(peak_buffers_orig[i]->id(), peak_buffers_from_proto[i]->id());
+      }
     }
   }
 }
