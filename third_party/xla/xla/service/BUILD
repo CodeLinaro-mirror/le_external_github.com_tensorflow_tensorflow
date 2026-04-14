@@ -587,10 +587,14 @@ cc_library(
     hdrs = ["dump_options.h"],
     visibility = ["//visibility:private"],
     deps = [
+        "//xla:util",
         "//xla:xla_proto_cc",
+        "//xla/tsl/platform:env",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@tsl//tsl/platform:path",
+        "@tsl//tsl/platform:platform_port",
         "@tsl//tsl/platform:regexp",
     ],
 )
@@ -711,6 +715,7 @@ xla_cc_test(
         "@com_google_protobuf//:protobuf",
         "@tsl//tsl/platform",
         "@tsl//tsl/platform:path",
+        "@tsl//tsl/platform:platform_port",
     ],
 )
 
