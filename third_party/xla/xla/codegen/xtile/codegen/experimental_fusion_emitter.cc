@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -29,6 +30,7 @@ limitations under the License.
 #include "absl/types/span.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -54,7 +56,6 @@ limitations under the License.
 #include "xla/codegen/xtile/codegen/emitter_helpers.h"
 #include "xla/codegen/xtile/ir/transforms/passes.h"
 #include "xla/codegen/xtile/ir/xtile_ops.h"
-#include "xla/hlo/analysis/indexing_map.h"
 #include "xla/hlo/analysis/indexing_map_serialization.h"  // IWYU pragma: keep
 #include "xla/hlo/analysis/interval.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
@@ -73,6 +74,7 @@ limitations under the License.
 #include "xla/tools/hlo_decomposer.h"
 #include "xla/tsl/framework/mlir/status_scoped_diagnostic_handler.h"
 #include "xla/tsl/platform/errors.h"
+#include "xla/tsl/platform/logging.h"
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
 #include "xla/tsl/platform/status_macros.h"
@@ -82,7 +84,6 @@ namespace {
 
 using ::llvm::ArrayRef;
 using ::llvm::SmallVector;
-using ::mlir::FunctionOpInterface;
 using ::mlir::ImplicitLocOpBuilder;
 using ::mlir::Location;
 using ::mlir::MLIRContext;
@@ -284,6 +285,7 @@ int64_t GetNumSequentialDimIds(const HloInstruction& hlo) {
   return 0;
 }
 
+// Returns the positions of the sequential dimensions in the HLO.
 SmallVector<int64_t> GetSequentialDimIds(const HloInstruction& hlo) {
   int64_t num_sequential_dims = GetNumSequentialDimIds(hlo);
   SmallVector<int64_t> sequential_dim_ids;
@@ -639,6 +641,43 @@ absl::StatusOr<TensorValue> EmitBitcast(
                                   normalized_reshape);
 }
 
+absl::StatusOr<TensorValue> EmitReduce(
+    EmitterContext& emitter_ctx, const ge::TiledHloInstruction& tiled_hlo) {
+  if (tiled_hlo.hlo()->dimensions().size() != 1 ||
+      tiled_hlo.hlo()->operand_count() != 2) {
+    return absl::InvalidArgumentError(
+        "Only reduce with one dimension and two operands is supported.");
+  }
+  ImplicitLocOpBuilder& b = emitter_ctx.b();
+  const HloReduceInstruction& reduce_hlo =
+      *::xla::Cast<HloReduceInstruction>(tiled_hlo.hlo());
+  const ge::TiledHloInstruction* tiled_input = tiled_hlo.operand(0);
+  TensorValue input_value = emitter_ctx.TiledHloToTensorValue(*tiled_input);
+  // xtile.mask only supports masking of at most one dimension.
+  // To support multi-dimensional we should use a different method or update
+  // xtile.mask. After that we might be able use tile_upper_bounds as a mask
+  // dims directly. Right now we are only masking the reduce dimension.
+  ASSIGN_OR_RETURN(llvm::SmallVector<int64_t> mask_dim_bounds,
+                   tiled_input->tile().GetStaticTileSizes());
+  ASSIGN_OR_RETURN(llvm::SmallVector<int64_t> tile_upper_bounds,
+                   tiled_input->tile().GetStaticTileUpperBounds());
+  int64_t reduce_dim = reduce_hlo.dimensions()[0];
+  mask_dim_bounds[reduce_dim] = tile_upper_bounds[reduce_dim];
+  TensorValue init_value =
+      emitter_ctx.TiledHloToTensorValue(*tiled_hlo.operand(1));
+  // N.B.: while that mostly works in practice, there are valid HLOs, for
+  // example `reduce(p0, init=1), to_apply=add`, that will produce the wrong
+  // result with this implementation.
+  mlir::Value neutral_value = mlir::tensor::ExtractOp::create(b, init_value);
+  input_value = mlir::cast<TensorValue>(b.createOrFold<xtile::MaskOp>(
+      input_value, mask_dim_bounds, neutral_value));
+  stablehlo::ReduceOp reduction = stablehlo::ReduceOp::create(
+      b, input_value, init_value, reduce_hlo.dimensions());
+  RETURN_IF_ERROR(EmitReduceComputation(
+      b, &reduce_hlo, tiled_hlo.hlo()->to_apply(), reduction));
+  return mlir::cast<TensorValue>(reduction.getResult(0));
+}
+
 absl::StatusOr<TensorValue> EmitTiledHloInstruction(
     EmitterContext& emitter_ctx, const ge::TiledHloInstruction& tiled_hlo) {
   auto& b = emitter_ctx.b();
@@ -697,6 +736,10 @@ absl::StatusOr<TensorValue> EmitTiledHloInstruction(
     operands.push_back(emitter_ctx.TiledHloToTensorValue(*operand));
   }
   switch (hlo->opcode()) {
+    case HloOpcode::kBitcast: {
+      return EmitBitcast(emitter_ctx, tiled_hlo,
+                         mlir::cast<TensorValue>(operands[0]));
+    }
     case HloOpcode::kBroadcast: {
       return EmitBroadcast(b, tiled_hlo, mlir::cast<TensorValue>(operands[0]));
     }
@@ -730,10 +773,11 @@ absl::StatusOr<TensorValue> EmitTiledHloInstruction(
       return EmitTranspose(b, tile_sizes, hlo->dimensions(),
                            mlir::cast<TensorValue>(operands[0]));
     }
-    case HloOpcode::kBitcast: {
-      return EmitBitcast(emitter_ctx, tiled_hlo,
-                         mlir::cast<TensorValue>(operands[0]));
+
+    case HloOpcode::kReduce: {
+      return EmitReduce(emitter_ctx, tiled_hlo);
     }
+    // Note that opcode cases are sorted by name.
     default:
       break;
   }
@@ -765,6 +809,55 @@ absl::StatusOr<std::vector<TensorValue>> EmitTiledComputation(
   return std::move(results);
 }
 
+// Emit values for trivial sequential dimensions, i.e. dimensions with tile size
+// greater than or equal to the dimension size.
+// Tiling analysis still creates a dimension for such contracting dimensions but
+// their parent instructions will not have regions and thus we don't emit their
+// operands as part of them. As a concrete example, consider the following
+// reduction:
+//
+// fusion {
+//   p = f32[5,3] parameter(0)
+//   c = f32[] constant(10)
+//   ROOT reduce = f32[3] reduce(p, c), dimensions={0}, to_apply=maximum
+// }
+//
+// If reduction tile covers the entire dimension then we will not have a
+// computation of [reduce {region=[p, c]}] but rather a list of
+// [p, c, reduce], where p has a symbol dimension that is created by reduce.
+// To emit p we have to have a value for the symbol dimension.
+// Thus we emit sequential dimensions at the start as we know they will be
+// trivially 0.
+void EmitFullyTiledSequentialDimensions(
+    ImplicitLocOpBuilder& b, EmitterContext& emitter_ctx,
+    const ge::TiledHloComputation& tiled_computation) {
+  if (tiled_computation.tiled_hlo_instructions().empty()) {
+    return;
+  }
+  const auto& tiling_space =
+      tiled_computation.tiled_hlo_instructions().front()->tile().tiling_space();
+  for (const auto& [dim_id, dim_info] :
+       llvm::enumerate(tiling_space.dimensions())) {
+    if (dim_info.type != ge::TilingSpace::DimensionSemantics::kSequential) {
+      continue;
+    }
+    QCHECK(dim_info.hlo != nullptr) << "Sequential dimension " << dim_id
+                                    << " does not have a corresponding "
+                                       "HLO.";
+    QCHECK(dim_info.IsTileSizeSet()) << "Sequential dimension " << dim_id
+                                     << " does not have a tile size set.";
+    if (dim_info.hlo->opcode() == HloOpcode::kReduce &&
+        dim_info.tile_size >= dim_info.dimension_size) {
+      VLOG(2) << "Mapping reduce sequential dimension " << dim_id << " of size "
+              << dim_info.dimension_size << " with tile size "
+              << dim_info.tile_size << " for hlo " << dim_info.hlo->name()
+              << " to a new value 0";
+      emitter_ctx.MapSymbolIdToSequentialDimValue(
+          ge::TiledDimId(dim_id), MakeIndex(b, 0), Interval{0, 0});
+    }
+  }
+}
+
 absl::Status EmitGeneric(ImplicitLocOpBuilder& b,
                          const HloFusionInstruction& fusion,
                          const ge::TiledHloComputation& tiled_computation,
@@ -780,6 +873,7 @@ absl::Status EmitGeneric(ImplicitLocOpBuilder& b,
                              schedule, fn,      tiled_computation};
 
   VLOG(2) << "EmitTiledComputation: " << tiled_computation.ToString();
+  EmitFullyTiledSequentialDimensions(b, emitter_ctx, tiled_computation);
   ASSIGN_OR_RETURN(auto results,
                    EmitTiledComputation(
                        emitter_ctx, tiled_computation.tiled_hlo_instructions(),
@@ -847,7 +941,12 @@ absl::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> EmitXTileModule(
       EmitGeneric(b, fusion, tiled_computation, schedule, fn, &mlir_context));
 
   b.create<xtile::EntryFuncReturnOp>();
-
+  if (VLOG_IS_ON(8)) {
+    std::string s;
+    llvm::raw_string_ostream os(s);
+    xtile_module->print(os);
+    XLA_VLOG_LINES(8, s);
+  }
   // This should be enabled only in debug mode probably.
   {
     // Verify that the emitted module contains only ops from dialects that can

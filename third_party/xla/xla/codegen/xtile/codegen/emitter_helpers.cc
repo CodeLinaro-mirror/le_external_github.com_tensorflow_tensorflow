@@ -65,6 +65,7 @@ limitations under the License.
 #include "xla/hlo/analysis/symbolic_map.h"
 #include "xla/hlo/analysis/symbolic_map_converter.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
+#include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_opcode.h"
@@ -647,6 +648,48 @@ TensorValue EmitParameterExtract(mlir::ImplicitLocOpBuilder& b,
   return xla::xtile::ExtractTileOp::create(
       b, tensor_type, arg, tile_info.offsets(), tile_info.padded_tile_sizes(),
       tile_info.tile_strides());
+}
+
+absl::Status EmitReduceComputation(mlir::ImplicitLocOpBuilder& b,
+                                   const HloInstruction* hlo_reduction,
+                                   const HloComputation* reduction_computation,
+                                   mlir::Operation* reduction) {
+  ASSIGN_OR_RETURN(
+      Type result_ty,
+      PrimitiveTypeToMlirType(b, hlo_reduction->shape().element_type()));
+  result_ty = mlir::RankedTensorType::get({}, result_ty);
+
+  mlir::Location loc = b.getLoc();
+  mlir::Block* reducer = b.createBlock(&reduction->getRegion(0), {},
+                                       {result_ty, result_ty}, {loc, loc});
+  b.setInsertionPointToStart(reducer);
+
+  std::vector<const HloInstruction*> to_emit;
+  absl::flat_hash_map<const HloInstruction*, TensorValue> region_values;
+  for (const HloInstruction* instr :
+       reduction_computation->MakeInstructionPostOrder()) {
+    if (instr->opcode() == HloOpcode::kParameter) {
+      int parameter_number = instr->parameter_number();
+      TF_RET_CHECK(parameter_number < 2);
+      auto argument = mlir::cast<mlir::TypedValue<mlir::RankedTensorType>>(
+          reducer->getArgument(parameter_number));
+
+      if (!argument) {
+        return Internal("Expected reducer argument to be a tensor.");
+      }
+
+      TF_RET_CHECK(region_values.insert({instr, argument}).second);
+    } else {
+      to_emit.push_back(instr);
+    }
+  }
+
+  TF_RET_CHECK(!to_emit.empty());
+
+  ASSIGN_OR_RETURN(TensorValue result, EmitScope(b, to_emit, region_values));
+  mlir::stablehlo::ReturnOp::create(b, SmallVector<Value>({result}));
+  b.setInsertionPointAfter(reduction);
+  return absl::OkStatus();
 }
 
 absl::StatusOr<TensorValue> EmitScope(

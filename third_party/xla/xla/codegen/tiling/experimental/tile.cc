@@ -190,6 +190,11 @@ absl::StatusOr<llvm::SmallVector<int64_t>> Tile::GetStaticTileStrides() const {
   return ConvertSymbolicExprsToInts(strides());
 }
 
+absl::StatusOr<llvm::SmallVector<int64_t>> Tile::GetStaticTileUpperBounds()
+    const {
+  return ConvertSymbolicExprsToInts(upper_bounds());
+}
+
 void Tile::Replace(const llvm::DenseMap<SymbolicExpr, SymbolicExpr>& map) {
   for (DimTile& dim_tile : dim_tiles_) {
     dim_tile.offset = dim_tile.offset.Replace(map);

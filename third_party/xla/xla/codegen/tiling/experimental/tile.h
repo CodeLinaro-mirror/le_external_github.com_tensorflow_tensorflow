@@ -115,6 +115,7 @@ class Tile {
 
   absl::StatusOr<llvm::SmallVector<int64_t>> GetStaticTileSizes() const;
   absl::StatusOr<llvm::SmallVector<int64_t>> GetStaticTileStrides() const;
+  absl::StatusOr<llvm::SmallVector<int64_t>> GetStaticTileUpperBounds() const;
 
   const TilingSpace& tiling_space() const { return *tiling_space_; }
   mlir::MLIRContext* mlir_context() const;
