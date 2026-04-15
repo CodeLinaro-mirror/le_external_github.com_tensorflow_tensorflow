@@ -161,7 +161,7 @@ class ShardDatasetOp::Dataset : public DatasetBase {
 
     absl::Status Initialize(IteratorContext* ctx) override {
       if (dataset()->num_shards_ == kShardHint) {
-        return errors::FailedPrecondition(
+        return absl::FailedPreconditionError(
             "`tf.data.Dataset.shard(SHARD_HINT, ...)` can only be used in "
             "`tf.distribute.Strategy.experimental_distribute_dataset()` with "
             "`tf.data.experimental.AutoShardPolicy.HINT` policy, or tf.data "
@@ -341,17 +341,18 @@ void ShardDatasetOp::MakeDataset(OpKernelContext* ctx, DatasetBase* input,
 
   OP_REQUIRES_OK(ctx,
                  ParseScalarArgument<int64_t>(ctx, kNumShards, &num_shards));
-  OP_REQUIRES(
-      ctx, num_shards > 0 || num_shards == kShardHint,
-      errors::InvalidArgument("Number of shards must be greater than zero "
-                              "(currently num_shards = ",
-                              num_shards, ")."));
+  OP_REQUIRES(ctx, num_shards > 0 || num_shards == kShardHint,
+              absl::InvalidArgumentError(
+                  absl::StrCat("Number of shards must be greater than zero "
+                               "(currently num_shards = ",
+                               num_shards, ").")));
 
   OP_REQUIRES_OK(ctx, ParseScalarArgument<int64_t>(ctx, kIndex, &index));
-  OP_REQUIRES(
-      ctx, (index >= 0 && index < num_shards) || num_shards == kShardHint,
-      errors::InvalidArgument("Index must be between 0 and ", num_shards - 1,
-                              " (currently index = ", index, ")."));
+  OP_REQUIRES(ctx,
+              (index >= 0 && index < num_shards) || num_shards == kShardHint,
+              absl::InvalidArgumentError(
+                  absl::StrCat("Index must be between 0 and ", num_shards - 1,
+                               " (currently index = ", index, ").")));
 
   *output = new Dataset(ctx, num_shards, index, require_non_empty_, input);
 }
