@@ -2442,59 +2442,65 @@ template <typename BufferType>
 typename GlobalDecreasingSizeBestFitHeap<BufferType>::FreeChunks
 GlobalDecreasingSizeBestFitHeap<BufferType>::MakeFreeChunks(
     const BufferInterval& buffer_interval, int64_t max_colocation_size) const {
-  // Map free chunk offsets -> ends.
-  // We use `greater` for the comparison so that we can use `lower_bound` to
-  // find the largest key less than or equal to the lookup value.
-  FreeChunks free_chunks{
-      {0, INT64_MAX}};  // Initialize with "infinite" free memory.
+  std::vector<Chunk> used_chunks;
 
-  // Subtract chunks that are in use from the free chunks.
-  auto subtract_used_chunk = [&](const BufferIntervalTreeNode* node) {
-    const Chunk& used_chunk = node->chunk;
-    // Find the free chunks containing the start and end of the used chunk.
-    auto it_end = free_chunks.lower_bound(used_chunk.chunk_end());
-    if (it_end == free_chunks.end()) {
-      return;
-    }
-    auto it_start = free_chunks.lower_bound(used_chunk.offset);
-
-    // Store original free chunk end, in case `it_start == it_end`.
-    int64_t free_chunk_end = it_end->second;
-
-    // Subtract from free chunk containing start of used range, removing if it
-    // becomes too small for the buffer.
-    if (it_start != free_chunks.end()) {
-      if (used_chunk.offset - it_start->first >= buffer_interval.size) {
-        it_start->second = std::min(it_start->second, used_chunk.offset);
-      } else {
-        ++it_start;  // Increment iterator so that this entry is erased
-                     // below.
-      }
-    }
-
-    // Erase from the start chunk (possibly inclusive) to the end chunk
-    // (always inclusive). We iterate from end to start, as the map is in
-    // reverse order.
-    free_chunks.erase(it_end, it_start);
-
-    // Create a new free chunk after the used chunk, if it is large enough.
-    int64_t chunk_end_aligned = ComputeAlignedChunkEnd(used_chunk.chunk_end());
-    if (free_chunk_end - chunk_end_aligned >= max_colocation_size) {
-      CHECK(free_chunks.insert({chunk_end_aligned, free_chunk_end}).second);
-    }
-  };
-
+  // Collect chunks that are in use.
   interval_tree_.ApplyToNodesOverlappingInTime(
-      buffer_interval.start, buffer_interval.end, subtract_used_chunk);
+      buffer_interval.start, buffer_interval.end,
+      [&used_chunks](const BufferIntervalTreeNode* node) {
+        used_chunks.push_back(node->chunk);
+      });
 
   for (const BufferType* colocation :
        GetTransitiveColocations(buffer_interval)) {
     const BufferInterval& interval = buffer_intervals_.at(colocation);
-    VLOG(1) << "  Alias size " << interval.size << ", start " << interval.start
-            << ", end " << interval.end << " " << interval.buffer->ToString();
+    interval_tree_.ApplyToNodesOverlappingInTime(
+        interval.start, interval.end,
+        [&used_chunks](const BufferIntervalTreeNode* node) {
+          used_chunks.push_back(node->chunk);
+        });
+  }
 
-    interval_tree_.ApplyToNodesOverlappingInTime(interval.start, interval.end,
-                                                 subtract_used_chunk);
+  // Sort used chunks by offset ascending.
+  std::sort(used_chunks.begin(), used_chunks.end(),
+            [](const Chunk& a, const Chunk& b) { return a.offset < b.offset; });
+
+  // Merge overlapping used chunks.
+  std::vector<Chunk> disjoint_used_chunks;
+  if (!used_chunks.empty()) {
+    disjoint_used_chunks.push_back(used_chunks[0]);
+    for (size_t i = 1; i < used_chunks.size(); ++i) {
+      Chunk& last = disjoint_used_chunks.back();
+      const Chunk& curr = used_chunks[i];
+      if (curr.offset < last.chunk_end()) {
+        last.size = std::max(last.chunk_end(), curr.chunk_end()) - last.offset;
+      } else {
+        disjoint_used_chunks.push_back(curr);
+      }
+    }
+  }
+
+  FreeChunks free_chunks;
+  int64_t f_start = 0;  // Track the start of the current free space candidate.
+
+  for (const auto& used_chunk : disjoint_used_chunks) {
+    // If there is a gap between the current free space candidate and the used
+    // chunk...
+    if (used_chunk.offset > f_start) {
+      // ...and the gap is large enough for the buffer, record it as a free
+      // chunk.
+      if (used_chunk.offset - f_start >= buffer_interval.size) {
+        free_chunks.insert({f_start, used_chunk.offset});
+      }
+    }
+    // Advance the free space candidate start to after the current used chunk,
+    // respecting alignment requirements.
+    f_start = std::max(f_start, ComputeAlignedChunkEnd(used_chunk.chunk_end()));
+  }
+
+  // Add the final free chunk extending to infinity, if large enough.
+  if (INT64_MAX - f_start >= max_colocation_size) {
+    free_chunks.insert({f_start, INT64_MAX});
   }
 
   return free_chunks;
