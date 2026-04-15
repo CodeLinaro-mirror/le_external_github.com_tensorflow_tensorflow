@@ -209,6 +209,11 @@ struct TfrtPipelineOptions
       llvm::cl::desc("If true, allow XLA:CPU for CPU computations."),
       llvm::cl::init(true),
   };
+  Option<bool> enable_async_ifrt{
+      *this, "enable-async-ifrt",
+      llvm::cl::desc("If true, IfrtCallOp will be lowered to AsyncIfrtCallOp "
+                     "and executed asynchronously."),
+      llvm::cl::init(false)};
 };
 
 }  // namespace tensorflow

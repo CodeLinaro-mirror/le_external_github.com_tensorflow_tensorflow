@@ -53,6 +53,9 @@ struct TfrtSessionOptions {
   TfrtThreadpoolOptions threadpool_options;
   tensorflow::tfrt_stub::Runtime* runtime = nullptr;
   bool enable_mlrt = false;
+  // If true, enables asynchronous native lowering for specific heavy ops
+  // (e.g. lowering to native async ops to avoid blocking execution).
+  bool enable_async_native_lowering = false;
   // Should only set one of `use_tpu` and `use_gpu` and `backend_compiler`.
   bool use_tpu = false;
   bool use_gpu = false;
@@ -107,6 +110,7 @@ class TfrtSessionFactory : public tensorflow::SessionFactory {
   bool use_gpu_ TF_GUARDED_BY(mutex_) = false;
   std::unique_ptr<ThreadPoolManager> thread_pool_manager_ TF_GUARDED_BY(mutex_);
   bool enable_mlrt_ TF_GUARDED_BY(mutex_) = false;
+  bool enable_async_native_lowering_ TF_GUARDED_BY(mutex_) = false;
   tensorflow::BackendCompiler* backend_compiler_ TF_GUARDED_BY(mutex_) =
       nullptr;
   bool enable_tpu_host_allocator_for_inputs_ TF_GUARDED_BY(mutex_) = true;

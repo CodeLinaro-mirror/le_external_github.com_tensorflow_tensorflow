@@ -25,8 +25,12 @@ limitations under the License.
 namespace tensorflow {
 namespace mlrt_compiler {
 
-bool UseFallback(mlir::Operation *op) {
+bool UseFallback(mlir::Operation* op, bool enable_async_ifrt) {
   if (!llvm::isa<mlir::TF::TensorFlowDialect>(op->getDialect())) return false;
+
+  if (llvm::isa<mlir::TF::IfrtCallOp>(op) && enable_async_ifrt) {
+    return false;
+  }
 
   // TODO(b/173017701): have a centralized place to hold the information
   // whether a TF op should be lowered to FallbackExecute op.

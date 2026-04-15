@@ -408,6 +408,26 @@ class IfrtResourceDeserializeOpConversion
   }
 };
 
+class IfrtCallOpConversion
+    : public mlir::OpConversionPattern<mlir::TF::IfrtCallOp> {
+ public:
+  using OpConversionPattern::OpConversionPattern;
+
+  mlir::LogicalResult matchAndRewrite(
+      mlir::TF::IfrtCallOp op, OpAdaptor adaptor,
+      mlir::ConversionPatternRewriter& rewriter) const override {
+    llvm::SmallVector<mlir::Type> future_types(
+        op->getNumResults(), rewriter.getType<mlrt::compiler::FutureType>());
+
+    auto call_op = tf_mlrt::AsyncIfrtCallOp::create(
+        rewriter, op.getLoc(), future_types, op.getProgramId(),
+        op.getVariableArgIndices(), adaptor.getArgs());
+
+    rewriter.replaceOp(op, call_op.getResults());
+    return mlir::success();
+  }
+};
+
 std::optional<std::string> DecodeLongName(mlir::Location loc) {
   if (auto name_loc = mlir::dyn_cast<mlir::NameLoc>(loc)) {
     return name_loc.getName().str();
@@ -467,25 +487,27 @@ void CanonicalizeFunctionNameInNodeDef(const mlir::SymbolTable &symbol_table,
 
 class ExecuteOpConversion final : public mlir::ConversionPattern {
  public:
-  ExecuteOpConversion(mlir::MLIRContext *context,
-                      const mlir::SymbolTable *symbol_table,
-                      mlir::TypeConverter *type_converter,
-                      ExecuteOpRegistry *execute_op_registry,
-                      tfrt_stub::OpKernelRunnerCache *op_kernel_cache,
-                      const tfrt_stub::FallbackState *fallback_state)
+  ExecuteOpConversion(mlir::MLIRContext* context,
+                      const mlir::SymbolTable* symbol_table,
+                      mlir::TypeConverter* type_converter,
+                      ExecuteOpRegistry* execute_op_registry,
+                      tfrt_stub::OpKernelRunnerCache* op_kernel_cache,
+                      const tfrt_stub::FallbackState* fallback_state,
+                      bool enable_async_ifrt)
       : mlir::ConversionPattern(*type_converter,
                                 mlir::Pattern::MatchAnyOpTypeTag(),
                                 /*benefit=*/1, context),
         symbol_table_(*symbol_table),
         execute_op_registry_(*execute_op_registry),
         op_kernel_cache_(*op_kernel_cache),
-        fallback_state_(*fallback_state) {}
+        fallback_state_(*fallback_state),
+        enable_async_ifrt_(enable_async_ifrt) {}
 
   mlir::LogicalResult matchAndRewrite(
       mlir::Operation *op, llvm::ArrayRef<mlir::Value> operands,
       mlir::ConversionPatternRewriter &rewriter) const override {
     // TODO(b/173017701): Avoid fallback for ops within XLA GPU clusters.
-    if (!UseFallback(op)) return mlir::failure();
+    if (!UseFallback(op, enable_async_ifrt_)) return mlir::failure();
 
     if (auto const_op = llvm::dyn_cast<mlir::TF::ConstOp>(op)) {
       tensorflow::TensorProto tensor_proto;
@@ -616,6 +638,7 @@ class ExecuteOpConversion final : public mlir::ConversionPattern {
   ExecuteOpRegistry &execute_op_registry_;
   tfrt_stub::OpKernelRunnerCache &op_kernel_cache_;
   const tfrt_stub::FallbackState &fallback_state_;
+  bool enable_async_ifrt_;
 };
 
 mlir::Value GetPredicate(mlir::Operation *op, mlir::Value cond_operand,
@@ -1135,6 +1158,9 @@ class TfToMlrtConversionPass
       options_.use_tpu_host_allocator_for_inputs =
           use_tpu_host_allocator_for_inputs_;
     }
+    if (enable_async_ifrt_.hasValue()) {
+      options_.enable_async_ifrt = enable_async_ifrt_;
+    }
 
     return mlir::success();
   }
@@ -1310,12 +1336,15 @@ class TfToMlrtConversionPass
                  SetResourceOpConversion, IfrtRestoreVariableOpConversion,
                  TFAwaitOpConversion, TFPromiseOpConversion,
                  IfrtResourceDeserializeOpConversion>(&context);
+    if (options_.enable_async_ifrt) {
+      patterns.add<IfrtCallOpConversion>(&context);
+    }
     patterns.add<BatchFunctionOpConversion, CaseOpConversion, CondOpConversion,
                  TFAsyncWhileOpConversion, TFMapFnOpConversion>(type_converter_,
                                                                 &context);
-    patterns.add<ExecuteOpConversion>(&context, &symbol_table, &type_converter_,
-                                      &execute_op_registry_, &op_kernel_cache_,
-                                      &fallback_state_);
+    patterns.add<ExecuteOpConversion>(
+        &context, &symbol_table, &type_converter_, &execute_op_registry_,
+        &op_kernel_cache_, &fallback_state_, options_.enable_async_ifrt);
     patterns.add<TFIfrtLoadVariableOpConversion,
                  TFCallOpConversion<mlir::TF::PartitionedCallOp>,
                  TFCallOpConversion<mlir::TF::StatefulPartitionedCallOp>,
@@ -1337,6 +1366,11 @@ class TfToMlrtConversionPass
       *this, "use-tpu-host-allocator-for-inputs",
       llvm::cl::desc("If true, fallback executeops that produce inputs to tpu "
                      "program will use tpu host allocator."),
+      llvm::cl::init(false)};
+  Option<bool> enable_async_ifrt_{
+      *this, "enable-async-ifrt",
+      llvm::cl::desc("If true, IfrtCallOp will be lowered to AsyncIfrtCallOp "
+                     "and executed asynchronously."),
       llvm::cl::init(false)};
 
   TfrtPipelineOptions options_;

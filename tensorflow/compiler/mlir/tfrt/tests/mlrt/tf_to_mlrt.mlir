@@ -529,3 +529,21 @@ func.func @ifrt_restore_variable_with_output_test() -> (tensor<3x1xf32>) {
   func.return %result : tensor<3x1xf32>
 }
 
+// -----
+
+// Test lowering of tf.IfrtCall
+
+// RUN: tf-tfrt-opt -split-input-file -tf-to-mlrt=enable-async-ifrt=false %s | FileCheck %s --check-prefix=SYNC
+// RUN: tf-tfrt-opt -split-input-file -tf-to-mlrt=enable-async-ifrt=true %s | FileCheck %s --check-prefix=ASYNC
+
+// SYNC-LABEL: func @ifrt_call_test
+// ASYNC-LABEL: func @ifrt_call_test
+func.func @ifrt_call_test(%arg0: tensor<i32>) -> tensor<i32> {
+  // SYNC: tf_mlrt.executeop
+  // SYNC-SAME: IfrtCall
+  // ASYNC: [[FUTURE:%.*]] = tf_mlrt.async_ifrt_call
+  // ASYNC: tf_mlrt.await [[FUTURE]]
+  %0 = "tf.IfrtCall"(%arg0) {program_id = 123 : i64, variable_arg_indices = [], __op_key = 0 : i32, operandSegmentSizes = array<i32: 1, 0>} : (tensor<i32>) -> tensor<i32>
+  return %0 : tensor<i32>
+}
+

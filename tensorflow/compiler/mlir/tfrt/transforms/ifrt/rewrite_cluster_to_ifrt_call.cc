@@ -225,7 +225,7 @@ class RewriteClusterToIfrtCallPass
     cloned_ifrt_program->setAttr("tfrt_ifrt_serving.program_id",
                                  builder.getI64IntegerAttr(program_id));
 
-    // Make clonet ifrt program public so that it does not get dropped by
+    // Make cloned ifrt program public so that it does not get dropped by
     // inliner.
     cloned_ifrt_program.setPublic();
 

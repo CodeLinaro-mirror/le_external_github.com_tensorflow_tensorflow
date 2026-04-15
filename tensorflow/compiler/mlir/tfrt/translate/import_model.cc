@@ -366,6 +366,7 @@ std::unique_ptr<tensorflow::TfrtPipelineOptions> GetTfrtPipelineOptions(
   pipeline_options->merge_inter_dependent_streams =
       options.merge_inter_dependent_streams;
   pipeline_options->allow_xla_cpu = options.allow_xla_cpu;
+  pipeline_options->enable_async_ifrt = options.enable_async_ifrt;
 
   return pipeline_options;
 }
