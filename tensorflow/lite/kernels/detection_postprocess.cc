@@ -685,14 +685,31 @@ TfLiteStatus NonMaxSuppressionMultiClassRegularHelper(TfLiteContext* context,
       if (tasks[j].sorted_indices_size == 0) {
         continue;
       }
-      memcpy(&box_info_after_regular_non_max_suppression[sorted_indices_size],
-             &tasks[j].sorted_box_info[0],
-             sizeof(BoxInfo) * tasks[j].sorted_indices_size);
-      InplaceMergeBoxInfo(box_info_after_regular_non_max_suppression,
-                          sorted_indices_size,
-                          sorted_indices_size + tasks[j].sorted_indices_size);
-      sorted_indices_size = std::min(
+      const int new_size = std::min(
           sorted_indices_size + tasks[j].sorted_indices_size, max_detections);
+      int i1 = 0;
+      int i2 = 0;
+      while (i1 + i2 < new_size) {
+        if (i2 == tasks[j].sorted_indices_size ||
+            (i1 < sorted_indices_size &&
+             box_info_after_regular_non_max_suppression[i1].score >=
+                 tasks[j].sorted_box_info[i2].score)) {
+          ++i1;
+        } else {
+          ++i2;
+        }
+      }
+      for (int k = new_size - 1; i2 > 0; --k) {
+        if (i1 > 0 && box_info_after_regular_non_max_suppression[i1 - 1].score <
+                          tasks[j].sorted_box_info[i2 - 1].score) {
+          box_info_after_regular_non_max_suppression[k] =
+              box_info_after_regular_non_max_suppression[--i1];
+        } else {
+          box_info_after_regular_non_max_suppression[k] =
+              tasks[j].sorted_box_info[--i2];
+        }
+      }
+      sorted_indices_size = new_size;
     }
   }
 
