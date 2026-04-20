@@ -21,6 +21,7 @@ limitations under the License.
 #include <string>
 
 #include "absl/base/attributes.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "llvm/Support/ExtensibleRTTI.h"
@@ -85,6 +86,23 @@ class MemoryKind {
 // `MemoryKind` is canonicalized and does not require on-demand
 // canonicalization.
 MemoryKind CanonicalizeMemoryKind(MemoryKind memory_kind, const Device* device);
+
+namespace utils {
+// Helper for CanonicalizeMemoryKind.
+template <typename DefaultMemoryKindGetter>
+MemoryKind CanonicalizeMemoryKindHelper(
+    MemoryKind memory_kind, absl::string_view device_kind,
+    DefaultMemoryKindGetter default_memory_kind_getter) {
+  if (memory_kind.memory_kind().has_value()) {
+    if (*memory_kind.memory_kind() == "pinned_host" &&
+        absl::AsciiStrToUpper(device_kind) == "CPU") {
+      return default_memory_kind_getter();
+    }
+    return memory_kind;
+  }
+  return default_memory_kind_getter();
+}
+}  // namespace utils
 
 TSL_LIB_GTL_DEFINE_INT_TYPE(MemoryId, int32_t);
 
