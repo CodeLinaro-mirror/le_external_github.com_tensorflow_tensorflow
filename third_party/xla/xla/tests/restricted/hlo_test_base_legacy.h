@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_TESTS_HLO_TEST_BASE_LEGACY_H_
-#define XLA_TESTS_HLO_TEST_BASE_LEGACY_H_
+#ifndef XLA_TESTS_RESTRICTED_HLO_TEST_BASE_LEGACY_H_
+#define XLA_TESTS_RESTRICTED_HLO_TEST_BASE_LEGACY_H_
 
 #include <cstdint>
 #include <functional>
@@ -35,7 +35,7 @@ limitations under the License.
 #include "xla/service/backend.h"
 #include "xla/service/computation_placer.h"
 #include "xla/service/hlo_runner_interface.h"
-#include "xla/service/hlo_runner_legacy.h"
+#include "xla/service/restricted/hlo_runner_legacy.h"
 #include "xla/stream_executor/device_address_allocator.h"
 #include "xla/stream_executor/platform.h"
 #include "xla/tests/hlo_runner_agnostic_reference_mixin.h"
@@ -192,4 +192,4 @@ class ABSL_DEPRECATED(
 
 }  // namespace xla
 
-#endif  // XLA_TESTS_HLO_TEST_BASE_LEGACY_H_
+#endif  // XLA_TESTS_RESTRICTED_HLO_TEST_BASE_LEGACY_H_

@@ -13,17 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_TESTS_HLO_TEST_BASE_H_
-#define XLA_TESTS_HLO_TEST_BASE_H_
+#ifndef XLA_TESTS_RESTRICTED_HLO_TEST_BASE_H_
+#define XLA_TESTS_RESTRICTED_HLO_TEST_BASE_H_
 
 #include <memory>
 #include <utility>
 
 #include "absl/base/attributes.h"
-#include "xla/service/hlo_runner.h"
-#include "xla/service/hlo_runner_legacy.h"
+#include "xla/service/restricted/hlo_runner.h"
+#include "xla/service/restricted/hlo_runner_legacy.h"
 #include "xla/stream_executor/platform.h"
-#include "xla/tests/hlo_test_base_legacy.h"
+#include "xla/tests/restricted/hlo_test_base_legacy.h"
 #include "xla/util.h"
 
 // Inclusion of this header indicates that the test has NOT been migrated to use
@@ -108,4 +108,4 @@ class ABSL_DEPRECATED(
 
 }  // namespace xla
 
-#endif  // XLA_TESTS_HLO_TEST_BASE_H_
+#endif  // XLA_TESTS_RESTRICTED_HLO_TEST_BASE_H_

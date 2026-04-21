@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/tools/hlo_bisect/hlo_bisect_utils.h"
+#include "xla/tools/hlo_bisect/restricted/hlo_bisect_utils.h"
 
 #include <cstdint>
 #include <memory>
@@ -44,10 +44,10 @@ limitations under the License.
 #include "xla/service/hlo_module_config.h"
 #include "xla/service/hlo_module_util.h"
 #include "xla/service/hlo_proto_util.h"
-#include "xla/service/hlo_runner.h"
 #include "xla/service/hlo_runner_interface.h"
 #include "xla/service/hlo_verifier.h"
 #include "xla/service/platform_util.h"
+#include "xla/service/restricted/hlo_runner.h"
 #include "xla/stream_executor/platform.h"
 #include "xla/tests/literal_test_util.h"
 #include "xla/tests/test_utils.h"

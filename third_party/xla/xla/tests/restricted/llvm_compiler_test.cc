@@ -29,7 +29,7 @@ limitations under the License.
 #include "xla/service/backend.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/stream_executor.h"
-#include "xla/tests/hlo_test_base.h"
+#include "xla/tests/restricted/hlo_test_base.h"
 #include "tsl/platform/casts.h"
 #include "tsl/platform/test.h"
 

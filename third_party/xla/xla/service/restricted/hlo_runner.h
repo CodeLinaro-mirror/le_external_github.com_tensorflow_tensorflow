@@ -13,13 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_SERVICE_HLO_RUNNER_H_
-#define XLA_SERVICE_HLO_RUNNER_H_
+#ifndef XLA_SERVICE_RESTRICTED_HLO_RUNNER_H_
+#define XLA_SERVICE_RESTRICTED_HLO_RUNNER_H_
 
 #include <memory>
 #include <utility>
 
-#include "xla/service/hlo_runner_legacy.h"
+#include "xla/service/restricted/hlo_runner_legacy.h"
 #include "xla/stream_executor/device_address_allocator.h"
 #include "xla/stream_executor/platform.h"
 
@@ -43,4 +43,4 @@ class HloRunner : public HloRunnerLegacy {
 
 }  // namespace xla
 
-#endif  // XLA_SERVICE_HLO_RUNNER_H_
+#endif  // XLA_SERVICE_RESTRICTED_HLO_RUNNER_H_

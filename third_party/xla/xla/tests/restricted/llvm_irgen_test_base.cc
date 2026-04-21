@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/tests/llvm_irgen_test_base.h"
+#include "xla/tests/restricted/llvm_irgen_test_base.h"
 
 #include <functional>
 #include <memory>

@@ -20,7 +20,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "xla/tools/hlo_bisect/hlo_bisect_utils.h"
+#include "xla/tools/hlo_bisect/restricted/hlo_bisect_utils.h"
 #include "xla/tsl/util/command_line_flags.h"
 #include "tsl/platform/init_main.h"
 

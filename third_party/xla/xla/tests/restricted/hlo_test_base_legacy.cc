@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/tests/hlo_test_base_legacy.h"
+#include "xla/tests/restricted/hlo_test_base_legacy.h"
 
 #include <functional>
 #include <memory>
@@ -35,8 +35,8 @@ limitations under the License.
 #include "xla/service/compiler.h"
 #include "xla/service/hlo_module_util.h"
 #include "xla/service/hlo_runner_interface.h"
-#include "xla/service/hlo_runner_legacy.h"
 #include "xla/service/platform_util.h"
+#include "xla/service/restricted/hlo_runner_legacy.h"
 #include "xla/shape.h"
 #include "xla/stream_executor/device_address_allocator.h"
 #include "xla/stream_executor/platform.h"

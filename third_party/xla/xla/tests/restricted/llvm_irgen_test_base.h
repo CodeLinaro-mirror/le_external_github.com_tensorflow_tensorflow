@@ -13,13 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_TESTS_LLVM_IRGEN_TEST_BASE_H_
-#define XLA_TESTS_LLVM_IRGEN_TEST_BASE_H_
+#ifndef XLA_TESTS_RESTRICTED_LLVM_IRGEN_TEST_BASE_H_
+#define XLA_TESTS_RESTRICTED_LLVM_IRGEN_TEST_BASE_H_
 
 #include <string>
 
 #include "xla/service/llvm_compiler.h"
-#include "xla/tests/hlo_test_base_legacy.h"
+#include "xla/tests/restricted/hlo_test_base_legacy.h"
 
 namespace xla {
 
@@ -63,4 +63,4 @@ class LlvmIrGenTestBase : public HloTestBaseLegacy {
 
 }  // namespace xla
 
-#endif  // XLA_TESTS_LLVM_IRGEN_TEST_BASE_H_
+#endif  // XLA_TESTS_RESTRICTED_LLVM_IRGEN_TEST_BASE_H_

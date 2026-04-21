@@ -16,7 +16,7 @@ limitations under the License.
 #include "xla/stream_executor/sycl/sycl_blas_lt.h"
 
 #include "xla/stream_executor/gpu/gpu_blas_lt.h"
-#include "xla/tests/hlo_test_base.h"
+#include "xla/tests/restricted/hlo_test_base.h"
 
 namespace stream_executor::sycl {
 namespace {

@@ -29,7 +29,7 @@ limitations under the License.
 #include "xla/service/cpu/onednn_ops_rewriter.h"
 #include "xla/service/cpu/onednn_util.h"
 #include "xla/service/pattern_matcher.h"
-#include "xla/tests/hlo_test_base.h"
+#include "xla/tests/restricted/hlo_test_base.h"
 #include "xla/tsl/platform/statusor.h"
 
 namespace xla {

@@ -37,7 +37,7 @@ limitations under the License.
 #include "xla/stream_executor/sycl/sycl_executor.h"
 #include "xla/stream_executor/sycl/sycl_platform_id.h"
 #include "xla/stream_executor/typed_kernel_factory.h"
-#include "xla/tests/llvm_irgen_test_base.h"
+#include "xla/tests/restricted/llvm_irgen_test_base.h"
 #include "xla/tsl/platform/status_matchers.h"
 #include "xla/tsl/platform/statusor.h"
 

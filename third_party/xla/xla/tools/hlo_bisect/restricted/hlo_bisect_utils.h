@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_TOOLS_HLO_BISECT_HLO_BISECT_UTILS_H_
-#define XLA_TOOLS_HLO_BISECT_HLO_BISECT_UTILS_H_
+#ifndef XLA_TOOLS_HLO_BISECT_RESTRICTED_HLO_BISECT_UTILS_H_
+#define XLA_TOOLS_HLO_BISECT_RESTRICTED_HLO_BISECT_UTILS_H_
 
 #include <cstdint>
 #include <memory>
@@ -96,4 +96,4 @@ absl::StatusOr<ModuleWithInputs> GetVerifiedModuleAndInputData(
 }  // namespace bisect
 }  // namespace xla
 
-#endif  // XLA_TOOLS_HLO_BISECT_HLO_BISECT_UTILS_H_
+#endif  // XLA_TOOLS_HLO_BISECT_RESTRICTED_HLO_BISECT_UTILS_H_

@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_SERVICE_HLO_RUNNER_LEGACY_H_
-#define XLA_SERVICE_HLO_RUNNER_LEGACY_H_
+#ifndef XLA_SERVICE_RESTRICTED_HLO_RUNNER_LEGACY_H_
+#define XLA_SERVICE_RESTRICTED_HLO_RUNNER_LEGACY_H_
 
 #include <cstdint>
 #include <memory>
@@ -304,4 +304,4 @@ class HloRunnerLegacy : public HloRunnerInterface {
 
 }  // namespace xla
 
-#endif  // XLA_SERVICE_HLO_RUNNER_LEGACY_H_
+#endif  // XLA_SERVICE_RESTRICTED_HLO_RUNNER_LEGACY_H_

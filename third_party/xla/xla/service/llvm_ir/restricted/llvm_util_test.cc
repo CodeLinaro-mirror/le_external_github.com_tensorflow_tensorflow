@@ -36,7 +36,7 @@ limitations under the License.
 #include "xla/literal.h"
 #include "xla/primitive_util.h"
 #include "xla/service/hlo_module_config.h"
-#include "xla/tests/hlo_test_base.h"
+#include "xla/tests/restricted/hlo_test_base.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/xla_data.pb.h"
 
