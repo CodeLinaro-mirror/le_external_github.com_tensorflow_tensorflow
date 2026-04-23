@@ -323,6 +323,7 @@ limitations under the License.
 #include "xla/status_macros.h"
 #include "xla/stream_executor/abi/executable_abi_version.h"
 #include "xla/stream_executor/cuda/cuda_compute_capability.h"
+#include "xla/stream_executor/device_address_allocator.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/device_description.pb.h"
 #include "xla/stream_executor/dnn.h"
@@ -349,7 +350,6 @@ limitations under the License.
 #include "tsl/platform/numbers.h"
 #include "tsl/platform/path.h"
 #include "tsl/platform/protobuf.h"  // IWYU pragma: keep
-#include "tsl/platform/stacktrace.h"
 #include "tsl/profiler/lib/scoped_annotation.h"
 #include "tsl/profiler/lib/traceme.h"
 
@@ -2205,6 +2205,11 @@ absl::StatusOr<std::unique_ptr<HloModule>> GpuCompiler::RunHloPasses(
 
 namespace {
 
+bool IsRa2aZeroCopyEnabled(const DebugOptions& opts) {
+  return opts.xla_gpu_experimental_ragged_all_to_all_use_barrier_with_nccl() &&
+         opts.xla_gpu_experimental_ragged_all_to_all_zero_copy();
+}
+
 bool UsesCollectiveMemorySpaceFrontendAttr(const HloUse& use) {
   if (use.instruction->opcode() != HloOpcode::kCustomCall) {
     return false;
@@ -2262,6 +2267,16 @@ bool RequiresCollectiveInput(const HloUse& use, const DebugOptions& opts) {
   if (is_nccl_buffers_used && IsCollective(user)) {
     return true;
   }
+  // Handle one-shot zero-copy RaggedAllToAll
+  if (IsRa2aZeroCopyEnabled(opts)) {
+    // User is RA2A or AsyncStart(RA2A). Used by operand 1 (output).
+    if ((user->opcode() == HloOpcode::kRaggedAllToAll ||
+         (user->opcode() == HloOpcode::kAsyncStart &&
+          user->async_wrapped_opcode() == HloOpcode::kRaggedAllToAll)) &&
+        use.operand_number == 1) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -2271,8 +2286,19 @@ bool RequiresCollectiveOutput(const HloInstruction* def,
       opts.xla_gpu_enable_nccl_user_buffers() ||
       opts.xla_gpu_experimental_enable_nccl_symmetric_buffers();
 
+  // Handle standard non-fusion/fusion collectives under NCCL user buffers
   if (is_nccl_buffers_used && IsCollective(def)) {
     return true;
+  }
+  // Handle one-shot zero-copy RaggedAllToAll
+  if (IsRa2aZeroCopyEnabled(opts)) {
+    // Defining Instruction is RA2A or AsyncDone(RA2A)
+    if (def->opcode() == HloOpcode::kRaggedAllToAll ||
+        (def->opcode() == HloOpcode::kAsyncDone &&
+         def->operand(0)->async_wrapped_opcode() ==
+             HloOpcode::kRaggedAllToAll)) {
+      return true;
+    }
   }
   return false;
 }
