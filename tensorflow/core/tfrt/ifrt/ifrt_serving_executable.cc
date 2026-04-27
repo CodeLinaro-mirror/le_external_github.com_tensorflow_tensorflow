@@ -1221,22 +1221,20 @@ IfrtServingExecutable::ExecuteAsync(
     return final_future;
   }
 
-  return status_future
-      .Map([final_future = std::move(final_future),
-            exec_info = std::move(exec_info),
-            thread_pool = &thread_pool_]() mutable
-               -> tsl::Future<std::vector<tensorflow::Tensor>> {
-        return final_future.Map(
-            [exec_info = std::move(exec_info),
-             thread_pool](std::vector<tensorflow::Tensor> outputs) mutable {
-              // Offload cleanup to thread pool to avoid blocking execution
-              // thread.
-              thread_pool->Schedule(
-                  [exec_info = std::move(exec_info)]() mutable {});
-              return outputs;
-            });
-      })
-      .Flatten();
+  return status_future.Map([final_future = std::move(final_future),
+                            exec_info = std::move(exec_info),
+                            thread_pool = &thread_pool_]() mutable
+                               -> tsl::Future<std::vector<tensorflow::Tensor>> {
+    return final_future.Map(
+        [exec_info = std::move(exec_info),
+         thread_pool](std::vector<tensorflow::Tensor> outputs) mutable {
+          // Offload cleanup to thread pool to avoid blocking execution
+          // thread.
+          thread_pool->Schedule(
+              [exec_info = std::move(exec_info)]() mutable {});
+          return outputs;
+        });
+  });
 }
 
 absl::Status IfrtServingExecutable::AsyncLoadIfrtArray(
