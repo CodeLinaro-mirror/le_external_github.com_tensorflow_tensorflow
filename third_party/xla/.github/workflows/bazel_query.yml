@@ -25,7 +25,7 @@ jobs:
   bazel-query:
     runs-on: "linux-x86-n2-16"
     container:
-      image: "us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest"
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:af8776ce7939d7a797817474c649066a207da9ebe7f2625e993647d9b2952256
     defaults:
       run:
         shell: bash
