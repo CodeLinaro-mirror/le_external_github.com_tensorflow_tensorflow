@@ -906,6 +906,11 @@ xla_test(
             "multi_gpu",
             "broken",
         ],
+        # See b/491475964 for details.
+        "gb300": [
+            "multi_gpu",
+            "broken",
+        ],
         "nvgpu_any": [
             "broken",
             "no_oss",
