@@ -42,6 +42,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "Eigen/Core"
+#include "hwy//highway.h"
 #include "xla/index_util.h"
 #include "xla/layout.h"
 #include "xla/layout_util.h"
@@ -1984,12 +1985,28 @@ bool LiteralBase::Piece::EqualElements(const LiteralBase::Piece& other) const {
     int64_t size_bytes = size_bytes_dense();
     CHECK_EQ(size_bytes, other.size_bytes_dense());
     if (primitive_util::IsSubByteNonPredType(subshape().element_type())) {
-      auto one_array = buffer();
-      auto two_array = other.buffer();
+      auto one_array = reinterpret_cast<const uint8_t*>(buffer());
+      auto two_array = reinterpret_cast<const uint8_t*>(other.buffer());
       const int bits_per_element =
           primitive_util::BitWidth(subshape().element_type());
       const uint8_t mask = LsbMask<uint8_t>(bits_per_element);
-      for (int64_t i = 0; i < size_bytes; ++i) {
+
+      namespace hn = hwy::HWY_NAMESPACE;
+      const hn::ScalableTag<uint8_t> d;
+      const auto v_mask = hn::Set(d, mask);
+
+      int64_t i = 0;
+      for (; i + hn::Lanes(d) <= size_bytes; i += hn::Lanes(d)) {
+        auto va = hn::LoadU(d, one_array + i);
+        auto vb = hn::LoadU(d, two_array + i);
+        auto va_masked = hn::And(va, v_mask);
+        auto vb_masked = hn::And(vb, v_mask);
+        if (!hn::AllTrue(d, hn::Eq(va_masked, vb_masked))) {
+          return false;
+        }
+      }
+
+      for (; i < size_bytes; ++i) {
         if ((one_array[i] & mask) != (two_array[i] & mask)) return false;
       }
       return true;
