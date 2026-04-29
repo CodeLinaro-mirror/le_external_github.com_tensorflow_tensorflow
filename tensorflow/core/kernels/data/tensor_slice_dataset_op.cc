@@ -253,6 +253,9 @@ void TensorSliceDatasetOp::MakeDataset(OpKernelContext* ctx,
   OP_REQUIRES_OK(ctx, ctx->input_list(kComponents, &inputs));
   std::vector<Tensor> components;
   components.reserve(inputs.size());
+  OP_REQUIRES(ctx, inputs.size() > 0,
+              absl::InvalidArgumentError(
+                  "All components must be at least 1-dimensional"));
   OP_REQUIRES(ctx, inputs[0].dims() > 0,
               absl::InvalidArgumentError(
                   "All components must be at least 1-dimensional"));
