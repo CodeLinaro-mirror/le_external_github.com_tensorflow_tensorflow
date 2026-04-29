@@ -18,6 +18,7 @@ limitations under the License.
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -350,13 +351,21 @@ absl::StatusOr<int64_t> ExtractBlockK(const HloDotInstruction* dot) {
 
 absl::StatusOr<EstimateRunTimeData> EstimateRunTimeForDotOpWithBlockParameters(
     const HloDotInstruction* dot, const BlockLevelParameters& block_params,
-    const se::DeviceDescription& device_info) {
+    const se::DeviceDescription& device_info, std::optional<int64_t> block_k) {
   TF_RETURN_IF_ERROR(IsSupported(dot));
   if (block_params.output_tile_sizes.size() != 1) {
     return absl::UnimplementedError(
         absl::StrCat("Only single tile size is supported, got ",
                      block_params.output_tile_sizes.size()));
   }
+
+  int64_t block_k_val;
+  if (block_k.has_value()) {
+    block_k_val = *block_k;
+  } else {
+    TF_ASSIGN_OR_RETURN(block_k_val, ExtractBlockK(dot));
+  }
+  VLOG(10) << "block_k (ignored for now): " << block_k_val;
 
   detail::DotProblemInfo dot_info(*dot);
 
