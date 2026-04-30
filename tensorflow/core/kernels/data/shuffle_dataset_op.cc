@@ -17,6 +17,7 @@ limitations under the License.
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -25,6 +26,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "tensorflow/core/data/dataset_utils.h"
 #include "tensorflow/core/data/name_utils.h"
@@ -357,6 +359,11 @@ class ShuffleDatasetOpBase::ShuffleDatasetBase : public DatasetBase {
         int64_t temp;
         TF_RETURN_IF_ERROR(
             reader->ReadScalar(this->prefix(), kSlicesSize, &temp));
+        if (temp < 0 || temp > std::numeric_limits<size_t>::max()) {
+          return absl::InvalidArgumentError(absl::StrCat(
+              "Invalid checkpoint for tf.data shuffle dataset: ", kSlicesSize,
+              " = ", temp, " is not a valid value."));
+        }
         slices_size = static_cast<size_t>(temp);
       }
       buffer_ = std::make_unique<std::vector<std::vector<Tensor>>>();
