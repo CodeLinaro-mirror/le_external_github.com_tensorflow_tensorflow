@@ -15,7 +15,9 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/queue_op.h"
 
+#include "absl/strings/str_cat.h"
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/framework/op_requires.h"
 #include "tensorflow/core/framework/queue_interface.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
@@ -210,6 +212,11 @@ DequeueManyOp::DequeueManyOp(OpKernelConstruction* context)
 void DequeueManyOp::ComputeAsync(OpKernelContext* ctx, QueueInterface* queue,
                                  DoneCallback callback) {
   const Tensor& Tnum_elements = ctx->input(1);
+  OP_REQUIRES_ASYNC(ctx, TensorShapeUtils::IsScalar(Tnum_elements.shape()),
+                    absl::InvalidArgumentError(
+                        absl::StrCat("num_elements must be a scalar, got ",
+                                     Tnum_elements.shape().DebugString())),
+                    callback);
   int32_t num_elements = Tnum_elements.flat<int32_t>()(0);
 
   OP_REQUIRES_ASYNC(
@@ -284,6 +291,11 @@ DequeueUpToOp::DequeueUpToOp(OpKernelConstruction* context)
 void DequeueUpToOp::ComputeAsync(OpKernelContext* ctx, QueueInterface* queue,
                                  DoneCallback callback) {
   const Tensor& Tnum_elements = ctx->input(1);
+  OP_REQUIRES_ASYNC(ctx, TensorShapeUtils::IsScalar(Tnum_elements.shape()),
+                    absl::InvalidArgumentError(
+                        absl::StrCat("num_elements must be a scalar, got ",
+                                     Tnum_elements.shape().DebugString())),
+                    callback);
   int32_t num_elements = Tnum_elements.flat<int32_t>()(0);
 
   OP_REQUIRES_ASYNC(
