@@ -29,6 +29,7 @@ limitations under the License.
 #include "xla/tsl/platform/status_macros.h"
 #include "xla/layout.h"
 #include "xla/layout_util.h"
+#include "xla/pjrt/host_memory_spaces.h"
 #include "xla/pjrt/pjrt_common.h"
 #include "xla/pjrt/pjrt_compiler.h"
 #include "xla/pjrt/pjrt_device_description.h"
@@ -67,6 +68,54 @@ absl::StatusOr<Layout> CpuTopologyDescription::GetDefaultLayout(
   }
   Shape shape = ShapeUtil::MakeShape(element_type, dims);
   return LayoutUtil::GetWithDefaultLayout(shape).layout();
+}
+
+absl::StatusOr<int> CpuTopologyDescription::GetMemorySpaceKindForShape(
+    const Shape& shape) const {
+  if (shape.has_layout()) {
+    if (shape.layout().memory_space() == Layout::kHostMemorySpace) {
+      return PinnedHostMemorySpace::kKindId;
+    }
+    if (shape.layout().memory_space() == Layout::kUnpinnedHostMemorySpace) {
+      return UnpinnedHostMemorySpace::kKindId;
+    }
+  }
+  return CpuDeviceMemorySpace::kKindId;
+}
+
+absl::StatusOr<absl::string_view> CpuTopologyDescription::KindIdToKind(
+    int kind) const {
+  if (kind == PinnedHostMemorySpace::kKindId) {
+    return PinnedHostMemorySpace::kKind;
+  }
+  if (kind == UnpinnedHostMemorySpace::kKindId) {
+    return UnpinnedHostMemorySpace::kKind;
+  }
+  if (kind == CpuDeviceMemorySpace::kKindId) {
+    return CpuDeviceMemorySpace::kKind;
+  }
+  return absl::InvalidArgumentError(
+      absl::StrCat("Unknown memory kind ID: ", kind));
+}
+
+absl::StatusOr<std::vector<absl::string_view>>
+CpuTopologyDescription::GetMemoryKindsForShape(const Shape& shape) const {
+  std::vector<absl::string_view> memory_kinds;
+  auto recurse = [&memory_kinds, this](auto& self,
+                                       const Shape& s) -> absl::Status {
+    if (!s.IsTuple()) {
+      ASSIGN_OR_RETURN(int kind_id, GetMemorySpaceKindForShape(s));
+      ASSIGN_OR_RETURN(absl::string_view kind, KindIdToKind(kind_id));
+      memory_kinds.push_back(kind);
+      return absl::OkStatus();
+    }
+    for (const auto& element_shape : s.tuple_shapes()) {
+      RETURN_IF_ERROR(self(self, element_shape));
+    }
+    return absl::OkStatus();
+  };
+  RETURN_IF_ERROR(recurse(recurse, shape));
+  return memory_kinds;
 }
 
 absl::StatusOr<uint64_t> CpuTopologyDescription::Fingerprint() const {

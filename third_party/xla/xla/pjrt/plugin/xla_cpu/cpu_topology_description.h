@@ -35,8 +35,11 @@ limitations under the License.
 #include "xla/pjrt/pjrt_device_description.h"
 #include "xla/pjrt/pjrt_device_dimensions.h"
 #include "xla/pjrt/plugin/xla_cpu/cpu_topology.h"
+#include "xla/pjrt/utils.h"
 
 namespace xla {
+
+class Shape;
 
 class CpuTopologyDescription : public PjRtTopologyDescription {
  public:
@@ -103,6 +106,13 @@ class CpuTopologyDescription : public PjRtTopologyDescription {
       const override {
     return attributes_;
   }
+
+  absl::StatusOr<int> GetMemorySpaceKindForShape(const Shape& shape) const;
+
+  absl::StatusOr<absl::string_view> KindIdToKind(int kind) const;
+
+  absl::StatusOr<std::vector<absl::string_view>> GetMemoryKindsForShape(
+      const Shape& shape) const;
 
   absl::StatusOr<Layout> GetDefaultLayout(
       PrimitiveType element_type,
