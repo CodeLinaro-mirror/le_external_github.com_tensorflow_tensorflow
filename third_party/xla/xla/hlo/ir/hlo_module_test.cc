@@ -1144,7 +1144,8 @@ TEST(HloModuleTest, LoadAndFixNonConsecutiveInstructionIds) {
 
   EXPECT_EQ(module->computation_count(), 2);
   HloComputation* entry_computation = module->entry_computation();
-  HloComputation* computation_2 = *std::next(module->computations().begin());
+  HloComputation* computation_2 = module->GetComputationWithName("comp2");
+  ASSERT_NE(computation_2, nullptr);
   EXPECT_EQ(entry_computation->instruction_count(), 3);
 
   EXPECT_EQ(computation_2->instruction_count(), 4);
