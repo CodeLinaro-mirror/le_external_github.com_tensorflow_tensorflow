@@ -7403,3 +7403,25 @@ func.func @ragged_dot_zero_rhs_group_dims_for_ragged_noncontracting(%lhs : tenso
   } : (tensor<11x5xf32>, tensor<5x7xf32>, tensor<3xi64>) -> tensor<11x7xf32>
   func.return %0 : tensor<11x7xf32>
 }
+// -----
+// CHECK-LABEL: module @testOriginalArray
+module @testOriginalArray attributes {
+  // CHECK: mhlo.attr = #mhlo.original_array<"my_inst", [0, 1, 2]>
+  "mhlo.attr" = #mhlo.original_array<"my_inst", [0, 1, 2]>
+} {}
+
+// CHECK-LABEL: module @testOriginalValueElement
+module @testOriginalValueElement attributes {
+  // CHECK: mhlo.attr = #mhlo.original_value_element<[0], <"source_op", []>>
+  "mhlo.attr" = #mhlo.original_value_element<[0], <"source_op", []>>
+} {}
+
+// CHECK-LABEL: module @testOriginalValue
+module @testOriginalValue attributes {
+  // CHECK: mhlo.attr = #mhlo.original_value<false, [<[0], <"first_instruction", [0, 1]>>, <[1], <"second_instruction", [2]>>]>
+  "mhlo.attr" = #mhlo.original_value<false, [
+    <[0], <"first_instruction", [0, 1]>>,
+    <[1], <"second_instruction", [2]>>
+  ]>
+} {}
+
