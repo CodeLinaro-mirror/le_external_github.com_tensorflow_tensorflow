@@ -104,6 +104,12 @@ class Tile {
        llvm::ArrayRef<SymbolicExpr> sizes, llvm::ArrayRef<SymbolicExpr> strides,
        llvm::ArrayRef<SymbolicExpr> upper_bounds);
 
+  // Copy the tile with new dim tiles.
+  // When we are propagating a tile to an input, we need to adjust the offsets
+  // and upper bounds according to the input. The other fields are copied from
+  // the original tseile.
+  Tile(const Tile& other, llvm::SmallVector<DimTile> new_dim_tiles);
+
   std::string ToString(bool print_variables = true) const;
 
   llvm::SmallVector<SymbolicExpr> offsets() const;
