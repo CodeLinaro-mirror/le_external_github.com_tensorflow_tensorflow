@@ -104,6 +104,10 @@ Tile::Tile(const TilingSpace& tiling_space,
            llvm::SmallVector<DimTile> dim_tiles)
     : tiling_space_(&tiling_space), dim_tiles_(std::move(dim_tiles)) {}
 
+Tile::Tile(const Tile& other, llvm::SmallVector<DimTile> new_dim_tiles)
+    : tiling_space_(other.tiling_space_),
+      dim_tiles_(std::move(new_dim_tiles)) {}
+
 MLIRContext* Tile::mlir_context() const {
   return tiling_space_->mlir_context();
 }
