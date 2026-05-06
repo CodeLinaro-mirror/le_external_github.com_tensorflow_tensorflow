@@ -38,6 +38,7 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
 #include "absl/types/span.h"
@@ -2027,6 +2028,7 @@ TEST_F(
 struct GpuCompilerParametersCopyCollectiveMemoryTestParams {
   bool xla_gpu_enable_nccl_buffers;
   bool xla_gpu_experimental_enable_nccl_symmetric_buffers;
+  bool use_input_output_alias;
 };
 
 class GpuCompilerParametersCopyCollectiveMemoryTest
@@ -2036,8 +2038,8 @@ class GpuCompilerParametersCopyCollectiveMemoryTest
 
 TEST_P(GpuCompilerParametersCopyCollectiveMemoryTest,
        ParametersUsedBySymmetricCollectivesShouldBeCopiedToCollectiveMemory) {
-  constexpr absl::string_view kHlo = R"(
-    HloModule test
+  constexpr absl::string_view kHloTemplate = R"(
+    HloModule test$0
 
     add {
       lhs = bf16[] parameter(0)
@@ -2052,6 +2054,13 @@ TEST_P(GpuCompilerParametersCopyCollectiveMemoryTest,
           replica_groups={}, to_apply=add, channel_id=1
     }
   )";
+  bool use_input_output_alias = GetParam().use_input_output_alias;
+  // Inject the alias layout configuration into the HLO
+  std::string hlo_text = absl::StrReplaceAll(
+      kHloTemplate,
+      {{"$0",
+        use_input_output_alias ? ", input_output_alias={ {}: (0, {}) }" : ""}});
+
   HloModuleConfig config = GetModuleConfigForTest();
   if (GetParam().xla_gpu_enable_nccl_buffers) {
     config.mutable_debug_options().set_xla_gpu_enable_nccl_user_buffers(true);
@@ -2063,38 +2072,68 @@ TEST_P(GpuCompilerParametersCopyCollectiveMemoryTest,
   std::pair<const HloModule*, std::unique_ptr<OpaqueExecutable>>
       optimized_module_and_executable;
   ASSERT_OK_AND_ASSIGN(optimized_module_and_executable,
-                       GetOptimizedModuleForExecutable(kHlo, config));
+                       GetOptimizedModuleForExecutable(hlo_text, config));
 
   const HloModule* optimized_module = optimized_module_and_executable.first;
 
-  constexpr absl::string_view kExpectedCopied = R"(
-    // CHECK:  %copy.2 = s32[1]{0:S(1)} copy(%parameter_used_by_collective)
-    // CHECK:  %all-reduce-start = s32[1]{0:S(1)} all-reduce-start(%copy.2)
+  bool is_symmetric_buffers =
+      GetParam().xla_gpu_enable_nccl_buffers ||
+      GetParam().xla_gpu_experimental_enable_nccl_symmetric_buffers;
+
+  constexpr absl::string_view kS0NoCopy = R"(
+    // CHECK:  %all-reduce-start = s32[1]{0} all-reduce-start(%parameter_used_by_collective)
+    // CHECK:  ROOT %all-reduce-done = s32[1]{0} all-reduce-done(%all-reduce-start)
   )";
 
-  constexpr absl::string_view kExpectedNotCopied = R"(
-    // CHECK:  %copy.2 = s32[1]{0} copy(%parameter_used_by_collective)
-    // CHECK:  %all-reduce-start = s32[1]{0} all-reduce-start(%copy.2)
+  constexpr absl::string_view kS0ReadOnlyParamCopy = R"(
+    // CHECK:  %copy.{{[0-9]+}} = s32[1]{0} copy(%parameter_used_by_collective)
+    // CHECK:  %all-reduce-start = s32[1]{0} all-reduce-start(%copy.{{[0-9]+}})
+    // CHECK:  ROOT %all-reduce-done = s32[1]{0} all-reduce-done(%all-reduce-start)
   )";
 
-  EXPECT_THAT(
-      RunFileCheck(
-          optimized_module->ToString(HloPrintOptions{}
-                                         .set_print_operand_shape(false)
-                                         .set_print_metadata(false)),
-          (GetParam().xla_gpu_enable_nccl_buffers ||
-           GetParam().xla_gpu_experimental_enable_nccl_symmetric_buffers)
-              ? kExpectedCopied
-              : kExpectedNotCopied),
-      absl_testing::IsOkAndHolds(true));
+  constexpr absl::string_view kS1TwoCopies = R"(
+    // CHECK:  %copy.{{[0-9]+}} = s32[1]{0:S(1)} copy(%parameter_used_by_collective)
+    // CHECK:  %all-reduce-start = s32[1]{0:S(1)} all-reduce-start(%copy.{{[0-9]+}})
+    // CHECK:  %all-reduce-done = s32[1]{0:S(1)} all-reduce-done(%all-reduce-start)
+    // CHECK:  ROOT %copy.{{[0-9]+}} = s32[1]{0} copy(%all-reduce-done)
+  )";
+
+  const absl::string_view expected_check = [&]() {
+    if (is_symmetric_buffers) {
+      // Regardless of the input_output_alias, to isolate S1 mem space from S0,
+      // we need two copies - for Entry param(0) and for Entry result.
+      return kS1TwoCopies;
+    }
+    if (use_input_output_alias) {
+      // No copy because param(0) is S0 and Writeable
+      // because of input_output_alias
+      return kS0NoCopy;
+    }
+    // param(0) is S0 and read-only, its HloBuffer size is 2
+    // HLO needs one copy for param(0) only
+    // No copy for the result
+    return kS0ReadOnlyParamCopy;
+  }();
+
+  EXPECT_THAT(RunFileCheck(
+                  optimized_module->ToString(HloPrintOptions{}
+                                                 .set_print_operand_shape(false)
+                                                 .set_print_metadata(false)),
+                  expected_check),
+              absl_testing::IsOkAndHolds(true));
 }
 
 INSTANTIATE_TEST_SUITE_P(
     ParametersUsedBySymmetricCollectivesShouldBeCopiedToCollectiveMemory,
     GpuCompilerParametersCopyCollectiveMemoryTest,
-    Values(GpuCompilerParametersCopyCollectiveMemoryTestParams{false, false},
-           GpuCompilerParametersCopyCollectiveMemoryTestParams{true, false},
-           GpuCompilerParametersCopyCollectiveMemoryTestParams{false, true}),
+    Values(
+        GpuCompilerParametersCopyCollectiveMemoryTestParams{false, false,
+                                                            false},
+        GpuCompilerParametersCopyCollectiveMemoryTestParams{false, false, true},
+        GpuCompilerParametersCopyCollectiveMemoryTestParams{true, false, false},
+        GpuCompilerParametersCopyCollectiveMemoryTestParams{true, false, true},
+        GpuCompilerParametersCopyCollectiveMemoryTestParams{false, true, false},
+        GpuCompilerParametersCopyCollectiveMemoryTestParams{false, true, true}),
     [](const TestParamInfo<
         GpuCompilerParametersCopyCollectiveMemoryTest::ParamType>& info) {
       return absl::StrCat(
@@ -2103,7 +2142,9 @@ INSTANTIATE_TEST_SUITE_P(
           "_",
           info.param.xla_gpu_experimental_enable_nccl_symmetric_buffers
               ? "enable_nccl_symmetric_buffers"
-              : "disable_nccl_symmetric_buffers");
+              : "disable_nccl_symmetric_buffers",
+          "_",
+          info.param.use_input_output_alias ? "with_alias" : "without_alias");
     });
 
 auto SelectKTestParams() {
