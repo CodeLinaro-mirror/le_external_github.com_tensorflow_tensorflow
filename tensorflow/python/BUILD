@@ -889,14 +889,14 @@ pywrap_tensorflow_macro(
         "//tensorflow/core/distributed_runtime/rpc:grpc_server_lib",
         "//tensorflow/core/distributed_runtime/rpc:grpc_session",
     ]) + if_oss(if_cuda_is_configured([
-        # TODO(tmorris): These dependencies are added to get the RPATHs for
-        # nvidia standalone wheels into pywrap_tensorflow_internal. We might be
-        # able to remove this in the future, as these stubs should already
-        # be brought in via other dependencies.
+        "@xla//xla/tsl/cuda:cublas",
         "@xla//xla/tsl/cuda:cudnn",
         "@xla//xla/tsl/cuda:cufft",
         "@xla//xla/tsl/cuda:cupti",
+        "@xla//xla/tsl/cuda:cusolver",
+        "@xla//xla/tsl/cuda:cusparse",
         "@xla//xla/tsl/cuda:nccl_rpath",
+        "//third_party/gpus/cuda:nvjitlink",
     ])) + if_xla_available([
         "//tensorflow/compiler/aot:tfcompile_lib",
     ]) + tf_monitoring_python_deps() + tf_additional_plugin_deps() + tf_additional_profiler_deps() + tf_additional_binary_deps(),

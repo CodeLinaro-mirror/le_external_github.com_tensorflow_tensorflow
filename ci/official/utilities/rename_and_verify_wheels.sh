@@ -23,6 +23,67 @@ set -exo pipefail
 
 cd "$TFCI_OUTPUT_DIR"
 
+# Install UMD compat library if enabled
+if [[ "$TFCI_BAZEL_HERMETIC_CUDA_UMD_ENABLE" == 1 ]]; then
+  # Extract the UMD version resolved for this build directly from .bazelrc
+  export HERMETIC_CUDA_UMD_VERSION=""
+  TEST_CONFIG="${TFCI_BAZEL_TARGET_SELECTING_CONFIG_PREFIX}_wheel_test"
+  CONFIG_LINE=$(grep "^test:${TEST_CONFIG} " "$TFCI_GIT_DIR/.bazelrc" || true)
+  if [[ "$CONFIG_LINE" =~ HERMETIC_CUDA_UMD_VERSION=\"?([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+    export HERMETIC_CUDA_UMD_VERSION="${BASH_REMATCH[1]}"
+  else
+    for conf in $(echo "$CONFIG_LINE" | grep -o -e '--config=[a-zA-Z0-9_-]*' | sed 's/--config=//'); do
+      SUBCONFIG_LINE=$(grep "^test:${conf} " "$TFCI_GIT_DIR/.bazelrc" || true)
+      if [[ "$SUBCONFIG_LINE" =~ HERMETIC_CUDA_UMD_VERSION=\"?([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        export HERMETIC_CUDA_UMD_VERSION="${BASH_REMATCH[1]}"
+        break
+      fi
+    done
+  fi
+
+  if [[ -n "$HERMETIC_CUDA_UMD_VERSION" ]]; then
+    echo "Installing UMD compat library inside the container..."
+    if [[ "$HERMETIC_CUDA_UMD_VERSION" =~ ^([0-9]+)\.([0-9]+) ]]; then
+      COMPAT_VERSION="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+    else
+      echo "Error: Invalid HERMETIC_CUDA_UMD_VERSION format ($HERMETIC_CUDA_UMD_VERSION)."
+      exit 1
+    fi
+
+    echo "Setting up NVIDIA apt repository..."
+    apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub || true
+    echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /" > /etc/apt/sources.list.d/nvidia.list
+
+    echo "Running apt-get to install cuda-compat-${COMPAT_VERSION}..."
+    apt-get update -y
+
+    # Fetch the exact UMD version that Bazel will download from NVIDIA redistrib JSON.
+    BAZEL_UMD_VERSION=$(curl -s "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_${HERMETIC_CUDA_UMD_VERSION}.json" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("nvidia_driver", {}).get("version", ""))')
+
+    if [[ -z "$BAZEL_UMD_VERSION" ]]; then
+      echo "Warning: Could not extract Bazel UMD version from redistrib JSON. Falling back to default cuda-compat-${COMPAT_VERSION}."
+      apt-get install -y --no-install-recommends "cuda-compat-${COMPAT_VERSION}"
+    else
+      echo "Hermetic UMD version from Bazel redistrib json: $BAZEL_UMD_VERSION"
+      # Find the exact package version in apt-cache that matches the Bazel UMD version.
+      EXACT_PKG=$(apt-cache madison cuda-compat-${COMPAT_VERSION} | grep "$BAZEL_UMD_VERSION" | head -n1 | cut -d"|" -f2 | tr -d " " || true)
+
+      if [[ -n "$EXACT_PKG" ]]; then
+        echo "Found exact match for Bazel UMD version $BAZEL_UMD_VERSION: $EXACT_PKG"
+        apt-get install -y --no-install-recommends "cuda-compat-${COMPAT_VERSION}=${EXACT_PKG}"
+      else
+        echo "Warning: Could not find exact apt package match for $BAZEL_UMD_VERSION. Falling back to default cuda-compat-${COMPAT_VERSION}."
+        apt-get install -y --no-install-recommends "cuda-compat-${COMPAT_VERSION}"
+      fi
+    fi
+
+    echo "Updating ld.so.conf.d to include /usr/local/cuda/compat..."
+    echo "/usr/local/cuda/compat" > /etc/ld.so.conf.d/cuda-compat.conf
+    ldconfig
+    echo "Successfully installed and configured cuda-compat-${COMPAT_VERSION}."
+  fi
+fi
+
 # Move extra wheel files somewhere out of the way. This script
 # expects just one wheel file to exist.
 if [[ "$(ls *.whl | wc -l | tr -d ' ')" != "1" ]]; then
@@ -84,14 +145,11 @@ else
   "$python" -m pip install *.whl $TFCI_PYTHON_VERIFY_PIP_INSTALL_ARGS
 fi
 
-if [[ "$TFCI_WHL_IMPORT_TEST_ENABLE" == "1" ]]; then
-  # FIXME: Preventing the error: 
-  #   CUDA Runtime error: cudaErrorInsufficientDriver: 
-  #     CUDA driver version is insufficient for CUDA runtime version
-  if [[ ! "$TFCI" =~ "rbe" ]]; then
-    export CUDA_VISIBLE_DEVICES="-1"
-  fi
+if [[ -d "/usr/local/cuda/compat" ]]; then
+  export LD_LIBRARY_PATH="/usr/local/cuda/compat:${LD_LIBRARY_PATH:-}"
+fi
 
+if [[ "$TFCI_WHL_IMPORT_TEST_ENABLE" == "1" ]]; then
   "$python" -c '
 import tensorflow as tf
 t1=tf.constant([1,2,3,4])
