@@ -1060,6 +1060,13 @@ typedef struct TfLiteContext {
   /// WARNING: This is an experimental interface that is subject to change.
   TfLiteStatus (*ReleaseSubgraphContext)(struct TfLiteContext* context,
                                          int subgraph_index);
+#if !TFLITE_IN_GMSCORE
+  /// Create a array of a given `size` (uninitialized entries).
+  TfLiteIntArray* (*TfLiteIntArrayCreate)(int size);
+
+  /// Free memory of array `a`.
+  void (*TfLiteIntArrayFree)(TfLiteIntArray* a);
+#endif
 } TfLiteContext;
 
 /// `TfLiteOperator` is an external version of `TfLiteRegistration`
