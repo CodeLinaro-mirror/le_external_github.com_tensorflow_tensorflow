@@ -3557,7 +3557,7 @@ absl::Status GpuCompiler::AddConvAndGemmAutotuningPass(
   bool do_not_autotune_cublas =
       debug_options.xla_gpu_experimental_disable_binary_libraries() ||
       debug_options.xla_gpu_autotune_level() == 0 ||
-      debug_options.xla_gpu_exclude_nondeterministic_ops();
+      RequireDeterminism(hlo_module->config());
   // We need to run miopen autotune to decompose unsuported fused convolutions
   // TODO: Merge this with above once we are able to achieve the same with
   // FissionBackend
@@ -3639,6 +3639,11 @@ GpuCompiler::GetAutotunerBackends(
     disabled_autotune_backends.push_back(autotuner::Backend::HIPBLASLT_FISSION);
   }
 
+  if (debug_options.xla_gpu_deterministic_ops() ||
+      debug_options.xla_gpu_exclude_nondeterministic_ops()) {
+    disabled_autotune_backends.push_back(autotuner::Backend::TRITON);
+  }
+
   if (!debug_options.xla_gpu_enable_cublaslt()) {
     disabled_autotune_backends.push_back(autotuner::Backend::CUBLASLT);
     disabled_autotune_backends.push_back(autotuner::Backend::CUBLASLT_FISSION);
@@ -3717,7 +3722,7 @@ absl::Status GpuCompiler::AddFusionAutotuningPass(
   }
   const DebugOptions& debug_options = hlo_module->config().debug_options();
   if (debug_options.xla_gpu_autotune_level() == 0 ||
-      debug_options.xla_gpu_exclude_nondeterministic_ops() ||
+      RequireDeterminism(hlo_module->config()) ||
       !debug_options.xla_gpu_experimental_enable_fusion_autotuner()) {
     return absl::OkStatus();
   }
