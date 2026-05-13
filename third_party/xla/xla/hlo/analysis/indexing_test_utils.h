@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -33,6 +34,7 @@ limitations under the License.
 #include "xla/hlo/analysis/indexing_analysis.h"
 #include "xla/hlo/analysis/indexing_map.h"
 #include "xla/hlo/analysis/indexing_map_serialization.h"
+#include "xla/hlo/analysis/interval.h"
 #include "xla/hlo/analysis/symbolic_expr.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/testlib/hlo_hardware_independent_test_base.h"
@@ -47,6 +49,27 @@ std::pair<size_t, size_t> FindApproximateMismatch(absl::string_view lhs,
 
 // Matches two strings ignoring whitespaces.
 bool ApproximateMatch(absl::string_view lhs, absl::string_view rhs);
+
+// Generates a human readable report of the first mismatch between two strings.
+// Intended to be used only when ApproximateMatch returns false.
+//
+// Example usage inside a custom Matcher:
+// MATCHER_P(MatchToString, expected_string, "") {
+//   const absl::string_view actual_string = arg.ToString();
+//   const auto [expected_index, actual_index] =
+//       FindApproximateMismatch(expected_string, actual_string);
+//   const bool matches = expected_index == expected_string.size() &&
+//                        actual_index == actual_string.size();
+//   if (!matches) {
+//     *result_listener << "\n"
+//                      << GetMismatchReport(expected_index, actual_index,
+//                                           expected_string, actual_string);
+//   }
+//   return matches;
+// }
+std::string GetMismatchReport(int lhs_index, int rhs_index,
+                              absl::string_view expected,
+                              absl::string_view actual);
 
 MATCHER(UndefinedMap, "") { return arg.IsUndefined(); }
 
