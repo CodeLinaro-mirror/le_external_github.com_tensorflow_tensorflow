@@ -11898,8 +11898,7 @@ ENTRY entry {
               AllOf(op::Convolution(lhs, rhs), op::Shape("f32[16,801,1,512]")));
 }
 
-// TODO(b/510244899): fix unnecessary copy instruction insertion for v3.
-TEST_P(SpmdPartitioningTest, NoReshardOnBroadcastDims) {
+TEST_P(SpmdPartitioningAllShardingTest, NoReshardOnBroadcastDims) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -11919,6 +11918,13 @@ ENTRY entry {
     tuple(%copy_add0, %copy_add1, %copy_reshape, %copy_transpose),
     sharding={{devices=[2,1,2,1,2]6,7,2,3,4,5,0,1},{devices=[2,1,2,1,2]7,6,3,2,5,4,0,1},{devices=[2,1,2,1,2]7,6,3,2,5,4,0,1},{devices=[1,1,2,2,2]7,6,3,2,5,4,0,1}}
 })";
+
+  if (GetParam() == ShardingFormatPicker::ShardingType::kNamed) {
+    GTEST_SKIP()
+        << "Skipping for V3/Named Sharding as the format picker generates "
+           "shardings that would be deduped and have size 1 axes removed "
+           "before the SPMD partitioner.";
+  }
 
   TF_ASSERT_OK_AND_ASSIGN(auto module,
                           PartitionComputation(hlo_string, /*num_devices=*/8));
@@ -15065,8 +15071,8 @@ ENTRY entry {
                   op::Shape("bf16[32,256]"))))));
 }
 
-// TODO(b/510244899): fix unnecessary copy instruction insertion for v3.
-TEST_P(SpmdPartitioningTest, GatherOperandPassthroughIndexPassthrough) {
+TEST_P(SpmdPartitioningAllShardingTest,
+       GatherOperandPassthroughIndexPassthrough) {
   const char* const hlo_string = R"(
 HloModule module
 
@@ -17678,7 +17684,7 @@ ENTRY %module {
   EXPECT_FALSE(has_collective) << "PARTITIONED MODULE:\n" << module->ToString();
 }
 
-TEST_P(SpmdPartitioningTest, DynamicUpdateSliceWithReversedSlice) {
+TEST_P(SpmdPartitioningAllShardingTest, DynamicUpdateSliceWithReversedSlice) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -17984,6 +17990,41 @@ ENTRY entry {
   // (resharding across 'y').
   EXPECT_THAT(root,
               op::Copy(op::AllGather(op::CollectivePermute(op::Parameter(0)))));
+}
+
+TEST_F(SpmdPartitioningV3Test, NoReshardOnBroadcastDimsDedupedMeshes) {
+  absl::string_view hlo_string = R"(
+HloModule module
+
+ENTRY entry {
+  %param0 = f32[2,3] parameter(0)
+  %param1 = f32[2,3,20] parameter(1)
+
+  // Dims 0, 2, 4 are broadcasted.
+  %br0 = f32[20,2,20,3,20] broadcast(%param0), dimensions={1,3},
+    sharding={mesh['x'=2,'y'=2,'z'=2] [{'x'}, {}, {'y'}, {}, {'z'}]}
+
+  // Dims 0, 2 are broadcasted.
+  %br1 = f32[20,2,20,3,20] broadcast(%param1), dimensions={1,3,4},
+    sharding={mesh['x'=2,'y'=2,'z'=2] [{'x'}, {}, {'y'}, {}, {'z'}]}
+
+  %add = f32[20,2,20,3,20] add(%br0, %br1),
+    sharding={mesh['x'=2,'y'=2,'z'=2] [{'x'}, {}, {'y'}, {}, {'z'}]}
+
+  // Target sharding has different bindings for broadcast dims 0 and 2.
+  // Swapped 'x' and 'y'.
+  ROOT %copy_add0 = f32[20,2,20,3,20] copy(%add),
+    sharding={mesh['x'=2,'y'=2,'z'=2] [{'y'}, {}, {'x'}, {}, {'z'}]}
+})";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          PartitionComputation(hlo_string, /*num_devices=*/8));
+
+  const auto root = module->entry_computation()->root_instruction();
+
+  // Reshard on copy_add0 only happens on broadcast dims, can be skipped.
+  EXPECT_THAT(root,
+              op::Copy(op::Copy(op::Add(op::Broadcast(_), op::Broadcast(_)))));
 }
 
 }  // namespace
