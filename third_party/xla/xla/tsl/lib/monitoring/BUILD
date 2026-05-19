@@ -40,7 +40,7 @@ package(
         # xprof depends on this package
         "//third_party/xprof:__subpackages__",
         "//tensorflow/python/profiler/internal:__pkg__",
-    ]),
+    ]) + ["//cloud/tpu/multipod/pathways:__subpackages__"],
     licenses = ["notice"],
 )
 
