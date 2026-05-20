@@ -16,6 +16,7 @@ limitations under the License.
 #include "xla/tools/hlo_extractor.h"
 
 #include "xla/hlo/ir/hlo_opcode.h"
+#include "xla/hlo/ir/hlo_schedule.h"
 #include "xla/hlo/transforms/simplifiers/algebraic_simplifier.h"
 #include "xla/hlo/transforms/simplifiers/hlo_dce.h"
 #include "xla/service/call_inliner.h"
@@ -166,6 +167,42 @@ class ExtractionVisitor : public ConstDfsHloVisitorWithDefault {
     // breaking the matches made at above code.
     for (HloInstruction* instruction : extra_created_instructions_) {
       module_->SetAndUniquifyInstrName(instruction, instruction->name());
+    }
+
+    // Preserve any existing schedule.
+    if (old_module_->has_schedule()) {
+      const HloSchedule& old_schedule = old_module_->schedule();
+      HloSchedule new_schedule(module_.get());
+      // If the extracted instruction was scheduled, schedule the entry
+      // computation.
+      if (old_schedule.is_computation_scheduled(root_instruction_->parent())) {
+        new_schedule.set_sequence(
+            module_->entry_computation(),
+            module_->entry_computation()->MakeInstructionPostOrder());
+      }
+      // Schedule any called computations.
+      for (const HloComputation* old_computation :
+           old_module_->computations()) {
+        if (old_schedule.is_computation_scheduled(old_computation)) {
+          if (HloComputation* new_computation =
+                  clone_context_.FindComputation(old_computation);
+              new_computation != nullptr) {
+            HloInstructionSequence new_sequence;
+            for (const HloInstruction* old_instruction :
+                 old_schedule.sequence(old_computation).instructions()) {
+              HloInstruction* new_instruction =
+                  clone_context_.FindInstruction(old_instruction);
+              if (new_instruction != nullptr) {
+                new_sequence.push_back(new_instruction);
+              }
+            }
+            new_schedule.set_sequence(new_computation, new_sequence);
+          }
+        }
+      }
+      if (!new_schedule.empty()) {
+        TF_RETURN_IF_ERROR(module_->set_schedule(std::move(new_schedule)));
+      }
     }
 
     return absl::OkStatus();
