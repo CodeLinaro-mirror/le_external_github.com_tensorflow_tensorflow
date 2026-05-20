@@ -64,7 +64,7 @@ ENTRY sub_entry {
   ASSERT_OK_AND_ASSIGN(auto sub_module,
                        ParseAndReturnVerifiedModule(sub_hlo_string));
 
-  absl::flat_hash_map<std::string, const HloModule*> optimized_modules;
+  absl::flat_hash_map<std::string, HloModule*> optimized_modules;
   optimized_modules["optimized_sub_module"] = sub_module.get();
 
   HloModuleStitcher stitcher(optimized_modules);
@@ -90,6 +90,72 @@ CHECK:   ROOT %[[CALL:.*]] = f32[100]{{.*}} call(%[[PARAM0]]), to_apply=%sub_ent
   EXPECT_TRUE(verifier.Run(main_module.get()).status().ok());
 }
 
+TEST_F(HloModuleStitcherTest, NestedStitchingWorks) {
+  const char* main_hlo_string = R"(
+HloModule main
+
+ENTRY main {
+  param0 = f32[100] parameter(0)
+  ROOT custom-call = f32[100] custom-call(param0), custom_call_target="_xla_multi_module_call", backend_config="sub_module_a", api_version=API_VERSION_TYPED_FFI
+}
+)";
+
+  const char* sub_a_hlo_string = R"(
+HloModule sub_module_a
+
+ENTRY sub_a_entry {
+  param0 = f32[100] parameter(0)
+  ROOT custom-call = f32[100] custom-call(param0), custom_call_target="_xla_multi_module_call", backend_config="sub_module_b", api_version=API_VERSION_TYPED_FFI
+}
+)";
+
+  const char* sub_b_hlo_string = R"(
+HloModule sub_module_b
+
+ENTRY sub_b_entry {
+  param0 = f32[100] parameter(0)
+  ROOT add = f32[100] add(param0, param0)
+}
+)";
+
+  ASSERT_OK_AND_ASSIGN(auto main_module,
+                       ParseAndReturnVerifiedModule(main_hlo_string));
+  ASSERT_OK_AND_ASSIGN(auto sub_a,
+                       ParseAndReturnVerifiedModule(sub_a_hlo_string));
+  ASSERT_OK_AND_ASSIGN(auto sub_b,
+                       ParseAndReturnVerifiedModule(sub_b_hlo_string));
+
+  absl::flat_hash_map<std::string, HloModule*> optimized_modules;
+  optimized_modules["sub_module_a"] = sub_a.get();
+  optimized_modules["sub_module_b"] = sub_b.get();
+
+  HloModuleStitcher stitcher(optimized_modules);
+  EXPECT_THAT(stitcher.Run(main_module.get()),
+              absl_testing::IsOkAndHolds(true));
+
+  const char* expected_hlo = R"(
+CHECK: %sub_b_entry
+CHECK:   %[[PARAM_SUB_B:.*]] = f32[100]{{.*}} parameter(0)
+CHECK:   ROOT %[[ADD:.*]] = f32[100]{{.*}} add(%[[PARAM_SUB_B]], %[[PARAM_SUB_B]])
+
+CHECK: %sub_a_entry
+CHECK:   %[[PARAM_SUB_A:.*]] = f32[100]{{.*}} parameter(0)
+CHECK:   ROOT %[[CALL_B:.*]] = f32[100]{{.*}} call(%[[PARAM_SUB_A]]), to_apply=%sub_b_entry
+
+CHECK: ENTRY %main
+CHECK:   %[[PARAM0:.*]] = f32[100]{{.*}} parameter(0)
+CHECK:   ROOT %[[CALL_A:.*]] = f32[100]{{.*}} call(%[[PARAM0]]), to_apply=%sub_a_entry
+)";
+
+  ASSERT_OK_AND_ASSIGN(bool filecheck_ok,
+                       RunFileCheck(main_module->ToString(), expected_hlo));
+  EXPECT_TRUE(filecheck_ok);
+
+  HloVerifier verifier(/*layout_sensitive=*/false,
+                       /*allow_mixed_precision=*/false);
+  EXPECT_TRUE(verifier.Run(main_module.get()).status().ok());
+}
+
 TEST_F(HloModuleStitcherTest, SubModuleNotFoundReturnsError) {
   const char* main_hlo_string = R"(
 HloModule main
@@ -103,7 +169,7 @@ ENTRY main {
   ASSERT_OK_AND_ASSIGN(auto main_module,
                        ParseAndReturnVerifiedModule(main_hlo_string));
 
-  absl::flat_hash_map<std::string, const HloModule*> optimized_modules;
+  absl::flat_hash_map<std::string, HloModule*> optimized_modules;
 
   HloModuleStitcher stitcher(optimized_modules);
   EXPECT_THAT(stitcher.Run(main_module.get()),
@@ -137,7 +203,7 @@ ENTRY sub_entry {
   ASSERT_OK_AND_ASSIGN(auto sub_module,
                        ParseAndReturnVerifiedModule(sub_hlo_string));
 
-  absl::flat_hash_map<std::string, const HloModule*> optimized_modules;
+  absl::flat_hash_map<std::string, HloModule*> optimized_modules;
   optimized_modules["optimized_sub_module"] = sub_module.get();
 
   HloModuleStitcher stitcher(optimized_modules);
@@ -159,7 +225,7 @@ ENTRY main {
   ASSERT_OK_AND_ASSIGN(auto main_module,
                        ParseAndReturnVerifiedModule(main_hlo_string));
 
-  absl::flat_hash_map<std::string, const HloModule*> optimized_modules;
+  absl::flat_hash_map<std::string, HloModule*> optimized_modules;
   optimized_modules["null_sub_module"] = nullptr;
 
   HloModuleStitcher stitcher(optimized_modules);
@@ -192,7 +258,7 @@ ENTRY sub_entry {
   ASSERT_OK_AND_ASSIGN(auto sub_module,
                        ParseAndReturnVerifiedModule(sub_hlo_string));
 
-  absl::flat_hash_map<std::string, const HloModule*> optimized_modules;
+  absl::flat_hash_map<std::string, HloModule*> optimized_modules;
   optimized_modules["optimized_sub_module"] = sub_module.get();
 
   HloModuleStitcher stitcher(optimized_modules);
@@ -233,7 +299,7 @@ ENTRY sub_entry {
   ASSERT_OK_AND_ASSIGN(auto sub_module,
                        ParseAndReturnVerifiedModule(sub_hlo_string));
 
-  absl::flat_hash_map<std::string, const HloModule*> optimized_modules;
+  absl::flat_hash_map<std::string, HloModule*> optimized_modules;
   optimized_modules["optimized_sub_module"] = sub_module.get();
 
   HloModuleStitcher stitcher(optimized_modules);
@@ -256,5 +322,71 @@ CHECK:   ROOT %[[ROOT_COPY:.*]] = f32[10,20]{1,0} copy(%[[CALL]])
                        /*allow_mixed_precision=*/false);
   EXPECT_TRUE(verifier.Run(main_module.get()).status().ok());
 }
+
+TEST_F(HloModuleStitcherTest, SuccessfullyStitchesNestedSubmodules) {
+  const char* main_hlo_string = R"(
+HloModule main
+
+ENTRY main {
+  param0 = f32[100] parameter(0)
+  ROOT custom-call = f32[100] custom-call(param0), custom_call_target="_xla_multi_module_call", backend_config="outer_sub_module", api_version=API_VERSION_TYPED_FFI
+}
+)";
+
+  const char* outer_sub_hlo_string = R"(
+HloModule outer_sub_module
+
+ENTRY outer_entry {
+  param0 = f32[100] parameter(0)
+  ROOT custom-call = f32[100] custom-call(param0), custom_call_target="_xla_multi_module_call", backend_config="inner_sub_module", api_version=API_VERSION_TYPED_FFI
+}
+)";
+
+  const char* inner_sub_hlo_string = R"(
+HloModule inner_sub_module
+
+ENTRY inner_entry {
+  param0 = f32[100] parameter(0)
+  ROOT add = f32[100] add(param0, param0)
+}
+)";
+
+  ASSERT_OK_AND_ASSIGN(auto main_module,
+                       ParseAndReturnVerifiedModule(main_hlo_string));
+  ASSERT_OK_AND_ASSIGN(auto outer_module,
+                       ParseAndReturnVerifiedModule(outer_sub_hlo_string));
+  ASSERT_OK_AND_ASSIGN(auto inner_module,
+                       ParseAndReturnVerifiedModule(inner_sub_hlo_string));
+
+  absl::flat_hash_map<std::string, HloModule*> optimized_modules;
+  optimized_modules["outer_sub_module"] = outer_module.get();
+  optimized_modules["inner_sub_module"] = inner_module.get();
+
+  HloModuleStitcher stitcher(optimized_modules);
+  EXPECT_THAT(stitcher.Run(main_module.get()), IsOkAndHolds(true));
+
+  const char* expected_hlo = R"(
+CHECK: %inner_entry
+CHECK:   %[[PARAM_INNER:.*]] = f32[100]{{.*}} parameter(0)
+CHECK:   ROOT %[[ADD:.*]] = f32[100]{{.*}} add(%[[PARAM_INNER]], %[[PARAM_INNER]])
+
+CHECK: %outer_entry
+CHECK:   %[[PARAM_OUTER:.*]] = f32[100]{{.*}} parameter(0)
+CHECK:   ROOT %[[CALL_INNER:.*]] = f32[100]{{.*}} call(%[[PARAM_OUTER]]), to_apply=%inner_entry
+
+CHECK: ENTRY %main
+CHECK:   %[[PARAM0:.*]] = f32[100]{{.*}} parameter(0)
+CHECK:   ROOT %[[CALL_OUTER:.*]] = f32[100]{{.*}} call(%[[PARAM0]]), to_apply=%outer_entry
+)";
+
+  ASSERT_OK_AND_ASSIGN(bool filecheck_ok,
+                       RunFileCheck(main_module->ToString(), expected_hlo));
+  EXPECT_TRUE(filecheck_ok);
+
+  HloVerifier verifier(/*layout_sensitive=*/false,
+                       /*allow_mixed_precision=*/false);
+  EXPECT_TRUE(verifier.Run(main_module.get()).status().ok());
+}
+
 }  // namespace
 }  // namespace xla
