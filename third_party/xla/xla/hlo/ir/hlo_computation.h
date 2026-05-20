@@ -714,6 +714,12 @@ class HloComputation {
   std::unique_ptr<HloComputation> Clone(const std::string& suffix = "clone",
                                         HloCloneContext* context = nullptr);
 
+  // Like Clone(), but also returns a schedule for the cloned computation which
+  // matches the original. The original computation must be scheduled.
+  std::pair<std::unique_ptr<HloComputation>, std::vector<HloInstruction*>>
+  CloneScheduled(const std::string& suffix = "clone",
+                 HloCloneContext* context = nullptr);
+
   // Like Clone(), but if an instruction is present in replacement_map, we use
   // the map's value to replace that instruction in the cloned computation.
   //
@@ -734,6 +740,19 @@ class HloComputation {
   // All relevant instructions are cloned, *including* unique_ptr in the
   // `replacements` map.
   std::unique_ptr<HloComputation> CloneWithReplacements(
+      const absl::flat_hash_map<const HloInstruction*,
+                                std::unique_ptr<HloInstruction>>* replacements,
+      absl::Span<const HloInstruction* const> extra_parameters = {},
+      HloCloneContext* context = nullptr, const std::string& suffix = "clone",
+      std::variant<const HloInstruction*,
+                   const absl::Span<HloInstruction* const>>
+          new_root = nullptr);
+
+  // Like CloneWithReplacements(), but also returns a schedule for the cloned
+  // computation which
+  // matches the original. The original computation must be scheduled.
+  std::pair<std::unique_ptr<HloComputation>, std::vector<HloInstruction*>>
+  CloneScheduledWithReplacements(
       const absl::flat_hash_map<const HloInstruction*,
                                 std::unique_ptr<HloInstruction>>* replacements,
       absl::Span<const HloInstruction* const> extra_parameters = {},

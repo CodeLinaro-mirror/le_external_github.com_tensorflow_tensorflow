@@ -1891,6 +1891,14 @@ std::unique_ptr<HloComputation> HloComputation::Clone(
       /*extra_parameters=*/{}, context, suffix);
 }
 
+std::pair<std::unique_ptr<HloComputation>, std::vector<HloInstruction*>>
+HloComputation::CloneScheduled(const std::string& suffix,
+                               HloCloneContext* context) {
+  return CloneScheduledWithReplacements(
+      /*replacements=*/nullptr,
+      /*extra_parameters=*/{}, context, suffix);
+}
+
 std::unique_ptr<HloComputation> HloComputation::CloneWithReplacementPairs(
     std::pair<const HloInstruction*, std::unique_ptr<HloInstruction>> r1,
     HloCloneContext* context, const std::string& suffix) {
@@ -2017,6 +2025,32 @@ std::unique_ptr<HloComputation> HloComputation::CloneWithReplacements(
   }
   return CloneInContext(*context, replacements, extra_parameters, suffix,
                         new_root);
+}
+
+std::pair<std::unique_ptr<HloComputation>, std::vector<HloInstruction*>>
+HloComputation::CloneScheduledWithReplacements(
+    const absl::flat_hash_map<const HloInstruction*,
+                              std::unique_ptr<HloInstruction>>* replacements,
+    absl::Span<const HloInstruction* const> extra_parameters,
+    HloCloneContext* context, const std::string& suffix,
+    std::variant<const HloInstruction*, const absl::Span<HloInstruction* const>>
+        new_root) {
+  std::unique_ptr<HloCloneContext> context_ptr;
+  if (context == nullptr) {
+    context_ptr = std::make_unique<HloCloneContext>(parent(), suffix);
+    context = context_ptr.get();
+  }
+  std::unique_ptr<HloComputation> cloned_computation = CloneInContext(
+      *context, replacements, extra_parameters, suffix, new_root);
+
+  auto original_sequence = context->module()->schedule().sequence(this);
+  std::vector<HloInstruction*> sequence;
+  sequence.reserve(original_sequence.size());
+  for (auto original_instruction : original_sequence.instructions()) {
+    sequence.push_back(context->GetInstruction(original_instruction));
+  }
+
+  return {std::move(cloned_computation), std::move(sequence)};
 }
 
 std::unique_ptr<HloComputation> HloComputation::CloneInContext(
