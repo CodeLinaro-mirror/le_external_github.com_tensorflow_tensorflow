@@ -2251,30 +2251,45 @@ bool UsesCollectiveMemorySpaceFrontendAttr(const HloUse& use) {
   return false;
 }
 
-bool ShouldAddCopyForCollectiveMemorySpace(const HloValue* value,
-                                           const GpuTopology& gpu_topology) {
-  const HloInstruction* inst = value->defining_instruction();
-  const HloModule* module = inst->GetModule();
-  // Add copy if a potential collective-memory-spaced op directly consumes from
-  // module input or a constant as they are allocated by bfc ahead of time and
-  // the alignment might not match collective memory space's requirement.
-  if (absl::c_linear_search(
-          module->entry_computation()->parameter_instructions(), inst) ||
-      (inst->opcode() == HloOpcode::kConstant)) {
-    for (auto& use : value->GetUses()) {
-      if (IsCollectiveMosaicGpuInstruction(*use.instruction) ||
-          (gpu_topology.num_partitions() >
-               gpu_topology.num_devices_per_host() &&
-           IsMosaicWithCollectiveMetadata(*use.instruction)) ||
-          UsesCollectiveMemorySpaceFrontendAttr(use)) {
-        return true;
-      }
+bool DefinesCollectiveMemorySpaceFrontendAttr(const HloValue* value) {
+  const HloInstruction* def = value->defining_instruction();
+  if (def->opcode() != HloOpcode::kCustomCall) {
+    return false;
+  }
+
+  auto attr = def->get_frontend_attribute(kResultsMemorySpacesAttr);
+  if (!attr.has_value()) {
+    return false;
+  }
+
+  auto pairs = ParseIndexMemorySpacePairs(*attr);
+  if (!pairs.ok()) {
+    return false;
+  }
+
+  // Determine the logical result index. If the custom call returns a tuple,
+  // we look at the top-level index (e.g., element 0 or 1 of the tuple).
+  int64_t result_index = 0;
+  if (def->shape().IsTuple()) {
+    if (value->defining_index().empty()) {
+      // The buffer for the tuple pointer array itself is not S1.
+      return false;
+    }
+    result_index = value->defining_index()[0];
+  }
+
+  for (auto [index, memory_space] : *pairs) {
+    if (index == result_index &&
+        memory_space == MemorySpaceColor::kCollective) {
+      return true;
     }
   }
+
   return false;
 }
 
-bool RequiresCollectiveInput(const HloUse& use, const DebugOptions& opts) {
+bool RequiresCollectiveInput(const HloUse& use, const DebugOptions& opts,
+                             const GpuTopology& gpu_topology) {
   const bool is_nccl_buffers_used =
       opts.xla_gpu_enable_nccl_user_buffers() ||
       opts.xla_gpu_experimental_enable_nccl_symmetric_buffers();
@@ -2300,11 +2315,34 @@ bool RequiresCollectiveInput(const HloUse& use, const DebugOptions& opts) {
     return true;
   }
 
+  // Check custom calls with operands_memory_spaces attribute
+  if (UsesCollectiveMemorySpaceFrontendAttr(use)) {
+    return true;
+  }
+
+  // Check Mosaic with nvshmem attribute
+  if (opts.xla_gpu_experimental_enable_nvshmem() &&
+      IsMosaicWithNvshmem(*user)) {
+    return true;
+  }
+
+  // Check Mosaic with multimem_parameters attribute
+  if (IsMosaicWithMultimem(*user)) {
+    return true;
+  }
+
+  // Check Mosaic with uses_xla_collective_metadata attribute
+  if (gpu_topology.num_partitions() > gpu_topology.num_devices_per_host() &&
+      IsMosaicWithCollectiveMetadata(*user)) {
+    return true;
+  }
+
   return false;
 }
 
-bool RequiresCollectiveOutput(const HloInstruction* def,
-                              const DebugOptions& opts) {
+bool RequiresCollectiveOutput(const HloValue* value, const DebugOptions& opts,
+                              const GpuTopology& gpu_topology) {
+  HloInstruction* def = value->defining_instruction();
   const bool is_nccl_buffers_used =
       opts.xla_gpu_enable_nccl_user_buffers() ||
       opts.xla_gpu_experimental_enable_nccl_symmetric_buffers();
@@ -2327,13 +2365,30 @@ bool RequiresCollectiveOutput(const HloInstruction* def,
     return true;
   }
 
+  // Check custom calls with results_memory_spaces attribute
+  if (DefinesCollectiveMemorySpaceFrontendAttr(value)) {
+    return true;
+  }
+
+  // Check Mosaic with nvshmem attribute
+  if (opts.xla_gpu_experimental_enable_nvshmem() && IsMosaicWithNvshmem(*def)) {
+    return true;
+  }
+
+  // Check Mosaic with multimem_parameters attribute
+  if (IsMosaicWithMultimem(*def)) {
+    return true;
+  }
+
+  // Check Mosaic with uses_xla_collective_metadata attribute
+  if (gpu_topology.num_partitions() > gpu_topology.num_devices_per_host() &&
+      IsMosaicWithCollectiveMetadata(*def)) {
+    return true;
+  }
+
   return false;
 }
 
-// TODO: b/482045400: Migrate remaining cases from
-// ShouldAddCopyForCollectiveMemorySpace
-// (IsCollectiveMosaicGpuInstruction, UsesCollectiveMemorySpaceFrontendAttr)
-// to this function from ShouldAddCopyForCollectiveMemorySpace
 void GpuCollectiveBufferAnalysis(
     HloModule* module, const HloAliasAnalysis& alias_analysis,
     std::function<void(HloInstruction*, const ShapeIndex&)> add_index_to_copy,
@@ -2363,7 +2418,7 @@ void GpuCollectiveBufferAnalysis(
       // Check if this buffer value is used by an op which requires collective
       // input memory space.
       for (const HloUse& use : value->GetUses()) {
-        if (RequiresCollectiveInput(use, opts)) {
+        if (RequiresCollectiveInput(use, opts, gpu_topology)) {
           used_by_collective = true;
           break;
         }
@@ -2374,7 +2429,7 @@ void GpuCollectiveBufferAnalysis(
         live_out_values.push_back(value);
       }
 
-      if (RequiresCollectiveOutput(def, opts)) {
+      if (RequiresCollectiveOutput(value, opts, gpu_topology)) {
         defined_by_collective = true;
       }
     }
@@ -2476,9 +2531,7 @@ absl::Status RunPostSchedulingCopyInsertion(HloModule* module,
   // memory space buffers.
   RETURN_IF_ERROR(copy_insertion.CopyInsertion::AddSpecialCaseCopies(
       module, /*execution_threads=*/{},
-      [&gpu_topology](const HloValue* value) {
-        return ShouldAddCopyForCollectiveMemorySpace(value, gpu_topology);
-      },
+      /*custom_buffer_analysis=*/
       [&gpu_topology](HloModule* mod, const HloAliasAnalysis& alias_analysis,
                       std::function<void(HloInstruction*, const ShapeIndex&)>
                           add_index_to_copy) {

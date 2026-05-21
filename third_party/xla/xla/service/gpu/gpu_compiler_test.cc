@@ -1929,8 +1929,7 @@ XLA_FFI_DEFINE_HANDLER(
         .Arg<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>());
 
-TEST_F(GpuCompilerTest,
-       ParametersUsedByCollectiveMosaicShouldBeCopiedToCollectiveMemory) {
+TEST_F(GpuCompilerTest, MosaicMultimemRequiresSymmetricMemoryCopies) {
   if (device_description().gpu_compute_capability().IsRocm()) {
     GTEST_SKIP() << "Mosaic GPU is not supported on ROCm.";
   }
@@ -1945,17 +1944,16 @@ TEST_F(GpuCompilerTest,
   constexpr absl::string_view kHlo = R"(
     HloModule test
     ENTRY main {
-      parameter_used_by_mosaic_with_nvshmem = s32[1] parameter(0)
-      parameter_used_by_mosaic_with_multimem = s32[1] parameter(1)
-      parameter_used_by_non_collective_mosaic = s32[1] parameter(2)
+      p_multimem = s32[1] parameter(0)
+      p_non_coll = s32[1] parameter(1)
 
-      multimem_result = (s32[1]{0}) custom-call(%parameter_used_by_mosaic_with_multimem), custom_call_target="mosaic_gpu_v2", backend_config={xla_multimem_parameters = "0"}, api_version=API_VERSION_TYPED_FFI
+      cc_multimem = (s32[1]{0}) custom-call(p_multimem), custom_call_target="mosaic_gpu_v2", backend_config={xla_multimem_parameters = "0"}, api_version=API_VERSION_TYPED_FFI
+      res_multimem = s32[1] get-tuple-element(cc_multimem), index=0
 
-      nvshmem_result = (s32[1]{0}) custom-call(%parameter_used_by_mosaic_with_nvshmem), custom_call_target="mosaic_gpu_v2", backend_config={module="nvshmem"}, api_version=API_VERSION_TYPED_FFI
+      cc_non_coll = (s32[1]{0}) custom-call(p_non_coll), custom_call_target="mosaic_gpu_v2", api_version=API_VERSION_TYPED_FFI
+      res_non_coll = s32[1] get-tuple-element(cc_non_coll), index=0
 
-      non_collective_result = (s32[1]{0}) custom-call(%parameter_used_by_non_collective_mosaic), custom_call_target="mosaic_gpu_v2", api_version=API_VERSION_TYPED_FFI
-
-      ROOT result = tuple(multimem_result, nvshmem_result, non_collective_result)
+      ROOT result = tuple(res_multimem, res_non_coll)
     }
   )";
   HloModuleConfig config = GetModuleConfigForTest();
@@ -1965,13 +1963,35 @@ TEST_F(GpuCompilerTest,
                        GetOptimizedModuleForExecutable(kHlo, config));
 
   const HloModule* optimized_module = optimized_module_and_executable.first;
-  const char* kExpected = R"(
-    // CHECK:  %copy.1 = s32[1]{0} copy(%parameter_used_by_mosaic_with_nvshmem)
-    // CHECK:  %copy = s32[1]{0:S(1)} copy(%parameter_used_by_mosaic_with_multimem)
-    // CHECK:  %multimem_result = (s32[1]{0:S(1)}) custom-call(%copy), custom_call_target="mosaic_gpu_v2", api_version=API_VERSION_TYPED_FFI, backend_config={xla_multimem_parameters = "0"}
-    // CHECK:  %nvshmem_result = (s32[1]{0}) custom-call(%copy.1), custom_call_target="mosaic_gpu_v2", api_version=API_VERSION_TYPED_FFI, backend_config={module="nvshmem"}
-    // CHECK:  %non_collective_result = (s32[1]{0}) custom-call(%parameter_used_by_non_collective_mosaic), custom_call_target="mosaic_gpu_v2", api_version=API_VERSION_TYPED_FFI
-  )";
+
+  constexpr absl::string_view kExpected = R"(
+    // CHECK-DAG: [[P_MULTI:%[^ ]+]] = s32[1]{0} parameter(0)
+    // CHECK-DAG: [[P_NON:%[^ ]+]] = s32[1]{0} parameter(1)
+
+    // Multimem input parameters are copied to S1
+    // CHECK-DAG: [[COPY_MULTI_IN:%copy[^ ]*]] = s32[1]{0:S(1)} copy([[P_MULTI]])
+
+    // CHECK-DAG: [[CC_MULTI:%[^ ]+]] = (s32[1]{0:S(1)}) custom-call([[COPY_MULTI_IN]]){{.*}}backend_config={xla_multimem_parameters = "0"}
+    // CHECK-DAG: [[CC_NON:%[^ ]+]] = (s32[1]{0}) custom-call([[P_NON]])
+
+    // Extracting from the 1-element tuples returned by custom calls (all index=0)
+    // CHECK-DAG: [[GTE_MULTI:%[^ ]+]] = s32[1]{0:S(1)} get-tuple-element([[CC_MULTI]]), index=0
+    // CHECK-DAG: [[GTE_NON:%[^ ]+]] = s32[1]{0} get-tuple-element([[CC_NON]]), index=0
+
+    // XLA packs an intermediate tuple
+    // CHECK-DAG: [[INTER_TUPLE:%[^ ]+]] = (s32[1]{0:S(1)}, s32[1]{0}) tuple([[GTE_MULTI]], [[GTE_NON]])
+
+    // XLA unpacks the intermediate tuple to perform the isolation copies
+    // CHECK-DAG: [[GTE_OUT_MULTI:%[^ ]+]] = s32[1]{0:S(1)} get-tuple-element([[INTER_TUPLE]]), index=0
+    // CHECK-DAG: [[GTE_OUT_NON:%[^ ]+]] = s32[1]{0} get-tuple-element([[INTER_TUPLE]]), index=1
+
+    // The S1 -> S0 isolation copies
+    // CHECK-DAG: [[COPY_OUT_MULTI:%copy[^ ]*]] = s32[1]{0} copy([[GTE_OUT_MULTI]])
+
+    // The final ROOT is pure S0
+    // CHECK: ROOT %tuple{{.*}} = (s32[1]{0}, s32[1]{0}) tuple([[COPY_OUT_MULTI]], [[GTE_OUT_NON]])
+    )";
+
   EXPECT_THAT(RunFileCheck(
                   optimized_module->ToString(HloPrintOptions{}
                                                  .set_print_operand_shape(false)
@@ -1980,9 +2000,79 @@ TEST_F(GpuCompilerTest,
               absl_testing::IsOkAndHolds(true));
 }
 
-TEST_F(
-    GpuCompilerTest,
-    ParametersOfCollectiveMosaicShouldBeCopiedToCollectiveMemoryWithMultiHost) {
+class MosaicNvshmemCopyTest : public GpuCompilerTest,
+                              public ::testing::WithParamInterface<bool> {};
+
+TEST_P(MosaicNvshmemCopyTest, IsolatesSymmetricMemoryBoundaries) {
+  if (device_description().gpu_compute_capability().IsRocm()) {
+    GTEST_SKIP() << "Mosaic GPU is not supported on ROCm.";
+  }
+  XLA_FFI_Handler_Bundle bundle = {
+      /*instantiate=*/nullptr,
+      /*prepare=*/nullptr,
+      /*initialize=*/nullptr,
+      /*execute=*/kMosaicGpuExecute,
+  };
+  xla::ffi::Ffi::RegisterStaticHandler(ffi::GetXlaFfiApi(), "mosaic_gpu_v2",
+                                       "CUDA", bundle);
+  constexpr absl::string_view kHlo = R"(
+    HloModule test
+    ENTRY main {
+      p_nvshmem = s32[1] parameter(0)
+      cc_nvshmem = (s32[1]{0}) custom-call(p_nvshmem), custom_call_target="mosaic_gpu_v2", backend_config={module="nvshmem"}, api_version=API_VERSION_TYPED_FFI
+      ROOT res_nvshmem = s32[1] get-tuple-element(cc_nvshmem), index=0
+    }
+  )";
+
+  bool enable_nvshmem = GetParam();
+  HloModuleConfig config = GetModuleConfigForTest();
+  DebugOptions& opts = config.mutable_debug_options();
+  opts.set_xla_gpu_experimental_enable_nvshmem(enable_nvshmem);
+
+  std::pair<const HloModule*, std::unique_ptr<OpaqueExecutable>>
+      optimized_module_and_executable;
+  ASSERT_OK_AND_ASSIGN(optimized_module_and_executable,
+                       GetOptimizedModuleForExecutable(kHlo, config));
+
+  const HloModule* optimized_module = optimized_module_and_executable.first;
+
+  constexpr absl::string_view kS1 = R"(
+    // CHECK: [[P_NV:%[^ ]+]] = s32[1]{0} parameter(0)
+    // CHECK: [[COPY_NV_IN:%copy[^ ]*]] = s32[1]{0:S(1)} copy([[P_NV]])
+    // CHECK: [[CC_NV:%[^ ]+]] = (s32[1]{0:S(1)}) custom-call([[COPY_NV_IN]]){{.*}}backend_config={module="nvshmem"}
+    // CHECK: [[GTE_NV:%[^ ]+]] = s32[1]{0:S(1)} get-tuple-element([[CC_NV]]), index=0
+    // CHECK: ROOT [[COPY_OUT_NV:%copy[^ ]*]] = s32[1]{0} copy([[GTE_NV]])
+    )";
+
+  constexpr absl::string_view kS0 = R"(
+    // CHECK: [[P_NV:%[^ ]+]] = s32[1]{0} parameter(0)
+    // CHECK: [[CC_NV:%[^ ]+]] = (s32[1]{0}) custom-call([[P_NV]]){{.*}}backend_config={module="nvshmem"}
+    // CHECK: ROOT [[GTE_NV:%[^ ]+]] = s32[1]{0} get-tuple-element([[CC_NV]]), index=0
+    )";
+
+  const absl::string_view kExpected = [&]() {
+    if (enable_nvshmem) {
+      return kS1;
+    }
+    return kS0;
+  }();
+
+  EXPECT_THAT(RunFileCheck(
+                  optimized_module->ToString(HloPrintOptions{}
+                                                 .set_print_operand_shape(false)
+                                                 .set_print_metadata(false)),
+                  kExpected),
+              absl_testing::IsOkAndHolds(true));
+}
+
+INSTANTIATE_TEST_SUITE_P(MosaicNvshmemCopyTestSuite, MosaicNvshmemCopyTest,
+                         ::testing::Bool(),
+                         [](const ::testing::TestParamInfo<bool>& info) {
+                           return info.param ? "enable_nvshmem_true"
+                                             : "enable_nvshmem_false";
+                         });
+
+TEST_F(GpuCompilerTest, MosaicCollectiveMetadataRequiresSymmetricMemoryCopies) {
   if (device_description().gpu_compute_capability().IsRocm()) {
     GTEST_SKIP() << "Mosaic GPU is not supported on ROCm.";
   }
@@ -1999,11 +2089,11 @@ TEST_F(
     ENTRY main {
       p = s32[1] parameter(0)
       mosaic = (s32[1]{0}) custom-call(p), custom_call_target="mosaic_gpu_v2", api_version=API_VERSION_TYPED_FFI, backend_config={uses_xla_collective_metadata=true}
-      ROOT result = tuple(mosaic)
+      ROOT res = s32[1]{0} get-tuple-element(mosaic), index=0
     }
   )";
   HloModuleConfig config = GetModuleConfigForTest();
-  config.set_num_partitions(1);
+  config.set_num_partitions(16);
   ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(kHlo, config));
   Compiler::CompileOptions compile_options;
   compile_options.gpu_topology =
@@ -2016,9 +2106,13 @@ TEST_F(
                                               nullptr, compile_options));
   const HloModule& final_module =
       tensorflow::down_cast<GpuExecutable*>(executable.get())->module();
-  const char* kExpected = R"(
-    // CHECK:  %copy = s32[1]{0:S(1)} copy(%p)
-    // CHECK:  %mosaic = (s32[1]{0:S(1)}) custom-call(%copy), custom_call_target="mosaic_gpu_v2", api_version=API_VERSION_TYPED_FFI, backend_config={uses_xla_collective_metadata=true}
+
+  constexpr absl::string_view kExpected = R"(
+    // CHECK: [[P:%[^ ]+]] = s32[1]{0} parameter(0)
+    // CHECK: [[COPY_IN:%copy[^ ]*]] = s32[1]{0:S(1)} copy([[P]])
+    // CHECK: [[MOSAIC:%[^ ]+]] = (s32[1]{0:S(1)}) custom-call([[COPY_IN]]){{.*}}backend_config={uses_xla_collective_metadata=true}
+    // CHECK: [[GTE:%[^ ]+]] = s32[1]{0:S(1)} get-tuple-element([[MOSAIC]]), index=0
+    // CHECK: ROOT [[COPY_OUT:%copy[^ ]*]] = s32[1]{0} copy([[GTE]])
   )";
   EXPECT_THAT(
       RunFileCheck(final_module.ToString(HloPrintOptions{}
@@ -2799,5 +2893,151 @@ ENTRY entry {
 
   EXPECT_GT(MultiModuleDriver::GetCompileCount(), 0);
 }
+
+static absl::Status MockCustomCallExecuteF32(
+    ffi::BufferR1<F32> src, ffi::Result<ffi::BufferR1<F32>> dst) {
+  return absl::OkStatus();
+}
+
+XLA_FFI_DEFINE_HANDLER(
+    kMockCustomCallExecuteF32, MockCustomCallExecuteF32,
+    ffi::Ffi::Bind().Arg<ffi::BufferR1<F32>>().Ret<ffi::BufferR1<F32>>());
+
+XLA_FFI_REGISTER_HANDLER(ffi::GetXlaFfiApi(), "__xla_test_mock_custom_call_f32",
+                         "gpu",
+                         XLA_FFI_Handler_Bundle{
+                             /*instantiate=*/nullptr,
+                             /*prepare=*/nullptr,
+                             /*initialize=*/nullptr,
+                             /*execute=*/kMockCustomCallExecuteF32,
+                         });
+
+class FrontendAttributesMemorySpaceTest
+    : public GpuCompilerTest,
+      public ::testing::WithParamInterface<bool> {};
+
+TEST_P(FrontendAttributesMemorySpaceTest, DirectUsage) {
+  constexpr absl::string_view kHloTemplate = R"(
+    HloModule test$0
+
+    ENTRY test_computation {
+      p = f32[16] parameter(0)
+      ROOT cc = f32[16] custom-call(p),
+        custom_call_target="__xla_test_mock_custom_call_f32",
+        api_version=API_VERSION_TYPED_FFI,
+        frontend_attributes={
+          operands_memory_spaces="{0:1}",
+          results_memory_spaces="{0:1}"
+        }
+    }
+  )";
+
+  bool use_input_output_alias = GetParam();
+  // Inject the alias layout configuration into the HLO
+  std::string hlo_text = absl::StrReplaceAll(
+      kHloTemplate,
+      {{"$0",
+        use_input_output_alias ? ", input_output_alias={ {}: (0, {}) }" : ""}});
+
+  HloModuleConfig config = GetModuleConfigForTest();
+
+  std::pair<const HloModule*, std::unique_ptr<OpaqueExecutable>>
+      optimized_module_and_executable;
+  ASSERT_OK_AND_ASSIGN(optimized_module_and_executable,
+                       GetOptimizedModuleForExecutable(hlo_text, config));
+
+  const HloModule* optimized_module = optimized_module_and_executable.first;
+
+  // Regardless of the input_output_alias it should be two copies
+  constexpr absl::string_view expected_check = R"(
+    // CHECK: %p = f32[16]{0} parameter(0)
+    // CHECK: [[COPY0:%copy[0-9.]*]] = f32[16]{0:S(1)} copy(%p)
+    // CHECK: %cc = f32[16]{0:S(1)} custom-call([[COPY0]])
+    // CHECK: ROOT %copy{{.*}} = f32[16]{0} copy(%cc)
+  )";
+
+  EXPECT_THAT(RunFileCheck(
+                  optimized_module->ToString(HloPrintOptions{}
+                                                 .set_print_operand_shape(false)
+                                                 .set_print_metadata(false)),
+                  expected_check),
+              absl_testing::IsOkAndHolds(true));
+}
+
+TEST_P(FrontendAttributesMemorySpaceTest, LoopUsage) {
+  constexpr absl::string_view kHloTemplate = R"(
+    HloModule test$0
+
+    while_condition {
+      params = (s32[], f32[16]) parameter(0)
+      loop_counter = s32[] get-tuple-element(params), index=0
+      limit = s32[] constant(3)
+      ROOT result = pred[] compare(loop_counter, limit), direction=LT
+    }
+
+    while_body {
+      params = (s32[], f32[16]) parameter(0)
+      loop_counter = s32[] get-tuple-element(params), index=0
+      cc_input = f32[16] get-tuple-element(params), index=1
+      cc = f32[16] custom-call(cc_input),
+        custom_call_target="__xla_test_mock_custom_call_f32",
+        api_version=API_VERSION_TYPED_FFI,
+        frontend_attributes={
+          operands_memory_spaces="{0:1}",
+          results_memory_spaces="{0:1}"
+        }
+      new_loop_counter = s32[] add(loop_counter, s32[] constant(1))
+      ROOT result = (s32[], f32[16]) tuple(new_loop_counter, cc)
+    }
+
+    ENTRY entry_computation {
+      init_loop_counter = s32[] constant(0)
+      input = f32[16] parameter(0)
+      while_init = tuple(init_loop_counter, input)
+      while = (s32[], f32[16]) while(while_init), condition=while_condition, body=while_body
+      ROOT result = get-tuple-element(while), index=1
+    }
+  )";
+
+  bool use_input_output_alias = GetParam();
+  // Inject the alias layout configuration into the HLO
+  std::string hlo_text = absl::StrReplaceAll(
+      kHloTemplate,
+      {{"$0",
+        use_input_output_alias ? ", input_output_alias={ {}: (0, {}) }" : ""}});
+
+  HloModuleConfig config = GetModuleConfigForTest();
+
+  std::pair<const HloModule*, std::unique_ptr<OpaqueExecutable>>
+      optimized_module_and_executable;
+  ASSERT_OK_AND_ASSIGN(optimized_module_and_executable,
+                       GetOptimizedModuleForExecutable(hlo_text, config));
+
+  const HloModule* optimized_module = optimized_module_and_executable.first;
+
+  // Regardless of the input_output_alias it should be two copies
+  constexpr absl::string_view expected_check = R"(
+    // CHECK: %input = f32[16]{0} parameter(0)
+    // CHECK: [[COPY0:%copy[0-9.]*]] = f32[16]{0:S(1)} copy(%input)
+    // CHECK: %tuple = (s32[], f32[16]{0:S(1)}) tuple(%copy{{.*}}, [[COPY0]])
+    // CHECK: %while = (s32[], f32[16]{0:S(1)}) while(%tuple)
+    // CHECK: [[RESULT:%result[0-9.]*]] = f32[16]{0:S(1)} get-tuple-element(%while), index=1
+    // CHECK: ROOT %copy{{.*}} = f32[16]{0} copy([[RESULT]])
+  )";
+
+  EXPECT_THAT(RunFileCheck(
+                  optimized_module->ToString(HloPrintOptions{}
+                                                 .set_print_operand_shape(false)
+                                                 .set_print_metadata(false)),
+                  expected_check),
+              absl_testing::IsOkAndHolds(true));
+}
+
+INSTANTIATE_TEST_SUITE_P(FrontendAttributesMemorySpace,
+                         FrontendAttributesMemorySpaceTest, ::testing::Bool(),
+                         [](const ::testing::TestParamInfo<bool>& info) {
+                           return info.param ? "with_alias" : "no_alias";
+                         });
+
 }  // namespace gpu
 }  // namespace xla
