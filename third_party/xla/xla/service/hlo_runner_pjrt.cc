@@ -162,6 +162,8 @@ ExecuteOptions UpdateOrCreateDefaultExecuteOptions(
   } else {
     out_options = *in_options;
   }
+  out_options.eval_literal_handler =
+      replicated_execute_options.eval_literal_handler;
   return out_options;
 }
 

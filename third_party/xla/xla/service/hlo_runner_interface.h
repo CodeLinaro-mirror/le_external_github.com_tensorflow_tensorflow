@@ -17,6 +17,7 @@ limitations under the License.
 #define XLA_SERVICE_HLO_RUNNER_INTERFACE_H_
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -211,6 +212,9 @@ class HloRunnerInterface {
     // The seed to use for PRNGs during execution. Keeping with XLA convention,
     // the default value of 0 represents a random seed.
     int64_t seed = 0;
+
+    std::function<void(const HloInstruction*, const LiteralSlice&)>
+        eval_literal_handler;
   };
 
   HloRunnerInterface() = default;

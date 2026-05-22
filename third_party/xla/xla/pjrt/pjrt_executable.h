@@ -39,6 +39,7 @@ limitations under the License.
 #include "xla/ffi/execution_context.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/layout.h"
+#include "xla/literal.h"
 #include "xla/pjrt/compiled_memory_stats.h"
 #include "xla/pjrt/pjrt_abi_version.h"
 #include "xla/pjrt/pjrt_common.h"
@@ -248,6 +249,8 @@ struct ExecuteOptions {
   // These callbacks must outlive the execution.
   absl::Span<const std::vector<SendCallback>> send_callbacks;
   absl::Span<const std::vector<RecvCallback>> recv_callbacks;
+  std::function<void(const HloInstruction*, const LiteralSlice&)>
+      eval_literal_handler;
 
   // If true, send callbacks are passed PjRtChunks in major-to-minor layout, and
   // recv functions should pass major-to-minor chunks to
