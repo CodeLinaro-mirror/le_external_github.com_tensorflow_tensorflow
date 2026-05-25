@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -29,10 +30,12 @@ limitations under the License.
 namespace se = stream_executor;
 
 TEST(HostStream, EnforcesFIFOOrder) {
-  se::Platform* platform =
-      se::PlatformManager::PlatformWithName("Host").value();
-  se::StreamExecutor* executor = platform->ExecutorForDevice(0).value();
-  TF_ASSERT_OK_AND_ASSIGN(auto stream, executor->CreateStream());
+  TF_ASSERT_OK_AND_ASSIGN(se::Platform * platform,
+                          se::PlatformManager::PlatformWithName("Host"));
+  TF_ASSERT_OK_AND_ASSIGN(se::StreamExecutor * executor,
+                          platform->ExecutorForDevice(0));
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<se::Stream> stream,
+                          executor->CreateStream());
   absl::Mutex mu;
   int expected = 0;
   bool ok = true;
@@ -55,7 +58,8 @@ TEST(HostStream, Memset32) {
                           se::PlatformManager::PlatformWithName("Host"));
   TF_ASSERT_OK_AND_ASSIGN(se::StreamExecutor * executor,
                           platform->ExecutorForDevice(0));
-  TF_ASSERT_OK_AND_ASSIGN(auto stream, executor->CreateStream());
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<se::Stream> stream,
+                          executor->CreateStream());
 
   uint32_t pattern = 0x12345678;
   std::vector<uint32_t> buffer(4, 0);
@@ -69,4 +73,28 @@ TEST(HostStream, Memset32) {
   for (int i = 0; i < 4; ++i) {
     EXPECT_EQ(buffer[i], pattern);
   }
+}
+
+TEST(HostStream, WaitFor) {
+  TF_ASSERT_OK_AND_ASSIGN(se::Platform * platform,
+                          se::PlatformManager::PlatformWithName("Host"));
+  TF_ASSERT_OK_AND_ASSIGN(se::StreamExecutor * executor,
+                          platform->ExecutorForDevice(0));
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<se::Stream> stream1,
+                          executor->CreateStream());
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<se::Stream> stream2,
+                          executor->CreateStream());
+
+  absl::Mutex mu;
+  bool stream1_done = false;
+  TF_ASSERT_OK(stream1->DoHostCallback([&mu, &stream1_done]() {
+    absl::MutexLock lock(mu);
+    stream1_done = true;
+  }));
+
+  TF_ASSERT_OK(stream2->WaitFor(stream1.get()));
+  TF_ASSERT_OK(stream2->BlockHostUntilDone());
+
+  absl::MutexLock lock(mu);
+  EXPECT_TRUE(stream1_done);
 }

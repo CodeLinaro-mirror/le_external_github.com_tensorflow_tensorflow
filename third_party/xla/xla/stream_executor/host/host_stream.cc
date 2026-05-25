@@ -17,9 +17,9 @@ limitations under the License.
 // the HostExecutor implementation.
 #include "xla/stream_executor/host/host_stream.h"
 
-#include <string.h>
-
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <utility>
 
@@ -43,17 +43,14 @@ HostStream::~HostStream() { parent()->DeallocateStream(this); }
 absl::Status HostStream::Memcpy(DeviceAddressBase* gpu_dst,
                                 const DeviceAddressBase& gpu_src,
                                 uint64_t size) {
-  void* dst_mem = gpu_dst->opaque();
-  void* src_mem = const_cast<void*>(gpu_src.opaque());
-  memcpy(dst_mem, src_mem, size);
+  memcpy(gpu_dst->opaque(), gpu_src.opaque(), size);
   return absl::OkStatus();
 }
 
 absl::Status HostStream::Memcpy(void* host_dst,
                                 const DeviceAddressBase& gpu_src,
                                 uint64_t size) {
-  void* src_mem = const_cast<void*>(gpu_src.opaque());
-  memcpy(host_dst, src_mem, size);
+  memcpy(host_dst, gpu_src.opaque(), size);
   return absl::OkStatus();
 }
 
@@ -70,10 +67,8 @@ absl::Status HostStream::Memset32(DeviceAddressBase* location, uint32_t pattern,
     return absl::InvalidArgumentError(
         "Memset32 requires size to be a multiple of 4 bytes.");
   }
-  char* dst = static_cast<char*>(location->opaque());
-  for (uint64_t i = 0; i < size; i += sizeof(uint32_t)) {
-    memcpy(dst + i, &pattern, sizeof(uint32_t));
-  }
+  uint32_t* dst = static_cast<uint32_t*>(location->opaque());
+  std::fill(dst, dst + size / sizeof(uint32_t), pattern);
   return absl::OkStatus();
 }
 
@@ -83,17 +78,19 @@ absl::Status HostStream::MemZero(DeviceAddressBase* location, uint64_t size) {
   return absl::OkStatus();
 }
 
-absl::Status HostStream::WaitFor(Stream* other) { return absl::OkStatus(); }
+absl::Status HostStream::WaitFor(Stream* other) {
+  return other->BlockHostUntilDone();
+}
 
 absl::Status HostStream::WaitFor(Event* event) {
-  std::shared_ptr<absl::Notification> notification =
+  const std::shared_ptr<absl::Notification>& notification =
       static_cast<HostEvent*>(event)->notification();
   notification->WaitForNotification();
   return absl::OkStatus();
 }
 
 absl::Status HostStream::RecordEvent(Event* event) {
-  std::shared_ptr<absl::Notification> notification =
+  const std::shared_ptr<absl::Notification>& notification =
       static_cast<HostEvent*>(event)->notification();
   CHECK(!notification->HasBeenNotified());
   notification->Notify();
