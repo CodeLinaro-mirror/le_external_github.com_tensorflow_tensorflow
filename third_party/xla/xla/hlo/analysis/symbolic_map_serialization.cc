@@ -279,7 +279,8 @@ class SymbolicExprParserImpl {
         }
         lhs =
             CreateSymbolicBinaryOp(SymbolicExprType::kMul, lhs, rhs, context_);
-      } else if (absl::ConsumePrefix(&remaining_str_, "floordiv") ||
+      } else if (absl::ConsumePrefix(&remaining_str_, "/") ||
+                 absl::ConsumePrefix(&remaining_str_, "floordiv") ||
                  absl::ConsumePrefix(&remaining_str_, "floorDiv")) {
         SymbolicExpr rhs = ParseFactor();
         if (!rhs) {
@@ -608,7 +609,7 @@ std::string GetBinaryOpString(SymbolicExprType type) {
     case SymbolicExprType::kMul:
       return "*";
     case SymbolicExprType::kFloorDiv:
-      return "floordiv";
+      return "/";
     case SymbolicExprType::kCeilDiv:
       return "ceildiv";
     case SymbolicExprType::kMod:
