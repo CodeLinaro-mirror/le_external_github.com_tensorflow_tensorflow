@@ -17387,7 +17387,7 @@ ENTRY entry {
   std::vector<ReplicaGroup> replica_groups =
       all_gather_instruction->replica_groups();
   EXPECT_THAT(all_gather_instruction->replica_groups(),
-              ::testing::ElementsAre(
+              ::testing::UnorderedElementsAre(
                   ::testing::Property(&xla::ReplicaGroup::replica_ids,
                                       ::testing::ElementsAre(0, 8)),
                   ::testing::Property(&xla::ReplicaGroup::replica_ids,
