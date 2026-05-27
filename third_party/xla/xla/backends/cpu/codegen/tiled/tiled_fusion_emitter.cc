@@ -61,6 +61,7 @@ limitations under the License.
 #include "xla/xla_data.pb.h"
 
 namespace xla::cpu {
+namespace {
 
 int64_t PerTileCacheLines(const TiledHloInstruction& inst) {
   const Shape& shape = inst.hlo()->shape();
@@ -145,34 +146,7 @@ absl::StatusOr<Tiling> GetTiling(
   return Tiling(tile_mapping);
 }
 
-// We don't currently support sub-byte types in the tiled CPU emitter.
-bool IsSupportedTilingType(PrimitiveType type) {
-  if (type == PRED) {
-    return true;
-  }
-
-  if (primitive_util::BitWidth(type) < 8) {
-    return false;
-  }
-
-  if (primitive_util::IsUnsignedIntegralType(type)) {
-    return false;
-  }
-
-  if (primitive_util::IsComplexType(type)) {
-    return false;
-  }
-
-  // Some f8 types are not supported by the emitter, just don't support any of
-  // them for now.
-  if (primitive_util::IsF8Type(type) || primitive_util::IsMXType(type)) {
-    return false;
-  }
-
-  return true;
-}
-
-static bool IsSupportedShape(const Shape& shape) {
+bool IsSupportedShape(const Shape& shape) {
   bool is_supported = true;
   ShapeUtil::ForEachSubshape(
       shape, [&](const Shape& subshape, const ShapeIndex& index) {
@@ -186,7 +160,7 @@ static bool IsSupportedShape(const Shape& shape) {
   return is_supported;
 }
 
-static bool IsSupportedInstruction(const HloInstruction& inst) {
+bool IsSupportedInstruction(const HloInstruction& inst) {
   HloOpcode opcode = inst.opcode();
   switch (opcode) {
     case HloOpcode::kBitcast:
@@ -222,13 +196,13 @@ absl::StatusOr<SymbolicTileAnalysis> GetSymbolicTileAnalysis(
   // So limit to low-rank tensors to prevent excess memory usage and hangs
   constexpr int kMaxRank = 8;
   for (const xla::HloInstruction* instruction : fusion.fused_instructions()) {
-    if (instruction->shape().dimensions_size() > kMaxRank) {
+    if (instruction->shape().dimensions().size() > kMaxRank) {
       return Internal(
           "Unsupported fusion in EmitGeneric: tensor rank too large");
     }
 
     for (const xla::HloInstruction* operand : instruction->operands()) {
-      if (operand->shape().dimensions_size() > kMaxRank) {
+      if (operand->shape().dimensions().size() > kMaxRank) {
         return Internal(
             "Unsupported fusion in EmitGeneric: tensor rank too large");
       }
@@ -279,7 +253,7 @@ absl::Status IsSupportedTiledFusion(const HloFusionInstruction& fusion) {
   return absl::OkStatus();
 }
 
-absl::StatusOr<KernelDefinition<MlirKernelSource>> EmitTiledFusionKernel(
+absl::StatusOr<KernelDefinition<MlirKernelSource>> EmitTiledFusionKernelImpl(
     mlir::MLIRContext& context, const HloFusionInstruction& fusion,
     const BufferAssignment* buffer_assignment, absl::string_view name,
     int64_t num_work_groups, const SymbolicTileAnalysis& symbolic_tile_analysis,
@@ -317,6 +291,54 @@ absl::StatusOr<KernelDefinition<MlirKernelSource>> EmitTiledFusionKernel(
                                            work_dimensions));
   return KernelDefinition<MlirKernelSource>(
       std::move(kernel_spec), MlirKernelSource(std::move(module)));
+}
+
+}  // namespace
+
+// We don't currently support sub-byte types in the tiled CPU emitter.
+bool IsSupportedTilingType(PrimitiveType type) {
+  if (type == PRED) {
+    return true;
+  }
+
+  if (primitive_util::BitWidth(type) < 8) {
+    return false;
+  }
+
+  if (primitive_util::IsUnsignedIntegralType(type)) {
+    return false;
+  }
+
+  if (primitive_util::IsComplexType(type)) {
+    return false;
+  }
+
+  // Some f8 types are not supported by the emitter, just don't support any of
+  // them for now.
+  if (primitive_util::IsF8Type(type) || primitive_util::IsMXType(type)) {
+    return false;
+  }
+
+  return true;
+}
+
+absl::StatusOr<KernelDefinition<MlirKernelSource>> EmitTiledFusionKernel(
+    mlir::MLIRContext& context, const HloFusionInstruction& fusion,
+    const BufferAssignment* buffer_assignment, absl::string_view name,
+    int64_t num_work_groups) {
+  if (!IsSupportedTiledFusion(fusion).ok()) {
+    return absl::NotFoundError(
+        "Fusion is not supported by the tiled CPU emitter.");
+  }
+
+  ASSIGN_OR_RETURN(auto symbolic_tile_analysis,
+                   GetSymbolicTileAnalysis(context, fusion));
+  ASSIGN_OR_RETURN(auto tiling,
+                   GetTiling(context, fusion, symbolic_tile_analysis));
+
+  return EmitTiledFusionKernelImpl(context, fusion, buffer_assignment, name,
+                                   num_work_groups, symbolic_tile_analysis,
+                                   tiling);
 }
 
 }  // namespace xla::cpu
