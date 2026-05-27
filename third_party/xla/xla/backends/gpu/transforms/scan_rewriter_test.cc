@@ -59,6 +59,36 @@ ENTRY entry {
       ::xla::GmockMatch(m::GetTupleElement(m::CustomCall(m::Parameter(0)), 0)));
 }
 
+TEST_F(ScanRewriterTest, SingleElementZeroInit) {
+  const char* hlo_text = R"(
+HloModule module
+
+add {
+  p0 = f32[1] parameter(0)
+  p1 = f32[1] parameter(1)
+  add = f32[1] add(p0, p1)
+  ROOT tuple = (f32[1], f32[1]) tuple(add, add)
+}
+
+ENTRY entry {
+  p0 = f32[100,1] parameter(0)
+  p1 = f32[1] constant({0})
+  scan = (f32[100,1], f32[1]) scan(p0, p1),
+    dimensions={0}, num_carries=1, is_associative=true, to_apply=add
+  ROOT root = f32[100,1] get-tuple-element(scan), index=0
+}
+)";
+  ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(hlo_text));
+
+  ScanRewriter pass;
+  ASSERT_OK(pass.Run(module.get()));
+
+  // Check that the scan is rewritten.
+  EXPECT_THAT(
+      module->entry_computation()->root_instruction(),
+      ::xla::GmockMatch(m::GetTupleElement(m::CustomCall(m::Parameter(0)), 0)));
+}
+
 TEST_F(ScanRewriterTest, NonScalarInit) {
   const char* hlo_text = R"(
 HloModule module

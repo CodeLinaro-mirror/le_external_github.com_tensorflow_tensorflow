@@ -51,8 +51,11 @@ absl::StatusOr<bool> ScanRewriter::RunOnComputation(
     while (init->opcode() == HloOpcode::kBroadcast) {
       init = init->operand(0);
     }
-    if (!init->IsConstant() || !ShapeUtil::IsScalar(init->shape()) ||
-        !init->literal().IsZero({})) {
+    if (!init->IsConstant() || ShapeUtil::ElementsIn(init->shape()) != 1) {
+      continue;
+    }
+    std::vector<int64_t> zero_indices(init->shape().dimensions().size(), 0);
+    if (!init->literal().IsZero(zero_indices)) {
       continue;
     }
     const HloInstruction* root = scan->to_apply()->root_instruction();
