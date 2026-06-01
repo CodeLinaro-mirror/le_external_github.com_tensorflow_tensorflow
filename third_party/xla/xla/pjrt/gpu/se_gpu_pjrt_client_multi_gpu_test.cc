@@ -1497,7 +1497,7 @@ TEST_P(ShardedAutotuningTest, ShardedAutotuningWorks) {
 
   if (tsl::kIsOpenSource) {
     // Test relies on VLOG(1) messages. Enable VLOG(1) in OSS.
-    tsl::setenv("TF_CPP_VMODULE", "autotuner_pass=10,autotuner=10",
+    tsl::setenv("TF_CPP_VMODULE", "autotuner_pass=10,config_assigner=10",
                 /*overwrite=*/true);
   }
 
