@@ -15,11 +15,14 @@ limitations under the License.
 
 #include "tensorflow/c/tf_tensor.h"
 
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "tensorflow/c/tf_datatype.h"
 #include "tensorflow/c/tf_status.h"
 #include "tensorflow/c/tf_status_helper.h"
@@ -32,13 +35,11 @@ limitations under the License.
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/lib/core/coding.h"
 #include "tensorflow/core/platform/casts.h"
+#include "tensorflow/core/platform/logging.h"
 #include "tsl/platform/ctstring_internal.h"
 
 using tensorflow::Status;
 using tensorflow::Tensor;
-using tensorflow::TensorBuffer;
-using tensorflow::errors::FailedPrecondition;
-using tensorflow::errors::InvalidArgument;
 
 #ifndef LIBTPU_EXCLUDE_C_API_IMPL
 
@@ -85,8 +86,16 @@ TF_Tensor* CreateTensor(TF_ManagedBuffer* buf, TF_DataType dtype,
              tensorflow::TensorShape(dimvec), buf);
   buf->Unref();
   size_t elem_size = TF_DataTypeSize(dtype);
-  if (elem_size > 0 && len < (elem_size * ret.NumElements())) {
-    return nullptr;
+  if (elem_size > 0) {
+    int64_t num_elements = ret.NumElements();
+    if (num_elements < 0 ||
+        static_cast<uint64_t>(num_elements) >
+            std::numeric_limits<size_t>::max() / elem_size) {
+      return nullptr;
+    }
+    if (len < (elem_size * num_elements)) {
+      return nullptr;
+    }
   }
   return new TF_Tensor{new tensorflow::TensorInterface(std::move(ret))};
 }
