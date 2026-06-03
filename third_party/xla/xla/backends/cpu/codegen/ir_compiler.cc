@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "xla/backends/cpu/codegen/ir_compiler.h"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -392,11 +393,23 @@ llvm::Error IrCompiler::RunIrPasses(llvm::Module& module,
   } else {
     LOG(FATAL) << "Unsupported CPU type: " << target_triple.str();
   }
+  int prefer_vector_width = 0;
+  for (const auto& func : module) {
+    if (func.hasFnAttribute("prefer-vector-width")) {
+      unsigned width = 0;
+      if (!func.getFnAttribute("prefer-vector-width")
+               .getValueAsString()
+               .getAsInteger(10, width)) {
+        prefer_vector_width =
+            std::max(prefer_vector_width, static_cast<int>(width));
+      }
+    }
+  }
 
   codegen::IntrinsicFunctionLib intrinsic_lib(
       {target_machine->getTargetFeatureString().str(), device_type,
        /*disable_platform_dependent_math=*/
-       options_.disable_platform_dependent_math});
+       options_.disable_platform_dependent_math, prefer_vector_width});
   target_library_info_impl->addVectorizableFunctions(
       intrinsic_lib.Vectorizations());
 

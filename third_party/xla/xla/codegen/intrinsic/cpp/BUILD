@@ -123,8 +123,28 @@ cc_library(
 )
 
 cc_ir_header(
-    name = "eigen_unary_ll",
+    name = "eigen_unary_32_ll",
     src = "eigen_unary.cc",
+    copts = [
+        "-DEIGEN_GENERIC_VECTOR_SIZE_BYTES=32",
+        "-mprefer-vector-width=256",
+    ],
+    deps = [
+        ":cpp_context_provider",
+        ":eigen_unary_lib",
+        ":vector_ops",
+        "@eigen_archive//:eigen3",
+    ],
+)
+
+cc_ir_header(
+    name = "eigen_unary_64_ll",
+    src = "eigen_unary.cc",
+    copts = [
+        "-DEIGEN_GENERIC_VECTOR_SIZE_BYTES=64",
+        "-mprefer-vector-width=512",
+        "-mavx512f",
+    ],
     deps = [
         ":cpp_context_provider",
         ":eigen_unary_lib",
@@ -141,8 +161,9 @@ xla_cc_test(
     ],
     deps = [
         ":_cpp_gen_intrinsics",
+        ":eigen_unary_32_ll",
+        ":eigen_unary_64_ll",
         ":eigen_unary_lib",
-        ":eigen_unary_ll",
         ":vector_ops",
         "//xla/codegen/intrinsic:test_matchers",
         "@com_google_googletest//:gtest_main",
@@ -157,7 +178,9 @@ cc_binary(
     srcs = ["dump_llvm_ir.cc"],
     deps = [
         ":_cpp_gen_intrinsics",
-        ":eigen_unary_ll",
+        ":eigen_unary_32_ll",
+        ":eigen_unary_64_ll",
+        "//xla/codegen/intrinsic",
         "@llvm-project//llvm:Core",
         "@llvm-project//llvm:IRReader",
         "@llvm-project//llvm:Support",
@@ -169,7 +192,8 @@ cc_library(
     srcs = ["cpp_gen_intrinsics.cc"],
     hdrs = ["cpp_gen_intrinsics.h"],
     deps = [
-        ":eigen_unary_ll",
+        ":eigen_unary_32_ll",
+        ":eigen_unary_64_ll",
         "//xla/codegen/intrinsic",
         "//xla/service/llvm_ir:llvm_util",
         "@com_google_absl//absl/log",
@@ -193,6 +217,7 @@ cc_library(
         "//xla/codegen/intrinsic",
         "//xla/codegen/intrinsic:type",
         "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
         "@llvm-project//llvm:ir_headers",
     ],
