@@ -14,10 +14,11 @@ limitations under the License.
 ==============================================================================*/
 
 #include <string>
+#include <utility>
 
 #include "xla/error_spec.h"
-#include "xla/tests/hlo_pjrt_interpreter_reference_mixin.h"
-#include "xla/tests/hlo_pjrt_test_base.h"
+#include "xla/tests/hlo_interpreter_reference_mixin.h"
+#include "xla/tests/hlo_test_base.h"
 #include "xla/tsl/platform/test.h"
 #include "xla/xla.pb.h"
 #include "tsl/platform/tensor_float_32_utils.h"
@@ -72,7 +73,11 @@ ENTRY %dot_computation (x: f32[1024,1024], source: f32[1024,1024]) -> f32[1024,1
   ROOT %result = f32[1024,1024] dot(x, y), lhs_contracting_dims={1}, rhs_contracting_dims={0}, operand_precision={default, default}
 }
 )";
-  EXPECT_TRUE(RunAndCompare(hlo_text, kErrorSpec));
+  ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(hlo_text));
+  module->mutable_config()
+      .mutable_debug_options()
+      .set_xla_gpu_default_to_alg_dot_bf16_bf16_f32(false);
+  EXPECT_TRUE(RunAndCompare(std::move(module), kErrorSpec));
 }
 
 TEST_P(TensorFloat32GlobalVarTest, Convolution) {

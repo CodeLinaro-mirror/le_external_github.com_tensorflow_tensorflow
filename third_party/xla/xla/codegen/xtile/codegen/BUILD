@@ -191,6 +191,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@stablehlo//:stablehlo_ops",
+        "@tsl//tsl/platform:tensor_float_32_utils",
     ],
 )
 
@@ -233,6 +234,7 @@ xla_cc_test(
         "//xla/hlo/testlib:hlo_hardware_independent_test_base",
         "//xla/service/llvm_ir:llvm_util",
         "//xla/tsl/platform:statusor",
+        "@com_google_googletest//:gtest",
         "@com_google_googletest//:gtest_main",
         "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:IR",
@@ -246,6 +248,7 @@ xla_cc_test(
     srcs = ["tiled_emitter_constraints_test.cc"],
     deps = [
         ":tiled_emitter_constraints",
+        "//xla:xla_proto_cc",
         "//xla/codegen/tiling:symbolic_tile_analysis",
         "//xla/codegen/tiling:tiling_specification",
         "//xla/hlo/analysis:symbolic_map",
