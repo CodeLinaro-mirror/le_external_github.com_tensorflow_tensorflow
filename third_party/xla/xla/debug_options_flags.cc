@@ -470,7 +470,6 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_unsupported_use_all_reduce_one_shot_kernel(true);
   opts.set_xla_gpu_unsupported_use_ragged_all_to_all_one_shot_kernel(true);
   opts.set_xla_gpu_experimental_enable_fusion_autotuner(true);
-  opts.set_xla_gpu_experimental_autotune_post_fusion(true);
   opts.set_xla_gpu_experimental_max_unroll_factor(32);
   opts.set_xla_gpu_experimental_pack_dot_operands_along_k_dimension(true);
   opts.set_xla_unsupported_crash_on_hlo_pass_fix_max_iterations(false);
@@ -506,7 +505,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_cpu_collective_timeout_seconds(30 * 60);
 
   opts.set_xla_keep_shardings_after_spmd(false);
-  opts.set_xla_enable_hlo_sharding_v3(false);
+  opts.set_xla_enable_hlo_sharding_v3(true);
   opts.set_xla_enable_rgv3_materialization(true);
   opts.set_xla_sdy_export_all_reduce_scatter(false);
   opts.set_xla_gpu_experimental_enable_checksum_tracing_on_thunks(false);
@@ -3166,12 +3165,6 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
           &DebugOptions::set_xla_gpu_experimental_enable_fusion_autotuner),
       debug_options->xla_gpu_experimental_enable_fusion_autotuner(),
       "Enable autotuning between the native & triton fusion emitters."));
-  flag_list->push_back(tsl::Flag(
-      "xla_gpu_experimental_autotune_post_fusion",
-      bool_setter_for(
-          &DebugOptions::set_xla_gpu_experimental_autotune_post_fusion),
-      debug_options->xla_gpu_experimental_autotune_post_fusion(),
-      "All autotuning executes after fusion passes."));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_rocm_max_trace_events",
       int64_setter_for(&DebugOptions::set_xla_gpu_rocm_max_trace_events),
