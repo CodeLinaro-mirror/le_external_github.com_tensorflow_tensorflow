@@ -514,6 +514,11 @@ xla_test(
         },
         {},
     ),
+    backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
     use_legacy_runtime = True,
     deps = [
         ":literal_test_util",
@@ -905,6 +910,11 @@ xla_test(
 xla_test(
     name = "deallocation_test",
     srcs = ["deallocation_test.cc"],
+    backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
     use_legacy_runtime = True,
     deps = [
         ":local_client_test_base",
@@ -2771,6 +2781,11 @@ xla_test(
 xla_test(
     name = "compute_constant_test",
     srcs = ["compute_constant_test.cc"],
+    backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
     use_legacy_runtime = True,
     deps = [
         ":literal_test_util",
@@ -2862,6 +2877,11 @@ xla_test(
 xla_test(
     name = "round_trip_packed_literal_test",
     srcs = ["round_trip_packed_literal_test.cc"],
+    backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
     use_legacy_runtime = True,
     deps = [
         ":literal_test_util",
@@ -2930,6 +2950,11 @@ xla_test(
 xla_test(
     name = "local_client_allocation_test",
     srcs = ["local_client_allocation_test.cc"],
+    backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
     use_legacy_runtime = True,
     deps = [
         ":literal_test_util",
@@ -2948,6 +2973,11 @@ xla_test(
 xla_test(
     name = "local_client_execute_test",
     srcs = ["local_client_execute_test.cc"],
+    backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
     shard_count = 30,
     tags = [
         "optonly",
@@ -2986,9 +3016,9 @@ xla_test(
 xla_test(
     name = "outfeed_in_nested_computation_test",
     srcs = ["outfeed_in_nested_computation_test.cc"],
-    disabled_backends = [
-        # Outfeed ops are not supported on the interpreter backend.
-        "interpreter",
+    backends = [
+        "cpu",
+        "gpu",
     ],
     use_legacy_runtime = True,
     deps = [
@@ -3026,6 +3056,11 @@ xla_cc_test(
 xla_test(
     name = "round_trip_transfer_test",
     srcs = ["round_trip_transfer_test.cc"],
+    backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
     use_legacy_runtime = True,
     deps = [
         ":literal_test_util",
@@ -3094,6 +3129,11 @@ xla_cc_test(
 xla_test(
     name = "transfer_manager_test",
     srcs = ["transfer_manager_test.cc"],
+    backends = [
+        "cpu",
+        "gpu",
+        "interpreter",
+    ],
     shard_count = 15,
     use_legacy_runtime = True,
     deps = [
