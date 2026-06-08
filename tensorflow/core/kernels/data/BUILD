@@ -119,6 +119,7 @@ tf_kernel_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/data:name_utils",
         "//tensorflow/core/data:split_utils",
+        "//tensorflow/core/framework:dataset_options_proto_cc",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
