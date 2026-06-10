@@ -773,6 +773,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
+        "@oneccl//:libs",
     ],
     alwayslink = True,  # registers collectives implementation
 )
