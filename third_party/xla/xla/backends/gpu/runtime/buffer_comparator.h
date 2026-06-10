@@ -21,6 +21,10 @@ limitations under the License.
 #include "xla/stream_executor/device_address.h"
 #include "xla/stream_executor/stream.h"
 
+namespace stream_executor {
+class DeviceAddressAllocator;
+}  // namespace stream_executor
+
 namespace xla::gpu {
 
 // A device-side comparator that compares buffers.
@@ -33,7 +37,8 @@ class BufferComparator {
   BufferComparator(BufferComparator&&) noexcept = default;
 
   explicit BufferComparator(const Shape& shape, double tolerance = 0.1,
-                            bool verbose = true, bool run_host_compare = true);
+                            bool verbose = true, bool run_host_compare = true,
+                            se::DeviceAddressAllocator* allocator = nullptr);
 
   // Returns true if the two buffers compare equal. The definition of "equal"
   // is:
@@ -54,6 +59,7 @@ class BufferComparator {
   bool verbose_;         // whether to print out error message on mismatch
   // enable host-side compare if device compare reports a mismatch
   bool run_host_compare_;
+  se::DeviceAddressAllocator* allocator_ = nullptr;
 };
 
 }  // namespace xla::gpu
