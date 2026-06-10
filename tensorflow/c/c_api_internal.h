@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_C_C_API_INTERNAL_H_
 #define TENSORFLOW_C_C_API_INTERNAL_H_
 
-#include <list>
+#include <deque>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -140,7 +140,7 @@ struct TF_ImportGraphDefOptions {
 
   // Backing memory for TensorId fields in opts.
   // TODO(skyewm): it'd be better if ImportGraphDefOptions owned this.
-  std::vector<std::string> tensor_id_data;
+  std::deque<std::string> tensor_id_data;
 };
 
 struct TF_ImportGraphDefResults {
@@ -150,7 +150,7 @@ struct TF_ImportGraphDefResults {
   std::vector<int> missing_unused_key_indexes;
 
   // Backing memory for missing_unused_key_names values.
-  std::vector<std::string> missing_unused_key_names_data;
+  std::deque<std::string> missing_unused_key_names_data;
 };
 
 struct TF_DeviceList {
