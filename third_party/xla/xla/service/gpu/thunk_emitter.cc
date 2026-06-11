@@ -320,8 +320,10 @@ ThunkEmitter::ThunkEmitter(
     : ir_emitter_context_(ir_emitter_context),
       send_recv_events_(std::make_shared<HostSendRecvAsyncEvents>()),
       call_graph_(CallGraph::Build(&ir_emitter_context->hlo_module())),
+      constants_module_context_(std::make_unique<llvm::LLVMContext>()),
       constants_module_(ir_emitter_context_->CreateLLVMModule(
-          absl::StrCat(ir_emitter_context_->hlo_module().name(), "_consts"))),
+          absl::StrCat(ir_emitter_context_->hlo_module().name(), "_consts"),
+          *constants_module_context_)),
       llvm_options_lock_(llvm_options_lock) {}
 
 absl::StatusOr<ThunkSequence> ThunkEmitter::EmitConstant(
@@ -2821,13 +2823,13 @@ AsyncThunkSequence ThunkEmitter::EmitHloInstruction(const HloInstruction* hlo,
   return Internal("Unhandled HLO instruction");
 }
 
-absl::StatusOr<std::unique_ptr<SequentialThunk>>
+xla::Future<std::unique_ptr<SequentialThunk>>
 ThunkEmitter::EmitHloEntryComputation(const HloModule* module) {
-  ASSIGN_OR_RETURN(
-      ThunkSequence thunks,
-      std::move(EmitHloComputation(module->entry_computation())).Await());
-  return std::make_unique<SequentialThunk>(Thunk::ThunkInfo{},
-                                           std::move(thunks));
+  return EmitHloComputation(module->entry_computation())
+      .Map([](ThunkSequence thunks) {
+        return std::make_unique<SequentialThunk>(Thunk::ThunkInfo{},
+                                                 std::move(thunks));
+      });
 }
 
 AsyncThunkSequence ThunkEmitter::EmitHloComputation(
