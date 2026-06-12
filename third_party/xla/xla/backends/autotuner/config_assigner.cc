@@ -37,11 +37,15 @@ limitations under the License.
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "xla/tsl/platform/status_macros.h"
+#include "google/protobuf/text_format.h"
 #include "xla/backends/autotuner/autotuner_cache_interface.h"
 #include "xla/backends/autotuner/codegen_backend.h"
 #include "xla/backends/autotuner/codegen_orchestrator.h"
+#include "xla/backends/autotuner/config_selector.h"
 #include "xla/backends/autotuner/hlo_extractor.h"
+#include "xla/backends/autotuner/profiler.h"
 #include "xla/backends/autotuner/tuner.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
@@ -52,6 +56,7 @@ limitations under the License.
 #include "xla/service/gpu/autotuning/autotuner_status_key.h"
 #include "xla/tools/hlo_decomposer.h"
 #include "xla/tsl/concurrency/future.h"
+#include "xla/tsl/platform/env.h"
 #include "xla/tsl/platform/errors.h"
 #include "tsl/platform/fingerprint.h"
 
@@ -100,13 +105,35 @@ std::string GetKvStoreKey(
                       backend_fingerprint, "_", shard_index);
 }
 
+std::vector<Tuner::ConfigProfile> ExtractCompilationFailures(
+    std::vector<CodegenOrchestrator::CompilationFailure> failures) {
+  std::vector<Tuner::ConfigProfile> profiles;
+  profiles.reserve(failures.size());
+  for (auto& failure : failures) {
+    profiles.push_back({/*config=*/std::move(failure.config),
+                        /*failure=*/
+                        Tuner::Failure{Tuner::FailureKind::kCompilationFailed,
+                                       failure.status.ToString()}});
+  }
+  return profiles;
+}
+
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<ConfigAssigner>> ConfigAssigner::Create(
     Options options,
     std::unique_ptr<AutotunerCacheInterface> absl_nonnull cache,
     std::unique_ptr<CodegenOrchestrator> absl_nonnull orchestrator,
-    std::unique_ptr<Tuner> tuner) {
+    std::unique_ptr<Profiler> absl_nullable profiler) {
+  std::unique_ptr<Tuner> tuner = nullptr;
+  if (profiler != nullptr) {
+    Tuner::CorrectnessCheckOptions correctness_check_options;
+    correctness_check_options.enable_correctness_check = options.check_buffers;
+    correctness_check_options.relative_tolerance = options.relative_tolerance;
+    correctness_check_options.crash_on_failure = options.crash_on_check_failure;
+    ASSIGN_OR_RETURN(
+        tuner, Tuner::Create(std::move(profiler), correctness_check_options));
+  }
   return absl::WrapUnique(
       new ConfigAssigner(std::move(options), std::move(cache),
                          std::move(orchestrator), std::move(tuner)));
@@ -137,7 +164,7 @@ absl::Status ConfigAssigner::AssignConfigs(
     }
   }
   if (tuner_ != nullptr) {
-    RETURN_IF_ERROR(tuner_->DumpLogsToFile());
+    RETURN_IF_ERROR(DumpTuningLogs());
   }
   return absl::OkStatus();
 }
@@ -192,7 +219,7 @@ absl::Status ConfigAssigner::AssignConfigs(
     autotuned_instructions.push_back(instruction_groups[i][0]);
   }
   if (tuner_ != nullptr) {
-    RETURN_IF_ERROR(tuner_->DumpLogsToFile());
+    RETURN_IF_ERROR(DumpTuningLogs());
   }
 
   // 4. Store the results for this shard as a serialized string to the KV store.
@@ -270,7 +297,10 @@ absl::Status ConfigAssigner::AssignConfig(HloInstruction* instr) {
     RETURN_IF_ERROR(DumpHlo(*instr, config));
   }
   RETURN_IF_ERROR(orchestrator_->ApplyConfig(*instr, config));
-  return tuner_ != nullptr ? tuner_->DumpLogsToFile() : absl::OkStatus();
+  if (tuner_ != nullptr) {
+    RETURN_IF_ERROR(DumpTuningLogs());
+  }
+  return absl::OkStatus();
 }
 
 tsl::Future<ConfigAssigner::Config> ConfigAssigner::GetConfig(
@@ -321,14 +351,70 @@ tsl::Future<ConfigAssigner::Config> ConfigAssigner::GetConfig(
   }
 
   if (tuner_ == nullptr) {
-    return absl::FailedPreconditionError(
-        "Autotuning failed. Profiler is null (no Tuner available).");
+    return absl::InternalError(
+        absl::StrCat("Cannot autotune HLO: ", instr->ToString(),
+                     ". Tuner is not initialized."));
   }
-  VLOG(1) << "Autotuning the HLO instruction to find best config.";
-  return tuner_->GetTunedConfig(instr).Map(
-      [&, instr](ConfigAssigner::Config best_config) -> absl::StatusOr<Config> {
-        RETURN_IF_ERROR(Insert(instr, best_config));
-        return best_config;
+  VLOG(1) << "Getting tuned config for HLO: " << instr->ToString();
+  return GetTunedConfig(instr);
+}
+
+tsl::Future<ConfigAssigner::Config> ConfigAssigner::GetTunedConfig(
+    const HloInstruction* instr) {
+  CHECK(tuner_ != nullptr);
+  ASSIGN_OR_RETURN(std::vector<CodegenOrchestrator::Config> supported_configs,
+                   orchestrator_->GetSupportedConfigs(*instr));
+  if (supported_configs.empty()) {
+    return absl::InternalError(
+        absl::StrCat("Autotuning failed for HLO: ", instr->ToString(),
+                     ". No supported configs found for this instruction."));
+  }
+
+  if (supported_configs.size() == 1) {
+    VLOG(1) << "Found only one supported config: "
+            << supported_configs[0].ToString();
+    RETURN_IF_ERROR(Insert(instr, supported_configs[0]));
+    return std::move(supported_configs[0]);
+  }
+
+  VLOG(1) << "Found total of " << supported_configs.size()
+          << " supported configs.";
+
+  auto compile_results =
+      orchestrator_->CompileAll(*instr, std::move(supported_configs));
+  return std::move(compile_results)
+      .Map([instr, this](
+               CodegenOrchestrator::CompilationResults compile_results) mutable
+               -> absl::StatusOr<Config> {
+        CHECK(tuner_ != nullptr);  // To make clang-tidy happy.
+        std::vector<Tuner::ConfigProfile> compilation_failures =
+            ExtractCompilationFailures(std::move(compile_results.failures));
+
+        if (compile_results.candidates.empty()) {
+          return absl::InternalError(
+              absl::StrCat("Autotuning failed for HLO: ", instr->ToString(),
+                           ". No configs could be compiled."));
+        }
+
+        VLOG(1) << "Successfully compiled " << compile_results.candidates.size()
+                << " configs.";
+
+        ASSIGN_OR_RETURN(
+            std::vector<Tuner::ConfigProfile> profiles,
+            tuner_->ProfileAll(std::move(compile_results.candidates), instr));
+
+        if (profiles.empty()) {
+          return absl::InternalError(
+              absl::StrCat("Autotuning failed for HLO: ", instr->ToString(),
+                           ". No configs could be profiled."));
+        }
+
+        LogConfigProfiles(*instr, profiles, compilation_failures);
+        ASSIGN_OR_RETURN(
+            Tuner::ConfigProfile best_profile,
+            PickBestConfig(profiles, options_.scratch_bytes_window_size_us));
+        RETURN_IF_ERROR(Insert(instr, best_profile.config));
+        return std::move(best_profile.config);
       });
 }
 
@@ -423,6 +509,45 @@ absl::Status ConfigAssigner::DumpHlo(const HloInstruction& instr,
   RETURN_IF_ERROR(orchestrator_->ApplyConfig(*root, config));
   DumpToFileInDirOrStdout(*parent_module, "", absl::StrCat(id, ".after.txt"),
                           module->ToString());
+  return absl::OkStatus();
+}
+
+void ConfigAssigner::LogConfigProfiles(
+    const HloInstruction& instr,
+    absl::Span<const Tuner::ConfigProfile> profiles,
+    absl::Span<const Tuner::ConfigProfile> failed_configs) {
+  for (const Tuner::ConfigProfile& profile : profiles) {
+    VLOG(2) << profile.ToString(/*verbose=*/VLOG_IS_ON(3));
+  }
+  for (const Tuner::ConfigProfile& result : failed_configs) {
+    VLOG(2) << result.ToString(/*verbose=*/VLOG_IS_ON(3));
+  }
+  if (options_.dump_logs_to.empty()) {
+    return;
+  }
+  AutotuningLog log;
+  log.mutable_instr()->PackFrom(instr.ToProto());
+  for (const auto& profile : profiles) {
+    *log.add_results() = profile.ToProto();
+  }
+  for (const auto& failed_config : failed_configs) {
+    *log.add_results() = failed_config.ToProto();
+  }
+  *logs_.add_logs() = std::move(log);
+}
+
+absl::Status ConfigAssigner::DumpTuningLogs() {
+  if (options_.dump_logs_to.empty()) {
+    return absl::OkStatus();
+  }
+
+  std::string textproto;
+  tsl::protobuf::TextFormat::PrintToString(logs_, &textproto);
+
+  RETURN_IF_ERROR(tsl::AppendStringToFile(tsl::Env::Default(),
+                                          options_.dump_logs_to, textproto));
+  VLOG(1) << "Autotune logs appended to file: " << options_.dump_logs_to;
+  logs_.Clear();
   return absl::OkStatus();
 }
 

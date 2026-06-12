@@ -54,9 +54,25 @@ class CodegenOrchestrator {
     std::string ToString() const;
   };
 
-  struct CompilationResult {
+  struct ExecutableCandidate {
     Config config;
-    absl::StatusOr<std::unique_ptr<Executable>> executable;
+    std::unique_ptr<Executable> executable;
+  };
+
+  struct CompilationFailure {
+    Config config;
+    absl::Status status;
+  };
+
+  struct CompilationResults {
+    CompilationResults() = default;
+    CompilationResults(const CompilationResults&) = delete;
+    CompilationResults& operator=(const CompilationResults&) = delete;
+    CompilationResults(CompilationResults&&) = default;
+    CompilationResults& operator=(CompilationResults&&) = default;
+
+    std::vector<ExecutableCandidate> candidates;
+    std::vector<CompilationFailure> failures;
   };
 
   static absl::StatusOr<std::unique_ptr<CodegenOrchestrator>> Create(
@@ -72,8 +88,8 @@ class CodegenOrchestrator {
 
   // Compiles all configs in parallel (if thread pool is present) and returns
   // their executable status.
-  tsl::Future<std::vector<CompilationResult>> CompileAll(
-      const HloInstruction& instr, std::vector<Config> configs) const;
+  tsl::Future<CompilationResults> CompileAll(const HloInstruction& instr,
+                                             std::vector<Config> configs) const;
 
   // Applies the configuration to the instruction using the appropriate backend.
   absl::Status ApplyConfig(HloInstruction& instr, const Config& config) const;
