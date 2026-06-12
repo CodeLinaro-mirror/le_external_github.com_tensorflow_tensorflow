@@ -108,24 +108,43 @@ absl::StatusOr<std::unique_ptr<Executable>> CodegenOrchestrator::Compile(
   return executable;
 }
 
-tsl::Future<std::vector<CodegenOrchestrator::CompilationResult>>
+tsl::Future<CodegenOrchestrator::CompilationResults>
 CodegenOrchestrator::CompileAll(const HloInstruction& instr,
                                 std::vector<Config> configs) const {
   tsl::Executor* executor = thread_pool_ != nullptr
                                 ? thread_pool_->AsExecutor()
                                 : &tsl::InlineExecutor::Instance();
 
-  std::vector<tsl::Future<CompilationResult>> futures;
+  struct MaybeExecutableCandidate {
+    Config config;
+    absl::StatusOr<std::unique_ptr<Executable>> executable;
+  };
+
+  std::vector<tsl::Future<MaybeExecutableCandidate>> futures;
   futures.reserve(configs.size());
   for (int i = 0; i < configs.size(); ++i) {
     futures.push_back(tsl::MakeFutureOn(
         *executor, [&, config = std::move(configs[i])]() mutable {
           absl::StatusOr<std::unique_ptr<Executable>> executable =
               Compile(instr, config);
-          return CompilationResult{std::move(config), std::move(executable)};
+          return MaybeExecutableCandidate{std::move(config),
+                                          std::move(executable)};
         }));
   }
-  return tsl::JoinFutures(absl::MakeSpan(futures));
+  return tsl::JoinFutures(absl::MakeSpan(futures))
+      .Map([](std::vector<MaybeExecutableCandidate>&& results) {
+        CompilationResults compilation_results;
+        for (auto& result : results) {
+          if (!result.executable.ok()) {
+            compilation_results.failures.push_back(
+                {std::move(result.config), result.executable.status()});
+          } else {
+            compilation_results.candidates.push_back(
+                {std::move(result.config), std::move(*result.executable)});
+          }
+        }
+        return compilation_results;
+      });
 }
 
 absl::Status CodegenOrchestrator::ApplyConfig(HloInstruction& instr,
