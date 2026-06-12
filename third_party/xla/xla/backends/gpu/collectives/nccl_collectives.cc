@@ -25,6 +25,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/base/call_once.h"
 #include "absl/base/casts.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/container/btree_set.h"
@@ -46,6 +47,7 @@ limitations under the License.
 #include "xla/backends/gpu/collectives/gpu_clique_key.h"
 #include "xla/backends/gpu/collectives/gpu_collectives.h"
 #include "xla/backends/gpu/collectives/gpu_communicator.h"
+#include "xla/backends/gpu/collectives/gxl_collectives.h"
 #include "xla/backends/gpu/collectives/nccl_communicator.h"
 #include "xla/backends/gpu/collectives/nccl_errors.h"
 #include "xla/backends/gpu/collectives/nccl_group.h"
@@ -289,6 +291,16 @@ absl::Status NcclCollectives::GroupLaunch(
   return absl::OkStatus();
 }
 
+GxlCollectives* NcclCollectives::gxl_collectives() {
+  absl::call_once(gxl_init_flag_, [this] {
+    if (xla::GetDebugOptionsFromFlags()
+            .xla_gpu_enable_gxl_ragged_all_to_all()) {
+      gxl_collectives_ = CreateGxlCollectives();
+    }
+  });
+  return gxl_collectives_.get();
+}
+
 size_t NcclCollectives::SymmetricMemoryAlignment() const {
   // Multicast memory requires buffers aligned to
   // CU_MULTICAST_GRANULARITY_MINIMUM which is 2MB on Hopper. Since both
@@ -461,7 +473,14 @@ NcclCollectives::CreateCommunicatorsWithCancel(
     });
   }
 
-  return JoinFutures(absl::MakeSpan(futures)).Await();
+  ASSIGN_OR_RETURN(auto comms, JoinFutures(absl::MakeSpan(futures)).Await());
+
+  if (auto* gxl = gxl_collectives()) {
+    RETURN_IF_ERROR(gxl->MaybeAttachGxlCommunicators(absl::MakeSpan(comms),
+                                                     ranks, clique_key));
+  }
+
+  return comms;
 }
 
 absl::StatusOr<std::vector<std::unique_ptr<Communicator>>>
@@ -547,7 +566,15 @@ NcclCollectives::SplitCommunicatorsWithCancel(
     });
   }
 
-  return JoinFutures(absl::MakeSpan(futures)).Await();
+  ASSIGN_OR_RETURN(auto split_comms,
+                   JoinFutures(absl::MakeSpan(futures)).Await());
+
+  if (auto* gxl = gxl_collectives()) {
+    RETURN_IF_ERROR(gxl->MaybeAttachSplitGxlCommunicators(
+        comms, absl::MakeSpan(split_comms), ranks));
+  }
+
+  return split_comms;
 }
 
 
