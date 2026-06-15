@@ -541,18 +541,27 @@ uint8_t* Uncompress(const void* srcdata, int datasize,
 uint8_t* Uncompress(const void* srcdata, int datasize,
                     const UncompressFlags& flags, int* pwidth, int* pheight,
                     int* pcomponents, int64_t* nwarn) {
-  uint8_t* buffer = nullptr;
-  uint8_t* result =
-      Uncompress(srcdata, datasize, flags, nwarn,
-                 [=, &buffer](int width, int height, int components) {
-                   if (pwidth != nullptr) *pwidth = width;
-                   if (pheight != nullptr) *pheight = height;
-                   if (pcomponents != nullptr) *pcomponents = components;
-                   buffer = new uint8_t[height * width * components];
-                   return buffer;
-                 });
-  if (!result) delete[] buffer;
-  return result;
+  std::unique_ptr<uint8_t[]> buffer;
+  uint8_t* result = Uncompress(
+      srcdata, datasize, flags, nwarn,
+      [&buffer, &flags, pwidth, pheight, pcomponents](int width, int height,
+                                                      int components) {
+        if (pwidth != nullptr) *pwidth = width;
+        if (pheight != nullptr) *pheight = height;
+        if (pcomponents != nullptr) *pcomponents = components;
+
+        const int64_t min_stride = static_cast<int64_t>(width) * components;
+        const int64_t row_stride =
+            std::max(min_stride, static_cast<int64_t>(flags.stride));
+        const int64_t total_size = static_cast<int64_t>(height) * row_stride;
+        if (total_size < 0 || total_size >= (1LL << 29)) {
+          return static_cast<uint8_t*>(nullptr);
+        }
+        buffer.reset(new uint8_t[total_size]);
+        return buffer.get();
+      });
+  if (!result) return nullptr;
+  return buffer.release();
 }
 
 // ----------------------------------------------------------------------------
@@ -736,7 +745,8 @@ bool CompressInternal(const uint8_t* srcdata, int width, int height,
       new JSAMPLE[width * cinfo.input_components]);
   while (cinfo.next_scanline < cinfo.image_height) {
     JSAMPROW row_pointer[1];  // pointer to JSAMPLE row[s]
-    const uint8_t* r = &srcdata[cinfo.next_scanline * in_stride];
+    const uint8_t* r =
+        &srcdata[cinfo.next_scanline * static_cast<int64_t>(in_stride)];
     uint8_t* p = static_cast<uint8_t*>(row_temp.get());
     switch (flags.format) {
       case FORMAT_RGBA: {
