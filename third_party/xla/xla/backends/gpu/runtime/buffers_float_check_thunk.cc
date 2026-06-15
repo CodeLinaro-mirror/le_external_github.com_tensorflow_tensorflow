@@ -18,10 +18,12 @@ limitations under the License.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/log/check.h"
@@ -35,7 +37,14 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/buffer_debug_log_structs.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/backends/gpu/runtime/thunk.pb.h"
+#include "xla/hlo/ir/hlo_computation.h"
+#include "xla/hlo/ir/hlo_instruction.h"
+#include "xla/hlo/ir/hlo_module.h"
+#include "xla/hlo/ir/hlo_opcode.h"
+#include "xla/literal.h"
 #include "xla/service/buffer_assignment.h"
+#include "xla/service/hlo.pb.h"
+#include "xla/shape_util.h"
 #include "xla/stream_executor/cuda/cuda_compute_capability.h"
 #include "xla/stream_executor/cuda/cuda_platform_id.h"
 #include "xla/stream_executor/device_address.h"
@@ -46,11 +55,13 @@ limitations under the License.
 #include "xla/stream_executor/launch_dim.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/tsl/platform/env.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/types.h"
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
+#include "tsl/platform/path.h"
 
 namespace xla::gpu {
 
@@ -98,7 +109,8 @@ absl::Status BuffersDebugFloatCheckThunk::Initialize(
 
   {
     absl::MutexLock lock(kernels_mutex_);
-    if (!kernels_.contains(params.executor)) {
+    auto [it, inserted] = kernels_.try_emplace(params.executor);
+    if (inserted) {
       se::gpu::GpuKernelRegistry registry =
           se::gpu::GpuKernelRegistry::GetGlobalRegistry();
       ASSIGN_OR_RETURN(
@@ -122,7 +134,7 @@ absl::Status BuffersDebugFloatCheckThunk::Initialize(
           registry.LoadKernel<
               se::gpu::BufferDebugAppendReducedFloatCheckResultsKernel>(
               params.executor));
-      kernels_[params.executor] = std::make_unique<Kernels>(Kernels{
+      it->second = std::make_unique<Kernels>(Kernels{
           std::move(kernel_f32), std::move(kernel_bf16), std::move(kernel_f16),
           std::move(kernel_f64), std::move(kernel_reduce)});
       VLOG(1) << "NanCount kernels loaded";
@@ -275,6 +287,7 @@ std::string BuffersDebugFloatCheckThunk::ToString(int indent) const {
   }
   return result;
 }
+
 absl::StatusOr<ThunkProto> BuffersDebugFloatCheckThunk::ToProto() const {
   return absl::InvalidArgumentError(
       "BuffersDebugFloatCheckThunk can't be serialized.");

@@ -1,7 +1,7 @@
 load("@local_config_cuda//cuda:build_defs.bzl", "cuda_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//xla:xla.default.bzl", "xla_cc_test", "xla_internal", "xla_py_proto_library")
-load("//xla/tests:build_defs.bzl", "xla_test")
+load("//xla/tests:build_defs.bzl", "xla_py_test", "xla_test")
 load("//xla/tsl:tsl.bzl", "internal_visibility", "nvtx_headers")
 load("//xla/tsl:tsl.default.bzl", "get_compatible_with_portable")
 load("//xla/tsl/platform:build_config.bzl", "tf_proto_library")
@@ -359,7 +359,9 @@ xla_cc_test(
 cc_library(
     name = "thunk_runtime_dependencies",
     # Register GPU collectives plugin.
-    deps = ["//xla/backends/gpu/collectives:gpu_collectives_plugin"],
+    deps = [
+        "//xla/backends/gpu/collectives:gpu_collectives_plugin",
+    ],
 )
 
 cc_library(
@@ -4835,6 +4837,7 @@ cc_library(
         ":thunk",
         ":thunk_id",
         ":thunk_pass_pipeline",
+        "//xla:literal",
         "//xla:shape_util",
         "//xla:util",
         "//xla:xla_data_proto_cc",
@@ -4847,10 +4850,12 @@ cc_library(
         "//xla/runtime:buffer_use",
         "//xla/service:buffer_assignment",
         "//xla/service:dump",
+        "//xla/service:hlo_proto_cc",
         "//xla/service:shaped_slice",
         "//xla/stream_executor:device_description",
         "//xla/stream_executor:stream",
         "//xla/stream_executor/gpu:buffer_debug_log",
+        "//xla/tsl/platform:env",
         "//xla/tsl/platform:status_macros",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:nullability",
@@ -4864,7 +4869,9 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_googlesource_code_re2//:re2",
+        "@tsl//tsl/platform:path",
     ],
 )
 
@@ -5059,10 +5066,14 @@ cc_library(
         ":buffer_debug_log_structs",
         ":thunk",
         ":thunk_proto_cc",
+        "//xla:literal",
+        "//xla:shape_util",
         "//xla:types",
         "//xla:util",
         "//xla:xla_data_proto_cc",
+        "//xla/hlo/ir:hlo",
         "//xla/service:buffer_assignment",
+        "//xla/service:hlo_proto_cc",
         "//xla/stream_executor:device_address",
         "//xla/stream_executor:device_description",
         "//xla/stream_executor:launch_dim",
@@ -5073,6 +5084,7 @@ cc_library(
         "//xla/stream_executor/gpu:buffer_debug_float_check_kernel",
         "//xla/stream_executor/gpu:buffer_debug_log",
         "//xla/stream_executor/gpu:gpu_kernel_registry",
+        "//xla/tsl/platform:env",
         "//xla/tsl/platform:errors",
         "//xla/tsl/platform:status_macros",
         "//xla/tsl/platform:statusor",
@@ -5084,6 +5096,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
+        "@tsl//tsl/platform:path",
     ],
 )
 
@@ -5342,5 +5355,22 @@ xla_test(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+xla_py_test(
+    name = "float_check_device_e2e_test",
+    srcs = ["float_check_device_e2e_test.py"],
+    data = [
+        "//xla/tools:run_hlo_module",
+    ],
+    need_cuda_libs = True,
+    tags = [
+        "cuda-only",
+        "gpu",
+    ],
+    deps = [
+        "@absl_py//absl/logging",
+        "@absl_py//absl/testing:absltest",
     ],
 )
