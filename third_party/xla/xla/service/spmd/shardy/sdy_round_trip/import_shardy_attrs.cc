@@ -23,6 +23,7 @@ limitations under the License.
 
 #include "absl/functional/any_invocable.h"
 #include "absl/log/check.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -58,6 +59,7 @@ limitations under the License.
 #include "xla/hlo/translate/hlo_to_mhlo/hlo_utils.h"
 #include "xla/service/spmd/shardy/constants.h"
 #include "xla/service/spmd/shardy/utils.h"
+#include "xla/side_effect_util.h"
 
 namespace xla {
 namespace sdy {
@@ -74,12 +76,15 @@ using ::mlir::Operation;
 using ::mlir::StringAttr;
 using ::mlir::StringRef;
 using ::mlir::SymbolTable;
+using ::mlir::func::CallOp;
 using ::mlir::func::FuncOp;
 
 using ::mlir::sdy::kShardingAttr;
 using ::mlir::sdy::kShardingRuleAttr;
 using ::mlir::sdy::MeshAttr;
 using ::mlir::sdy::OpShardingRuleAttr;
+using ::mlir::sdy::PropagationBarrierOp;
+using ::mlir::sdy::PropagationDirection;
 using ::mlir::sdy::TensorShardingAttr;
 using ::mlir::sdy::TensorShardingPerValueAttr;
 using ::mlir::stablehlo::CustomCallOp;
@@ -425,6 +430,56 @@ LogicalResult handleFuncTupleInOutShardings(ModuleOp moduleOp, FuncOp funcOp,
   return mlir::success();
 }
 
+bool hasSparseOffloadAttribute(CallOp callOp) {
+  mlir::StringAttr computeTypeAttr =
+      callOp->getAttrOfType<mlir::StringAttr>(xla::kXlaComputeTypeAttr);
+  if (!computeTypeAttr) {
+    if (DictionaryAttr frontendAttrs =
+            getFrontendAttrs(callOp.getOperation())) {
+      computeTypeAttr =
+          frontendAttrs.getAs<mlir::StringAttr>(xla::kXlaComputeTypeAttr);
+    }
+  }
+  return computeTypeAttr &&
+         computeTypeAttr.getValue() == xla::kXlaComputeTypeSparseOffload;
+}
+
+void insertPropagationBarriers(FuncOp funcOp, IRRewriter& rewriter) {
+  if (funcOp.isExternal()) {
+    return;
+  }
+
+  mlir::Block& entryBlock = funcOp.getBody().front();
+  rewriter.setInsertionPointToStart(&entryBlock);
+
+  for (mlir::BlockArgument arg : entryBlock.getArguments()) {
+    bool isReplicated = false;
+    for (mlir::OpOperand& use : arg.getUses()) {
+      if (auto customCallOp = mlir::dyn_cast<CustomCallOp>(use.getOwner())) {
+        if (customCallOp.getCallTargetName() == kShardingCustomCallTargetName) {
+          if (auto shardingPerValue =
+                  customCallOp->getAttrOfType<TensorShardingPerValueAttr>(
+                      "sdy.sharding")) {
+            if (!shardingPerValue.getShardings().empty()) {
+              TensorShardingAttr shardingAttr =
+                  shardingPerValue.getShardings()[0];
+              if (shardingAttr.emptyAxes()) {
+                isReplicated = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    if (isReplicated) {
+      auto barrierOp = PropagationBarrierOp::create(
+          rewriter, funcOp.getLoc(), arg, PropagationDirection::FORWARD);
+      rewriter.replaceAllUsesExcept(arg, barrierOp.getResult(), barrierOp);
+    }
+  }
+}
+
 class SdyRoundTripImportShardyAttrsPass
     : public mlir::PassWrapper<SdyRoundTripImportShardyAttrsPass,
                                mlir::OperationPass<ModuleOp>> {
@@ -490,6 +545,17 @@ class SdyRoundTripImportShardyAttrsPass
     for (auto funcOp : moduleOp.getOps<FuncOp>()) {
       convertShardyAttrs(funcOp, rewriter, enableHloShardingV3);
     }
+
+    llvm::DenseSet<FuncOp> modifiedCallees;
+    moduleOp.walk([&](CallOp callOp) {
+      if (hasSparseOffloadAttribute(callOp)) {
+        FuncOp callee = symbolTable.lookup<FuncOp>(callOp.getCallee());
+        if (callee && !modifiedCallees.contains(callee)) {
+          insertPropagationBarriers(callee, rewriter);
+          modifiedCallees.insert(callee);
+        }
+      }
+    });
   }
 
   StringRef getArgument() const override {
