@@ -13,8 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <cstdint>
+
+#include "Eigen/Core"  // from @eigen_archive  // IWYU pragma: keep
 #include "tensorflow/core/framework/fake_input.h"
 #include "tensorflow/core/framework/node_def_builder.h"
+#include "tensorflow/core/framework/numeric_types.h"  // IWYU pragma: keep
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/framework/types.h"
@@ -24,6 +28,8 @@ limitations under the License.
 #include "tensorflow/core/kernels/ops_testutil.h"
 #include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
+#include "tensorflow/core/platform/bfloat16.h"  // IWYU pragma: keep
+#include "tsl/platform/bfloat16.h"   // IWYU pragma: keep
 
 namespace tensorflow {
 namespace {
@@ -250,6 +256,110 @@ TEST_F(AsStringGraphTest, FillWithChar4) {
   absl::Status s = Init(DT_INT32, /*fill=*/"n");
   ASSERT_EQ(error::INVALID_ARGUMENT, s.code());
   ASSERT_TRUE(absl::StrContains(s.message(), "Fill argument not supported"));
+}
+
+TEST_F(AsStringGraphTest, Int16) {
+  TF_ASSERT_OK(Init(DT_INT16));
+  AddInputFromArray<int16_t>(TensorShape({2}), {-10, 10});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"-10", "10"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Int32) {
+  TF_ASSERT_OK(Init(DT_INT32));
+  AddInputFromArray<int32_t>(TensorShape({2}), {-20, 20});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"-20", "20"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Uint8) {
+  TF_ASSERT_OK(Init(DT_UINT8));
+  AddInputFromArray<uint8_t>(TensorShape({2}), {0, 255});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"0", "255"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Uint16) {
+  TF_ASSERT_OK(Init(DT_UINT16));
+  AddInputFromArray<uint16_t>(TensorShape({2}), {0, 65535});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"0", "65535"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Uint32) {
+  TF_ASSERT_OK(Init(DT_UINT32));
+  AddInputFromArray<uint32_t>(TensorShape({2}), {0, 4294967295U});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"0", "4294967295"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Uint64) {
+  TF_ASSERT_OK(Init(DT_UINT64));
+  AddInputFromArray<uint64_t>(TensorShape({2}), {0, 18446744073709551615ULL});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"0", "18446744073709551615"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Double) {
+  TF_ASSERT_OK(Init(DT_DOUBLE, /*fill=*/"", /*width=*/-1, /*precision=*/2));
+  AddInputFromArray<double>(TensorShape({2}), {-3.14159, 2.71828});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"-3.14", "2.72"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Half) {
+  TF_ASSERT_OK(Init(DT_HALF, /*fill=*/"", /*width=*/-1, /*precision=*/2));
+  AddInputFromArray<Eigen::half>(
+      TensorShape({2}),
+      {static_cast<Eigen::half>(-1.5f), static_cast<Eigen::half>(1.5f)});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"-1.50", "1.50"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Bfloat16) {
+  TF_ASSERT_OK(Init(DT_BFLOAT16, /*fill=*/"", /*width=*/-1, /*precision=*/2));
+  AddInputFromArray<tsl::bfloat16>(  // NOLINT(misc-include-cleaner)
+      TensorShape({2}),
+      {static_cast<tsl::bfloat16>(-2.5f),   // NOLINT(misc-include-cleaner)
+       static_cast<tsl::bfloat16>(2.5f)});  // NOLINT(misc-include-cleaner)
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"-2.50", "2.50"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, Complex128) {
+  TF_ASSERT_OK(Init(DT_COMPLEX128, /*fill=*/"", /*width=*/5, /*precision=*/2));
+  AddInputFromArray<complex128>(TensorShape({2}), {{-4, 2}, {3.14159, -1}});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"(-4.00, 2.00)", "( 3.14,-1.00)"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
+}
+
+TEST_F(AsStringGraphTest, StringWidth) {
+  TF_ASSERT_OK(Init(DT_STRING, /*fill=*/"", /*width=*/5));
+  AddInputFromArray<tstring>(TensorShape({2}), {"abc", "de"});
+  TF_ASSERT_OK(RunOpKernel());
+  Tensor expected(allocator(), DT_STRING, TensorShape({2}));
+  test::FillValues<tstring>(&expected, {"  abc", "   de"});
+  test::ExpectTensorEqual<tstring>(expected, *GetOutput(0));
 }
 
 }  // end namespace
