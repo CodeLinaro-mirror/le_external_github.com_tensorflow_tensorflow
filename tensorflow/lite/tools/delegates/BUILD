@@ -48,6 +48,7 @@ cc_library_with_tflite(
     copts = tflite_copts(),
     tflite_deps = [
         ":xnnpack_delegate_provider",
+        ":ynnpack_delegate_provider",
         ":delegate_provider_lib",
     ],
     deps = [
@@ -182,6 +183,22 @@ cc_library_with_tflite(
     visibility = ["//visibility:public"],
     deps = [
         "//tensorflow/lite/delegates/xnnpack:xnnpack_delegate",
+        "//tensorflow/lite/tools:tool_params",
+    ],
+    alwayslink = 1,
+)
+
+cc_library_with_tflite(
+    name = "ynnpack_delegate_provider",
+    srcs = ["ynnpack_delegate_provider.cc"],
+    copts = tflite_copts(),
+    linkstatic = True,
+    tflite_deps = [
+        ":delegate_provider_hdr",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/lite/delegates/ynnpack:ynnpack_delegate",
         "//tensorflow/lite/tools:tool_params",
     ],
     alwayslink = 1,
