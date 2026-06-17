@@ -72,7 +72,9 @@ limitations under the License.
 
 typedef std::function<void()> AsyncOpKernelDoneCallback;
 void TF_RunAsyncOpKernelDoneCallback(TF_AsyncOpKernelDoneCallback* done) {
-  (*reinterpret_cast<AsyncOpKernelDoneCallback*>(done))();
+  auto* callback = reinterpret_cast<AsyncOpKernelDoneCallback*>(done);
+  (*callback)();
+  delete callback;
 }
 
 struct TF_KernelBuilder {
@@ -253,9 +255,10 @@ class CAsyncOpKernel : public AsyncOpKernel {
 
   void ComputeAsync(OpKernelContext* ctx,
                     AsyncOpKernelDoneCallback done) override {
+    auto* done_ptr = new AsyncOpKernelDoneCallback(std::move(done));
     (*compute_async_func_)(
         c_kernel_, reinterpret_cast<TF_OpKernelContext*>(ctx),
-        reinterpret_cast<TF_AsyncOpKernelDoneCallback*>(&done));
+        reinterpret_cast<TF_AsyncOpKernelDoneCallback*>(done_ptr));
   }
 
   CAsyncOpKernel* AsAsync() override { return this; }
