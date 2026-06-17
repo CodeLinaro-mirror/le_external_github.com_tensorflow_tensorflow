@@ -137,10 +137,6 @@ struct RaggedAllToAllStreamState {
         clique_key(std::move(clique_key)) {}
 };
 
-// Returns true if all replicas in every replica group of the collective
-// are located on the same host (node).
-bool IsAllReplicasLocal(int64_t device_count, const CollectiveConfig& config);
-
 // Thunk that performs a NCCL-based Ragged-All-to-All among CUDA GPU-based
 // replicas.
 class RaggedAllToAllThunk : public CollectiveThunk {
@@ -215,9 +211,7 @@ class RaggedAllToAllThunk : public CollectiveThunk {
                              Communicator& comm) override;
 
  private:
-  bool is_local(int device_count) const {
-    return IsAllReplicasLocal(device_count, config_.config);
-  }
+  bool is_local(int device_count) const;
 
   const RaggedAllToAllConfig config_;
 
