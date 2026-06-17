@@ -1574,6 +1574,14 @@ TEST(CAPI, DeletingNullPointerIsSafe) {
   TF_DeleteStatus(status);
 }
 
+TEST(CAPI, AllocateStringTensorUninitializedDelete) {
+  int64_t dims[] = {100};
+  TF_Tensor* t =
+      TF_AllocateTensor(TF_STRING, dims, 1, 100 * sizeof(TF_TString));
+  EXPECT_NE(t, nullptr);
+  TF_DeleteTensor(t);
+}
+
 TEST(CAPI, TestBitcastFrom_Reshape) {
   int64_t dims[] = {2, 3};
   TF_Tensor* a =
