@@ -49,8 +49,14 @@ const Tensor* GetTensorFromHandle(TFE_TensorHandle* h, TF_Status* status) {
     status->status = absl::InvalidArgumentError("Invalid handle");
     return nullptr;
   }
+  tensorflow::ImmediateExecutionTensorHandle* unwrapped_handle =
+      tensorflow::unwrap(h);
+  if (!tensorflow::TensorHandle::classof(unwrapped_handle)) {
+    status->status = absl::InvalidArgumentError("Invalid handle");
+    return nullptr;
+  }
   tensorflow::TensorHandle* handle =
-      tensorflow::TensorHandleFromInterface(tensorflow::unwrap(h));
+      tensorflow::TensorHandleFromInterface(unwrapped_handle);
   if (handle->Type() != TensorHandle::LOCAL) {
     status->status = absl::InvalidArgumentError(absl::StrCat(
         "DLPack doesn't support ", handle->TypeString(), " tensor"));
@@ -304,6 +310,9 @@ void* TFE_HandleToDLPack(TFE_TensorHandle* h, TF_Status* status) {
   }
 
   const Tensor* tensor = GetTensorFromHandle(h, status);
+  if (!status->status.ok() || tensor == nullptr) {
+    return nullptr;
+  }
   TF_DataType data_type = static_cast<TF_DataType>(tensor->dtype());
 
   auto tf_dlm_type = GetDlDataType(data_type, status);
