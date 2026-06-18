@@ -89,7 +89,7 @@ absl::Status LogicalBufferAnalysis::Analyze() {
 }
 
 LogicalBuffer& LogicalBufferAnalysis::GetBuffer(LogicalBuffer::Id id) const {
-  return *logical_buffers_[id];
+  return *logical_buffers_.at(id);
 }
 
 LogicalBuffer& LogicalBufferAnalysis::GetBuffer(HloInstruction* instruction,
