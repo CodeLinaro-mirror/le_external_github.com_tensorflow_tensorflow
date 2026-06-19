@@ -201,14 +201,38 @@ CollectiveKernelThunkMetadata CreateCollectiveKernelThunk(
   thunk_info.profile_annotation = kProfileName;
   const LaunchDimensions launch_dimensions(
       /*block_x_count=*/1, /*thread_x_count_per_block=*/kNumElements);
+  const int64_t signal_size = 1024;
+  const int64_t remote_size = aligned_input_size_bytes;
+  CollectiveKernelSpec kernel_spec = {
+      /*operand_buffer_specs=*/{
+          {/*requires_multimem=*/false, SymmetricMemoryType::kNone}},
+      /*result_buffer_specs=*/
+      {{/*requires_multimem=*/false, SymmetricMemoryType::kNone}},
+      /*scratch_buffers=*/
+      {{signal_size, /*requires_multimem=*/false,
+        SymmetricMemoryType::kXlaRendezvous,
+        /*should_memzero=*/true,
+        /*should_double_buffer=*/true},
+       {remote_size,
+        /*requires_multimem=*/is_multimem_enabled,
+        SymmetricMemoryType::kXlaRendezvous,
+        /*should_memzero=*/false,
+        /*should_double_buffer=*/true}},
+      /*argument_descriptors=*/
+      {{KernelArgType::kInputBuffer, 0},
+       {KernelArgType::kOutputBuffer, 0},
+       {KernelArgType::kRuntimeRank},
+       {KernelArgType::kInvocationCount},
+       {KernelArgType::kScratchBuffer, 0},
+       {KernelArgType::kScratchBuffer, 1}},
+      /*sync_count_increment=*/1};
   result.thunk = std::make_unique<CollectiveKernelThunk>(
-      std::move(thunk_info), collective_config,
+      std::move(thunk_info), collective_config, std::move(kernel_spec),
       /*is_async=*/false, result.buffers,
       /*is_collective_kernel_enabled=*/true,
       /*kernel_name=*/kKernelName,
       /*launch_dimensions=*/launch_dimensions,
-      /*shmem_bytes=*/0,
-      /*is_multimem_enabled=*/is_multimem_enabled);
+      /*shmem_bytes=*/0);
   result.total_buffer_size = total_buffer_size;
   result.num_devices = num_devices;
   result.aligned_input_size_bytes = aligned_input_size_bytes;

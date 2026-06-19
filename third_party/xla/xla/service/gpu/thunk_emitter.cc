@@ -74,6 +74,7 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/collective_broadcast_thunk.h"
 #include "xla/backends/gpu/runtime/collective_group_thunk.h"
 #include "xla/backends/gpu/runtime/collective_kernel_thunk.h"
+#include "xla/backends/gpu/runtime/collective_params.h"
 #include "xla/backends/gpu/runtime/collective_permute_thunk.h"
 #include "xla/backends/gpu/runtime/collective_thunk.h"
 #include "xla/backends/gpu/runtime/conditional_thunk.h"
@@ -291,14 +292,24 @@ xla::Future<std::unique_ptr<CollectiveKernelThunk>> EmitCollectiveKernelThunk(
   }
   const auto make_thunk =
       [thunk_info = std::move(thunk_info), buffers = std::move(buffers), config,
-       is_async = !IsGPUSyncCollective(*instr), is_collective_kernel_enabled](
+       fusion_instr, is_async = !IsGPUSyncCollective(*instr),
+       is_collective_kernel_enabled](
           absl::string_view kernel_name, int32_t shmem_bytes,
           LaunchDimensions launch_dimensions, const std::vector<uint8_t>& cubin,
           bool use_pdl) {
+        auto kernel_spec_or =
+            CreateCollectiveKernelSpec(fusion_instr, launch_dimensions);
+        if (!kernel_spec_or.ok()) {
+          LOG(ERROR) << "Failed to create CollectiveKernelSpec: "
+                     << kernel_spec_or.status();
+          return std::unique_ptr<CollectiveKernelThunk>(nullptr);
+        }
+        CollectiveKernelSpec kernel_spec = *std::move(kernel_spec_or);
+
         return std::make_unique<CollectiveKernelThunk>(
-            thunk_info, config, is_async, std::move(buffers),
-            is_collective_kernel_enabled, kernel_name, launch_dimensions,
-            shmem_bytes, kMultimemDisabled,
+            thunk_info, config, std::move(kernel_spec), is_async,
+            std::move(buffers), is_collective_kernel_enabled, kernel_name,
+            launch_dimensions, shmem_bytes,
             !cubin.empty() ? std::make_optional(cubin) : std::nullopt, use_pdl);
       };
   const GpuTopology& gpu_topology = ir_emitter_context->gpu_topology();

@@ -1944,6 +1944,7 @@ cc_library(
         ":collective_thunk_proto_cc",
         ":thunk",
         ":thunk_proto_cc",
+        ":traced_command",
         "//xla:shape_util",
         "//xla:status_macros",
         "//xla:util",
@@ -2050,6 +2051,7 @@ cc_library(
     hdrs = ["all_reduce_thunk.h"],
     deps = [
         ":collective_kernel_thunk",
+        ":collective_params",
         ":collective_thunk",
         ":collective_thunk_proto_cc",
         ":thunk",
@@ -4100,6 +4102,7 @@ cc_library(
     srcs = ["all_reduce.cc"],
     hdrs = ["all_reduce.h"],
     deps = [
+        ":collective_params",
         "//xla:shape_util",
         "//xla:types",
         "//xla:util",
@@ -4111,6 +4114,7 @@ cc_library(
         "//xla/service:collective_ops_utils",
         "//xla/service:computation_placer_hdr",
         "//xla/service:gpu_topology",
+        "//xla/service/gpu:gpu_constants",
         "//xla/service/gpu:launch_dimensions",
         "//xla/stream_executor:device_address",
         "//xla/stream_executor:device_description",

@@ -567,8 +567,28 @@ TEST(AllReduceThunkTest, RecordCommandBufferCreateUpdateAsyncCollectiveKernel) {
   config.config.group_mode =
       CollectiveOpGroupMode::COLLECTIVE_OP_GROUP_MODE_CROSS_REPLICA;
 
+  CollectiveKernelSpec kernel_spec = {
+      /*operand_buffer_specs=*/{
+          {/*requires_multimem=*/false, SymmetricMemoryType::kNone}},
+      /*result_buffer_specs=*/
+      {{/*requires_multimem=*/false, SymmetricMemoryType::kNone}},
+      /*scratch_buffers=*/
+      {{1024, /*requires_multimem=*/false, SymmetricMemoryType::kXlaRendezvous,
+        /*should_memzero=*/true,
+        /*should_double_buffer=*/true},
+       {1024, /*requires_multimem=*/false, SymmetricMemoryType::kXlaRendezvous,
+        /*should_memzero=*/false,
+        /*should_double_buffer=*/true}},
+      /*argument_descriptors=*/
+      {{KernelArgType::kInputBuffer, 0},
+       {KernelArgType::kOutputBuffer, 0},
+       {KernelArgType::kRuntimeRank},
+       {KernelArgType::kInvocationCount},
+       {KernelArgType::kScratchBuffer, 0},
+       {KernelArgType::kScratchBuffer, 1}},
+      /*sync_count_increment=*/1};
   auto collective_kernel_thunk = std::make_unique<CollectiveKernelThunk>(
-      Thunk::ThunkInfo(), config.config,
+      Thunk::ThunkInfo(), config.config, std::move(kernel_spec),
       /*is_async=*/true, buffers,
       /*is_collective_kernel_enabled=*/true, "dummy_kernel",
       LaunchDimensions(1, 1));

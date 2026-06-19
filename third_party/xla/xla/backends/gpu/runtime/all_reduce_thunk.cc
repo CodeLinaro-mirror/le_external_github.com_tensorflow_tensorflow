@@ -31,6 +31,7 @@ limitations under the License.
 #include "xla/backends/gpu/collectives/gpu_collectives.h"
 #include "xla/backends/gpu/collectives/gpu_communicator.h"
 #include "xla/backends/gpu/runtime/collective_kernel_thunk.h"
+#include "xla/backends/gpu/runtime/collective_params.h"
 #include "xla/backends/gpu/runtime/collective_thunk.h"
 #include "xla/backends/gpu/runtime/collective_thunk.pb.h"
 #include "xla/backends/gpu/runtime/thunk.h"
@@ -156,7 +157,10 @@ CollectiveOpGroupMode AllReduceThunk::GetGroupMode(
 absl::Status AllReduceThunk::Prepare(const PrepareParams& params) {
   RETURN_IF_ERROR(CollectiveThunk::Prepare(params));
   if (collective_kernel_thunk_ != nullptr) {
-    return collective_kernel_thunk_->Prepare(params);
+    absl::Status status = collective_kernel_thunk_->Prepare(params);
+    if (!absl::IsUnimplemented(status)) {
+      return status;
+    }
   }
   return absl::OkStatus();
 }
@@ -230,12 +234,33 @@ absl::StatusOr<std::unique_ptr<AllReduceThunk>> AllReduceThunk::FromProto(
           : std::nullopt;
   std::unique_ptr<CollectiveKernelThunk> kernel_thunk = nullptr;
   if (!thunk_proto.kernel_name().empty()) {
+    CollectiveKernelSpec kernel_spec = {
+        /*operand_buffer_specs=*/{
+            {/*requires_multimem=*/false, SymmetricMemoryType::kNone}},
+        /*result_buffer_specs=*/
+        {{/*requires_multimem=*/false, SymmetricMemoryType::kNone}},
+        /*scratch_buffers=*/
+        {{1024, /*requires_multimem=*/false,
+          SymmetricMemoryType::kXlaRendezvous,
+          /*should_memzero=*/true,
+          /*should_double_buffer=*/true},
+         {1024, /*requires_multimem=*/false,
+          SymmetricMemoryType::kXlaRendezvous,
+          /*should_memzero=*/false,
+          /*should_double_buffer=*/true}},
+        /*argument_descriptors=*/
+        {{KernelArgType::kInputBuffer, 0},
+         {KernelArgType::kOutputBuffer, 0},
+         {KernelArgType::kRuntimeRank},
+         {KernelArgType::kInvocationCount},
+         {KernelArgType::kScratchBuffer, 0},
+         {KernelArgType::kScratchBuffer, 1}},
+        /*sync_count_increment=*/1};
     kernel_thunk = std::make_unique<CollectiveKernelThunk>(
-        thunk_info, config, thunk_proto.is_async(), buffers,
-        thunk_proto.collective_kernel_enabled(), thunk_proto.kernel_name(),
-        launch_dimensions, thunk_proto.shmem_bytes(),
-        thunk_proto.is_multimem_enabled(), std::move(cubin),
-        thunk_proto.use_pdl());
+        thunk_info, config, std::move(kernel_spec), thunk_proto.is_async(),
+        buffers, thunk_proto.collective_kernel_enabled(),
+        thunk_proto.kernel_name(), launch_dimensions, thunk_proto.shmem_bytes(),
+        std::move(cubin), thunk_proto.use_pdl());
   }
   return std::make_unique<AllReduceThunk>(
       std::move(thunk_info), AllReduceConfig{config, reduction_kind},
