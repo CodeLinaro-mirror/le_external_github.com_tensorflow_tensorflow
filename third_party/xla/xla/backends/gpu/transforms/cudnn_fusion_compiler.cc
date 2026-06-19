@@ -196,6 +196,19 @@ inline std::optional<fe::DataType_t> GetComputeDataType(
   return compute_dtype;
 }
 
+inline bool IsSupportedMixedPrecisionConvert(PrimitiveType from_type,
+                                             PrimitiveType to_type) {
+  auto is_low_precision = [](PrimitiveType type) {
+    return type == F16 || type == BF16 || primitive_util::IsF8Type(type) ||
+           primitive_util::IsIntegralType(type);
+  };
+  auto is_high_precision = [](PrimitiveType type) {
+    return type == F32 || type == S32;
+  };
+  return (is_high_precision(to_type) && is_low_precision(from_type)) ||
+         (is_high_precision(from_type) && is_low_precision(to_type));
+}
+
 // Extracts dimensions and strides from HLO tensors in the format expected by
 // cuDNN.
 struct Result {
@@ -591,7 +604,7 @@ HandleClampToCudnnGraph(
   std::shared_ptr<graph::Tensor_attributes> min_tensor = graph.pointwise(
       hlo_to_cudnn[hlo.operand(1)], hlo_to_cudnn[hlo.operand(2)], min_attrs);
   const std::optional<fe::DataType_t> data_type =
-      ToCudnnDataType(hlo.shape().element_type());
+      ToCudnnDataType(hlo.operand(1)->shape().element_type());
   if (!data_type.has_value()) {
     VLOG(3) << "Unimplemented data type: "
             << PrimitiveType_Name(hlo.shape().element_type());
@@ -601,7 +614,10 @@ HandleClampToCudnnGraph(
   const auto max_attrs = graph::Pointwise_attributes()
                              .set_mode(fe::PointwiseMode_t::MAX)
                              .set_compute_data_type(compute_dtype);
-  return graph.pointwise(min_tensor, hlo_to_cudnn[hlo.operand(0)], max_attrs);
+  auto max_tensor =
+      graph.pointwise(min_tensor, hlo_to_cudnn[hlo.operand(0)], max_attrs);
+  max_tensor->set_data_type(*data_type).set_name(std::string(hlo.name()));
+  return max_tensor;
 }
 
 std::optional<std::shared_ptr<graph::Tensor_attributes>>
@@ -622,7 +638,7 @@ HandleExpMinusOneToCudnnGraph(
   std::shared_ptr<graph::Tensor_attributes> exp_tensor =
       graph.pointwise(hlo_to_cudnn[hlo.operand(0)], exp_attrs);
   const std::optional<fe::DataType_t> data_type =
-      ToCudnnDataType(hlo.shape().element_type());
+      ToCudnnDataType(hlo.operand(0)->shape().element_type());
   if (!data_type.has_value()) {
     VLOG(3) << "Unimplemented data type: "
             << PrimitiveType_Name(hlo.shape().element_type());
@@ -632,7 +648,9 @@ HandleExpMinusOneToCudnnGraph(
   const auto minus_attrs = graph::Pointwise_attributes()
                                .set_mode(fe::PointwiseMode_t::SUB)
                                .set_compute_data_type(compute_dtype);
-  return graph.pointwise(exp_tensor, graph.tensor(1), minus_attrs);
+  auto minus_tensor = graph.pointwise(exp_tensor, graph.tensor(1), minus_attrs);
+  minus_tensor->set_data_type(*data_type).set_name(std::string(hlo.name()));
+  return minus_tensor;
 }
 
 // Traverses fusion computations and creates cuDNN graphs out of them.
@@ -681,6 +699,9 @@ absl::StatusOr<std::optional<se::gpu::CudnnGraph>> HloFusionToCuDnnGraph(
       hlo_to_cudnn[&parameter] = graph.slice(
           hlo_to_cudnn[&parameter],
           graph::Slice_attributes().set_slices(dims.slices.value()));
+      hlo_to_cudnn[&parameter]
+          ->set_data_type(*data_type)
+          .set_name(std::string(parameter.name()));
     }
     return true;
   };
@@ -750,13 +771,7 @@ absl::StatusOr<std::optional<se::gpu::CudnnGraph>> HloFusionToCuDnnGraph(
       return hlo_to_cudnn[hlo->operand(i)];
     };
 
-    if (HloPredicateIsOp<HloOpcode::kConvert>(hlo) && hlo->user_count() == 1 &&
-        HloPredicateIsOp<HloOpcode::kConvolution>(hlo->users()[0])) {
-      // consume converts of inputs to conv, conv can do fp32 = conv(fp8, fp8)
-      // and int32 = conv(int8, int8)
-      hlo_to_cudnn[hlo] = operand(0);
-      continue;
-    } else if (HloPredicateIsOp<HloOpcode::kParameter>(hlo)) {
+    if (HloPredicateIsOp<HloOpcode::kParameter>(hlo)) {
       CHECK(hlo_to_cudnn.contains(hlo));
       continue;
     } else if (HloPredicateIsOp<HloOpcode::kCustomCall>(hlo)) {
@@ -767,7 +782,11 @@ absl::StatusOr<std::optional<se::gpu::CudnnGraph>> HloFusionToCuDnnGraph(
         return std::nullopt;
       }
       continue;
-    } else if (HloPredicateIsOp<HloOpcode::kTuple>(hlo)) {
+    }
+    if (hlo_to_cudnn.contains(hlo)) {
+      continue;
+    }
+    if (HloPredicateIsOp<HloOpcode::kTuple>(hlo)) {
       if (!IsWorkspaceAllocationRoot(*hlo) && !IsAmaxRoot(*hlo)) {
         VLOG(3) << "Tuples are only expected at outputs for workspace "
                    "allocation.";
@@ -778,16 +797,39 @@ absl::StatusOr<std::optional<se::gpu::CudnnGraph>> HloFusionToCuDnnGraph(
       if (const auto const_tensor = HandleConstantHloToCudnnGraph(*hlo, graph);
           const_tensor.has_value()) {
         hlo_to_cudnn[hlo] = const_tensor.value();
+        hlo_to_cudnn[hlo]->set_dim({1, 1, 1}).set_stride({1, 1, 1});
       } else {
         return std::nullopt;
       }
     } else if (HloPredicateIsOp<HloOpcode::kReshape, HloOpcode::kBitcast,
                                 HloOpcode::kTranspose, HloOpcode::kCopy,
-                                HloOpcode::kBroadcast, HloOpcode::kSlice>(
-                   hlo)) {
+                                HloOpcode::kSlice>(hlo)) {
       // All these are accounted for separately as transformations of strides.
       hlo_to_cudnn[hlo] = operand(0);
+    } else if (HloPredicateIsOp<HloOpcode::kBroadcast>(hlo)) {
+      if (hlo->operand(0)->opcode() == HloOpcode::kConstant) {
+        if (const auto const_tensor =
+                HandleConstantHloToCudnnGraph(*hlo->operand(0), graph);
+            const_tensor.has_value()) {
+          hlo_to_cudnn[hlo] = const_tensor.value();
+          hlo_to_cudnn[hlo]->set_dim({1, 1, 1}).set_stride({1, 1, 1});
+        } else {
+          return std::nullopt;
+        }
+      } else {
+        hlo_to_cudnn[hlo] = operand(0);
+      }
     } else if (hlo->IsElementwise()) {
+      if (HloPredicateIsOp<HloOpcode::kConvert>(hlo) &&
+          hlo->user_count() == 1 &&
+          HloPredicateIsOp<HloOpcode::kConvolution>(hlo->users()[0])) {
+        if (IsSupportedMixedPrecisionConvert(
+                hlo->operand(0)->shape().element_type(),
+                hlo->shape().element_type())) {
+          hlo_to_cudnn[hlo] = operand(0);
+          continue;
+        }
+      }
       const auto compute_dtype =
           GetComputeDataType(hlo->shape().element_type());
       if (!compute_dtype.has_value()) {
@@ -813,6 +855,14 @@ absl::StatusOr<std::optional<se::gpu::CudnnGraph>> HloFusionToCuDnnGraph(
           VLOG(3) << "Unsupported elementwise operation.";
           return std::nullopt;
         }
+        fe::DataType_t data_type =
+            hlo->opcode() == HloOpcode::kConvert
+                ? ToCudnnDataType(hlo->shape().element_type()).value()
+                : ToCudnnDataType(
+                      hlo->operand(hlo->opcode() == HloOpcode::kSelect ? 1 : 0)
+                          ->shape()
+                          .element_type())
+                      .value();
         const auto attrs = graph::Pointwise_attributes()
                                .set_mode(mode.value())
                                .set_compute_data_type(compute_dtype.value());
@@ -824,14 +874,19 @@ absl::StatusOr<std::optional<se::gpu::CudnnGraph>> HloFusionToCuDnnGraph(
           // setting output of the unary shapes results in the rejection of
           // the cuDNN graph.
           if (hlo->operand(0)->opcode() == HloOpcode::kBroadcast) {
-            const std::optional<TritonFusionAnalysis::Scope> scope =
-                gemm_adapter->analysis_.QueryInstructionScope(*hlo);
-            if (!scope.has_value()) {
-              LOG(FATAL) << "No scope for instruction: "
-                         << hlo->ToShortString();
+            std::optional<Result> dims;
+            if (gemm_adapter.has_value()) {
+              const std::optional<TritonFusionAnalysis::Scope> scope =
+                  gemm_adapter->analysis_.QueryInstructionScope(*hlo);
+              if (!scope.has_value()) {
+                VLOG(3) << "No scope for instruction: " << hlo->ToShortString();
+              }
+              dims = gemm_adapter->DimensionsAndStrides(*hlo, *scope);
+            } else if (conv_adapter.has_value()) {
+              dims = conv_adapter->DimensionsAndStrides(*hlo);
+            } else if (ragged_dot_adapter.has_value()) {
+              dims = ragged_dot_adapter->DimensionsAndStrides(*hlo);
             }
-            const std::optional<Result> dims =
-                gemm_adapter->DimensionsAndStrides(*hlo, *scope);
             if (!dims.has_value()) {
               VLOG(3) << "Unsupported hlo for querying dimensions: "
                       << hlo->ToShortString();
@@ -852,6 +907,23 @@ absl::StatusOr<std::optional<se::gpu::CudnnGraph>> HloFusionToCuDnnGraph(
         } else {
           VLOG(3) << "Unimplemented elementwise operation.";
           return std::nullopt;
+        }
+        hlo_to_cudnn[hlo]->set_data_type(data_type);
+        if (hlo->opcode() != HloOpcode::kConvert && hlo->user_count() == 1 &&
+            hlo->users()[0]->opcode() == HloOpcode::kConvert) {
+          const HloInstruction* convert_user = hlo->users()[0];
+          PrimitiveType to_type = convert_user->shape().element_type();
+          if (IsSupportedMixedPrecisionConvert(
+                  convert_user->operand(0)->shape().element_type(), to_type)) {
+            auto chained_pw = graph.pointwise(
+                hlo_to_cudnn[hlo],
+                graph::Pointwise_attributes()
+                    .set_mode(fe::PointwiseMode_t::IDENTITY)
+                    .set_compute_data_type(fe::DataType_t::FLOAT));
+            chained_pw->set_data_type(ToCudnnDataType(to_type).value())
+                .set_name(std::string(convert_user->name()));
+            hlo_to_cudnn[convert_user] = chained_pw;
+          }
         }
       }
     } else if (HloPredicateIsOp<HloOpcode::kDot>(hlo)) {
@@ -976,9 +1048,11 @@ absl::StatusOr<std::optional<se::gpu::CudnnGraph>> HloFusionToCuDnnGraph(
               << PrimitiveType_Name(hlo->shape().element_type());
       return std::nullopt;
     }
-    hlo_to_cudnn[hlo]
-        ->set_data_type(data_type.value())
-        .set_name(std::string(hlo->name()));
+    auto& cudnn_tensor = hlo_to_cudnn[hlo];
+    if (hlo->operand_count() == 0 || cudnn_tensor != operand(0)) {
+      cudnn_tensor->set_data_type(data_type.value())
+          .set_name(std::string(hlo->name()));
+    }
   }
 
   std::vector<HloInstruction*> outputs;
