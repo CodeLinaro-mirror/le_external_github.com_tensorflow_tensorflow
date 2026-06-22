@@ -22,6 +22,7 @@ from absl.testing import parameterized
 from tensorflow.python.data.experimental.ops import matching_files
 from tensorflow.python.data.kernel_tests import checkpoint_test_base
 from tensorflow.python.data.kernel_tests import test_base
+from tensorflow.python.eager import context
 from tensorflow.python.framework import combinations
 from tensorflow.python.framework import errors
 from tensorflow.python.platform import test
@@ -151,6 +152,18 @@ class MatchingFilesDatasetTest(test_base.DatasetTestBase,
         break
 
     self.assertCountEqual(expected_filenames, actual_filenames)
+
+  @combinations.generate(test_base.default_test_combinations())
+  def testEmptyPatterns(self):
+    """Test the MatchingFiles dataset with an empty patterns list."""
+    if context.executing_eagerly():
+      with self.assertRaises(errors.InvalidArgumentError):
+        matching_files.MatchingFilesDataset([])
+    else:
+      dataset = matching_files.MatchingFilesDataset([])
+      self.assertDatasetProduces(
+          dataset, expected_error=(errors.InvalidArgumentError, '')
+      )
 
 
 class MatchingFilesDatasetCheckpointTest(
