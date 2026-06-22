@@ -1276,4 +1276,91 @@ TEST(TransposePlanCache, Basics) {
   EXPECT_TRUE(p1.get() != p1b.get());
 }
 
+void TestPackIntN(int bits_per_element, absl::Span<const int64_t> dims,
+                  absl::Span<const int64_t> permutation) {
+  int elements_per_byte = 8 / bits_per_element;
+
+  int64_t num_elems = 1;
+  for (int64_t dim : dims) {
+    num_elems *= dim;
+  }
+  std::vector<int8_t> input(num_elems);
+  absl::BitGen bitgen;
+  int max_val = (1 << bits_per_element) - 1;
+  for (int64_t i = 0; i < num_elems; ++i) {
+    input[i] = absl::Uniform<int>(bitgen, 0, max_val + 1);
+  }
+
+  TransposePlan::Options options;
+  options.elem_size_in_bytes = 1;
+  options.dims = dims;
+  options.permutation = permutation;
+  options.dest_bits_per_element = bits_per_element;
+
+  TF_ASSERT_OK_AND_ASSIGN(auto plan, TransposePlan::Create(options));
+
+  int64_t output_size_bytes =
+      CeilOfRatio<int64_t>(num_elems, elements_per_byte);
+  std::vector<char> output(output_size_bytes, -1);
+
+  plan->Execute(reinterpret_cast<const char*>(input.data()), output.data());
+
+  std::vector<int8_t> expected_unpacked_transposed(num_elems);
+  std::vector<int64_t> output_dims = Permute(dims, permutation);
+  std::vector<int64_t> input_tiling = PadTiling(dims, {});
+  std::vector<int64_t> input_strides =
+      ComputeDefaultStrides(dims, input_tiling, 1);
+  std::vector<int64_t> output_tiling = PadTiling(output_dims, {});
+  std::vector<int64_t> output_strides =
+      ComputeDefaultStrides(output_dims, output_tiling, 1);
+  ReferenceTranspose<int8_t>(dims, permutation, input_tiling, input_strides,
+                             output_tiling, output_strides, input,
+                             absl::MakeSpan(expected_unpacked_transposed), 0);
+
+  std::vector<char> expected_output(output_size_bytes);
+  PackIntN(bits_per_element,
+           absl::MakeConstSpan(reinterpret_cast<const char*>(
+                                   expected_unpacked_transposed.data()),
+                               num_elems),
+           absl::MakeSpan(expected_output));
+
+  EXPECT_EQ(output, expected_output);
+}
+
+TEST(TransposeTest, PackInt4_2D) {
+  TestPackIntN(4, {4, 4}, {1, 0});
+  TestPackIntN(4, {4, 4}, {0, 1});
+  TestPackIntN(4, {16, 32}, {1, 0});
+}
+
+TEST(TransposeTest, PackInt4_3D) {
+  TestPackIntN(4, {4, 6, 8}, {2, 0, 1});
+  TestPackIntN(4, {8, 12, 16}, {1, 2, 0});
+}
+
+TEST(TransposeTest, PackInt2_2D) {
+  TestPackIntN(2, {4, 4}, {1, 0});
+  TestPackIntN(2, {16, 32}, {1, 0});
+}
+
+TEST(TransposeTest, PackInt1_2D) {
+  TestPackIntN(1, {8, 8}, {1, 0});
+  TestPackIntN(1, {16, 32}, {1, 0});
+}
+
+TEST(TransposeTest, PackInt4_Unaligned) {
+  TestPackIntN(4, {5, 5}, {1, 0});
+  TestPackIntN(4, {15, 31}, {1, 0});
+}
+
+TEST(TransposeTest, PackInt2_Unaligned) {
+  TestPackIntN(2, {5, 5}, {1, 0});
+  TestPackIntN(2, {15, 31}, {1, 0});
+}
+
+TEST(TransposeTest, PackInt1_Unaligned) {
+  TestPackIntN(1, {5, 5}, {1, 0});
+  TestPackIntN(1, {15, 31}, {1, 0});
+}
+
 }  // namespace xla

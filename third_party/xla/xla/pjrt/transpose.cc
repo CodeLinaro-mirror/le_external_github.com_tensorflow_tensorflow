@@ -146,7 +146,7 @@ template <typename T, int inner_bs,
           TransposePlan::Transformation transformation>
 void MacroKernel(const char* __restrict a, int64_t lda, int outer_bs_a,
                  char* __restrict b, int64_t ldb, int outer_bs_b,
-                 void* __restrict scratch) {
+                 void* __restrict scratch, int bits_per_element) {
   DVLOG(10) << "MacroKernel lda=" << lda << " ldb=" << ldb
             << " outer_bs_a=" << outer_bs_a << " outer_bs_b=" << outer_bs_b
             << " inner_bs=" << inner_bs;
@@ -178,11 +178,32 @@ void MacroKernel(const char* __restrict a, int64_t lda, int outer_bs_a,
     lda = outer_bs_a * inner_bs * sizeof(float);
   }
 
+  char* pack_dst = b;
+  int64_t ldb_original = ldb;
+  if constexpr (transformation == TransposePlan::Transformation::kPack) {
+    b = reinterpret_cast<char*>(scratch);
+    ldb = outer_bs_b * inner_bs * sizeof(T);
+  }
+
   for (int i = 0; i < outer_bs_a; ++i) {
     for (int j = 0; j < outer_bs_b; ++j) {
       TransposeMicroKernel<T, inner_bs>::Apply(
           a + inner_bs * j * lda + i * inner_bs * sizeof(T), lda,
           b + inner_bs * i * ldb + j * inner_bs * sizeof(T), ldb);
+    }
+  }
+
+  if constexpr (transformation == TransposePlan::Transformation::kPack) {
+    int elements_per_byte = 8 / bits_per_element;
+    int64_t ld_scratch = outer_bs_b * inner_bs;
+    int64_t num_rows = outer_bs_a * inner_bs;
+    int64_t row_size = outer_bs_b * inner_bs;
+    for (int64_t r = 0; r < num_rows; ++r) {
+      absl::Span<const char> src_span(b + r * ld_scratch, row_size);
+      absl::Span<char> dst_span(
+          pack_dst + r * (ldb_original / elements_per_byte),
+          row_size / elements_per_byte);
+      PackIntN(bits_per_element, src_span, dst_span);
     }
   }
 }
@@ -193,7 +214,7 @@ template <typename T, int inner_bs,
           TransposePlan::Transformation transformation>
 void Transpose(const char* __restrict a, int outer_bs_a, char* __restrict b,
                int outer_bs_b, TransposePlan::Node const* __restrict node,
-               void* __restrict scratch) {
+               void* __restrict scratch, int bits_per_element) {
   tsl::profiler::TraceMe traceme([&]() {
     return tsl::profiler::TraceMeEncode("Transpose",
                                         {{"inner_bs", inner_bs},
@@ -208,6 +229,15 @@ void Transpose(const char* __restrict a, int outer_bs_a, char* __restrict b,
   const int64_t lda = node->lda;
   const int64_t ldb = node->ldb;
   const int64_t inc = node->inc;
+
+  constexpr bool pack =
+      (transformation == TransposePlan::Transformation::kPack);
+  int elements_per_byte = pack ? (8 / bits_per_element) : 1;
+  auto a_offset = [&](int64_t i) { return a + i * lda; };
+  auto b_offset = [&](int64_t i) {
+    return b + (pack ? (i * ldb) / elements_per_byte : i * ldb);
+  };
+
   TransposePlan::Node const* next_node = node + 1;
   if (next_node->inc < 0) {
     // This is the last loop in the nested loops. The next node is a sentinel
@@ -217,9 +247,9 @@ void Transpose(const char* __restrict a, int outer_bs_a, char* __restrict b,
     const int64_t ldb_block = next_node->ldb;
     int64_t i;
     for (i = 0; i < stop; i += inc) {
-      MacroKernel<T, inner_bs, transformation>(a + i * lda, lda_block,
-                                               outer_bs_a, b + i * ldb,
-                                               ldb_block, outer_bs_b, scratch);
+      MacroKernel<T, inner_bs, transformation>(
+          a_offset(i), lda_block, outer_bs_a, b_offset(i), ldb_block,
+          outer_bs_b, scratch, bits_per_element);
     }
     // Handle trailing elements that didn't fit in a complete macrokernel.
     // Only the innermost dimensions have non-trivial outer_bs blocking.
@@ -230,29 +260,29 @@ void Transpose(const char* __restrict a, int outer_bs_a, char* __restrict b,
         outer_bs_a = (end - i) / inner_bs;
         if (outer_bs_a > 0) {
           MacroKernel<T, inner_bs, transformation>(
-              a + i * lda, lda_block, outer_bs_a, b + i * ldb, ldb_block,
-              outer_bs_b, scratch);
+              a_offset(i), lda_block, outer_bs_a, b_offset(i), ldb_block,
+              outer_bs_b, scratch, bits_per_element);
           i += outer_bs_a * inner_bs;
         }
         // If there are still trailing elements left over that don't fit in the
         // inner block size, handle them via an unvectorized transpose.
         if (i < end) {
-          MacroKernel<T, 1, transformation>(a + i * lda, lda_block, end - i,
-                                            b + i * ldb, ldb_block,
-                                            outer_bs_b * inner_bs, scratch);
+          MacroKernel<T, 1, transformation>(
+              a_offset(i), lda_block, end - i, b_offset(i), ldb_block,
+              outer_bs_b * inner_bs, scratch, bits_per_element);
         }
       } else if (node->is_inner_dim_in_b) {
         outer_bs_b = (end - i) / inner_bs;
         if (outer_bs_b > 0) {
           MacroKernel<T, inner_bs, transformation>(
-              a + i * lda, lda_block, outer_bs_a, b + i * ldb, ldb_block,
-              outer_bs_b, scratch);
+              a_offset(i), lda_block, outer_bs_a, b_offset(i), ldb_block,
+              outer_bs_b, scratch, bits_per_element);
           i += outer_bs_b * inner_bs;
         }
         if (i < end) {
-          MacroKernel<T, 1, transformation>(a + i * lda, lda_block,
-                                            outer_bs_a * inner_bs, b + i * ldb,
-                                            ldb_block, end - i, scratch);
+          MacroKernel<T, 1, transformation>(
+              a_offset(i), lda_block, outer_bs_a * inner_bs, b_offset(i),
+              ldb_block, end - i, scratch, bits_per_element);
         }
       }
     } else if (node->trailing_tile_next_node_inc) {
@@ -267,12 +297,12 @@ void Transpose(const char* __restrict a, int outer_bs_a, char* __restrict b,
         const int64_t lda_block = trailing_next_node->lda;
         const int64_t ldb_block = trailing_next_node->ldb;
         MacroKernel<T, inner_bs, transformation>(
-            a + i * lda, lda_block, outer_bs_a, b + i * ldb, ldb_block,
-            outer_bs_b, scratch);
+            a_offset(i), lda_block, outer_bs_a, b_offset(i), ldb_block,
+            outer_bs_b, scratch, bits_per_element);
       } else {
-        Transpose<T, inner_bs, transformation>(a + i * lda, outer_bs_a,
-                                               b + i * ldb, outer_bs_b,
-                                               trailing_next_node, scratch);
+        Transpose<T, inner_bs, transformation>(
+            a_offset(i), outer_bs_a, b_offset(i), outer_bs_b,
+            trailing_next_node, scratch, bits_per_element);
       }
     }
   } else {
@@ -281,8 +311,9 @@ void Transpose(const char* __restrict a, int outer_bs_a, char* __restrict b,
     // but we call Transpose() recursively instead of MacroKernel().
     int64_t i;
     for (i = 0; i < stop; i += inc) {
-      Transpose<T, inner_bs, transformation>(
-          a + i * lda, outer_bs_a, b + i * ldb, outer_bs_b, next_node, scratch);
+      Transpose<T, inner_bs, transformation>(a_offset(i), outer_bs_a,
+                                             b_offset(i), outer_bs_b, next_node,
+                                             scratch, bits_per_element);
     }
     if (i < end) {
       DCHECK_EQ(node->trailing_tile_next_node_inc, 0);
@@ -290,28 +321,28 @@ void Transpose(const char* __restrict a, int outer_bs_a, char* __restrict b,
       if (node->is_inner_dim_in_a) {
         outer_bs_a = (end - i) / inner_bs;
         if (outer_bs_a > 0) {
-          Transpose<T, inner_bs, transformation>(a + i * lda, outer_bs_a,
-                                                 b + i * ldb, outer_bs_b,
-                                                 next_node, scratch);
+          Transpose<T, inner_bs, transformation>(
+              a_offset(i), outer_bs_a, b_offset(i), outer_bs_b, next_node,
+              scratch, bits_per_element);
           i += outer_bs_a * inner_bs;
         }
         if (i < end) {
-          Transpose<T, 1, transformation>(a + i * lda, end - i, b + i * ldb,
+          Transpose<T, 1, transformation>(a_offset(i), end - i, b_offset(i),
                                           outer_bs_b * inner_bs, next_node,
-                                          scratch);
+                                          scratch, bits_per_element);
         }
       } else if (node->is_inner_dim_in_b) {
         outer_bs_b = (end - i) / inner_bs;
         if (outer_bs_b > 0) {
-          Transpose<T, inner_bs, transformation>(a + i * lda, outer_bs_a,
-                                                 b + i * ldb, outer_bs_b,
-                                                 next_node, scratch);
+          Transpose<T, inner_bs, transformation>(
+              a_offset(i), outer_bs_a, b_offset(i), outer_bs_b, next_node,
+              scratch, bits_per_element);
           i += outer_bs_b * inner_bs;
         }
         if (i < end) {
-          Transpose<T, 1, transformation>(a + i * lda, outer_bs_a * inner_bs,
-                                          b + i * ldb, end - i, next_node,
-                                          scratch);
+          Transpose<T, 1, transformation>(a_offset(i), outer_bs_a * inner_bs,
+                                          b_offset(i), end - i, next_node,
+                                          scratch, bits_per_element);
         }
       }
     } else if (node->trailing_tile_next_node_inc) {
@@ -321,12 +352,12 @@ void Transpose(const char* __restrict a, int outer_bs_a, char* __restrict b,
         const int64_t lda_block = trailing_next_node->lda;
         const int64_t ldb_block = trailing_next_node->ldb;
         MacroKernel<T, inner_bs, transformation>(
-            a + i * lda, lda_block, outer_bs_a, b + i * ldb, ldb_block,
-            outer_bs_b, scratch);
+            a_offset(i), lda_block, outer_bs_a, b_offset(i), ldb_block,
+            outer_bs_b, scratch, bits_per_element);
       } else {
-        Transpose<T, inner_bs, transformation>(a + i * lda, outer_bs_a,
-                                               b + i * ldb, outer_bs_b,
-                                               trailing_next_node, scratch);
+        Transpose<T, inner_bs, transformation>(
+            a_offset(i), outer_bs_a, b_offset(i), outer_bs_b,
+            trailing_next_node, scratch, bits_per_element);
       }
     }
   }
@@ -391,7 +422,8 @@ void TransposeConstStride1(const char* __restrict a, char* __restrict b,
 
 template <typename T, TransposePlan::Transformation transformation>
 void TransposePlan::ExecuteTyped(const char* a, char* b,
-                                 absl::Span<Node const> nodes) const {
+                                 absl::Span<Node const> nodes,
+                                 int bits_per_element) const {
   tsl::profiler::TraceMe traceme([&]() {
     return tsl::profiler::TraceMeEncode(
         "TransposePlan::ExecuteTyped",
@@ -409,11 +441,11 @@ void TransposePlan::ExecuteTyped(const char* a, char* b,
     if (nodes.size() > 1) {
       Transpose<T, const_inner_block_elems, transformation>(
           a, outer_block_elems_a_, b, outer_block_elems_b_, nodes.data(),
-          scratch.get());
+          scratch.get(), bits_per_element);
     } else {
       MacroKernel<T, const_inner_block_elems, transformation>(
           a, nodes.back().lda, outer_block_elems_a_, b, nodes.back().ldb,
-          outer_block_elems_b_, scratch.get());
+          outer_block_elems_b_, scratch.get(), bits_per_element);
     }
   };
   switch (inner_block_elems_) {
@@ -460,11 +492,25 @@ void TransposePlan::ExecuteChunk(int chunk_id, const void* a, void* b,
     ac += input_chunk_iteration_offsets_[chunk_id];
   }
   char* bc = static_cast<char*>(b);
-  if (output_is_global) {
-    bc += output_chunk_offset_bytes_[chunk_id] +
-          output_chunk_iteration_offsets_[chunk_id];
+  if (transformation_ == Transformation::kPack) {
+    int elements_per_byte = 8 / bits_per_element_;
+    if (output_is_global) {
+      int64_t offset = output_chunk_offset_bytes_[chunk_id] +
+                       output_chunk_iteration_offsets_[chunk_id];
+      DCHECK_EQ(offset % elements_per_byte, 0);
+      bc += offset / elements_per_byte;
+    } else {
+      int64_t offset = output_chunk_iteration_offsets_[chunk_id];
+      DCHECK_EQ(offset % elements_per_byte, 0);
+      bc += offset / elements_per_byte;
+    }
   } else {
-    bc += output_chunk_iteration_offsets_[chunk_id];
+    if (output_is_global) {
+      bc += output_chunk_offset_bytes_[chunk_id] +
+            output_chunk_iteration_offsets_[chunk_id];
+    } else {
+      bc += output_chunk_iteration_offsets_[chunk_id];
+    }
   }
 
   if (inner_kernel_is_memcpy_) {
@@ -476,39 +522,42 @@ void TransposePlan::ExecuteChunk(int chunk_id, const void* a, void* b,
 
   switch (elem_size_in_bytes_) {
     case 1:
-      ExecuteTyped<uint8_t, Transformation::kNone>(ac, bc, nodes);
+      if (transformation_ == Transformation::kNone) {
+        ExecuteTyped<uint8_t, Transformation::kNone>(ac, bc, nodes, 0);
+      } else if (transformation_ == Transformation::kPack) {
+        ExecuteTyped<uint8_t, Transformation::kPack>(ac, bc, nodes,
+                                                     bits_per_element_);
+      } else {
+        LOG(FATAL) << "Unsupported transformation for elem_size=1: "
+                   << static_cast<int>(transformation_);
+      }
       break;
     case 2:
-      ExecuteTyped<uint16_t, Transformation::kNone>(ac, bc, nodes);
+      ExecuteTyped<uint16_t, Transformation::kNone>(ac, bc, nodes, 0);
       break;
     case 4:
       if (transformation_ == Transformation::kNone) {
-        ExecuteTyped<uint32_t, Transformation::kNone>(ac, bc, nodes);
+        ExecuteTyped<uint32_t, Transformation::kNone>(ac, bc, nodes, 0);
       } else {
         DCHECK(transformation_ == Transformation::kF64ToEf57);
-        ExecuteTyped<uint32_t, Transformation::kF64ToEf57>(ac, bc, nodes);
+        ExecuteTyped<uint32_t, Transformation::kF64ToEf57>(ac, bc, nodes, 0);
       }
       break;
     case 8:
-      ExecuteTyped<uint64_t, Transformation::kNone>(ac, bc, nodes);
+      ExecuteTyped<uint64_t, Transformation::kNone>(ac, bc, nodes, 0);
       break;
     case 16:
-      ExecuteTyped<uint128, Transformation::kNone>(ac, bc, nodes);
+      ExecuteTyped<uint128, Transformation::kNone>(ac, bc, nodes, 0);
       break;
     default:
       LOG(FATAL) << "Unimplemented element size " << elem_size_in_bytes_;
   }
 }
 
-void TransposePlan::Execute(
+void TransposePlan::ExecuteInternal(
     const void* a, void* b,
     std::optional<absl::FunctionRef<void(std::function<void(void)>)>>
         schedule_work) const {
-  if (num_elems_ == 0) {
-    return;
-  }
-  tsl::profiler::TraceMe traceme("Transpose::Execute", /*level=*/2);
-
   if (!schedule_work || Parallelism() <= 1) {
     for (int i = 0; i < Parallelism(); ++i) {
       ExecuteChunk(i, a, b, /*input_is_global=*/true,
@@ -526,6 +575,29 @@ void TransposePlan::Execute(
     ExecuteChunk(0, a, b, /*input_is_global=*/true,
                  /*output_is_global=*/true);
     counter.Wait();
+  }
+}
+
+void TransposePlan::Execute(
+    const void* a, void* b,
+    std::optional<absl::FunctionRef<void(std::function<void(void)>)>>
+        schedule_work) const {
+  if (num_elems_ == 0) {
+    return;
+  }
+  if (fallback_pack_bits_ > 0) {
+    tsl::profiler::TraceMe traceme("Transpose::ExecuteAndSubbytePack",
+                                   /*level=*/2);
+    std::unique_ptr<char[]> temp_buf(new char[num_elems_]);
+    ExecuteInternal(a, temp_buf.get(), schedule_work);
+    int elements_per_byte = 8 / fallback_pack_bits_;
+    PackIntN(
+        fallback_pack_bits_, absl::MakeConstSpan(temp_buf.get(), num_elems_),
+        absl::MakeSpan(static_cast<char*>(b),
+                       CeilOfRatio<int64_t>(num_elems_, elements_per_byte)));
+  } else {
+    tsl::profiler::TraceMe traceme("Transpose::Execute", /*level=*/2);
+    ExecuteInternal(a, b, schedule_work);
   }
 }
 
@@ -919,8 +991,15 @@ absl::StatusOr<std::unique_ptr<TransposePlan>> TransposePlan::Create(
         absl::StrJoin(plan->b_tiling_, ","));
   }
 
-  plan->transformation_ = o.transformation;
-  switch (o.transformation) {
+  plan->bits_per_element_ = o.elem_size_in_bytes * 8;
+  TransposePlan::Transformation transformation = o.transformation;
+  if (o.dest_bits_per_element.has_value() &&
+      transformation == Transformation::kNone) {
+    transformation = Transformation::kPack;
+  }
+  plan->transformation_ = transformation;
+
+  switch (plan->transformation_) {
     case Transformation::kNone:
       break;
     case Transformation::kF64ToEf57:
@@ -936,6 +1015,38 @@ absl::StatusOr<std::unique_ptr<TransposePlan>> TransposePlan::Create(
             "multiple of 2",
             sizeof(float));
       }
+      break;
+    case Transformation::kPack:
+      if (o.elem_size_in_bytes != 1) {
+        return InvalidArgument(
+            "Pack conversion requires a element size of 1 byte, "
+            "got %d",
+            o.elem_size_in_bytes);
+      }
+      if (!o.dest_bits_per_element.has_value()) {
+        return InvalidArgument(
+            "Pack conversion requires dest_bits_per_element to be set");
+      }
+      {
+        int bits = *o.dest_bits_per_element;
+        if (bits != 1 && bits != 2 && bits != 4) {
+          return InvalidArgument(
+              "Pack conversion requires dest_bits_per_element to be 1, 2, or "
+              "4, "
+              "got %d",
+              bits);
+        }
+        std::vector<int64_t> output_dims = Permute(o.dims, o.permutation);
+        int elements_per_byte = 8 / bits;
+        if (output_dims.empty() ||
+            output_dims.back() % elements_per_byte != 0) {
+          plan->transformation_ = Transformation::kNone;
+          plan->fallback_pack_bits_ = bits;
+        } else {
+          plan->bits_per_element_ = bits;
+        }
+      }
+      break;
   }
   plan->chunk_contiguity_ = o.chunk_contiguity;
 
@@ -1007,8 +1118,14 @@ absl::Status TransposePlan::Initialize() {
                             (stride_pos1b == elem_size_in_bytes_);
 
   if (inner_kernel_is_memcpy_ && transformation_ != Transformation::kNone) {
-    return InvalidArgument(
-        "Memcpy-based plans cannot be used with transformations.");
+    if (transformation_ == Transformation::kPack) {
+      transformation_ = Transformation::kNone;
+      fallback_pack_bits_ = bits_per_element_;
+      bits_per_element_ = elem_size_in_bytes_ * 8;
+    } else {
+      return InvalidArgument(
+          "Memcpy-based plans cannot be used with transformations.");
+    }
   }
 
   // Calculate sentinel strides.
@@ -1190,6 +1307,12 @@ absl::Status TransposePlan::Initialize() {
     case Transformation::kF64ToEf57:
       scratch_size_ = sizeof(float) * inner_block_elems_ * inner_block_elems_ *
                       outer_block_elems_a_ * outer_block_elems_b_;
+      DCHECK(!inner_kernel_is_memcpy_);
+      break;
+    case Transformation::kPack:
+      scratch_size_ = sizeof(uint8_t) * inner_block_elems_ *
+                      inner_block_elems_ * outer_block_elems_a_ *
+                      outer_block_elems_b_;
       DCHECK(!inner_kernel_is_memcpy_);
       break;
   }
@@ -1539,6 +1662,9 @@ std::string TransposePlan::ToString() const {
     case Transformation::kF64ToEf57:
       transformation_str = "ef57";
       break;
+    case Transformation::kPack:
+      transformation_str = absl::StrCat("pack(", bits_per_element_, ")");
+      break;
   }
   return absl::StrFormat(
       "elem_size=%d a_dims=%s b_dims=%s permutation=%s a_tiling=%s b_tiling=%s "
@@ -1565,14 +1691,16 @@ bool TransposePlanCacheKey::operator==(
          input_striding == other.input_striding &&
          output_tiling == other.output_tiling &&
          transformation == other.transformation &&
+         dest_bits_per_element == other.dest_bits_per_element &&
          num_threads == other.num_threads;
 }
 
 template <typename H>
 H AbslHashValue(H h, const TransposePlanCacheKey& key) {
   return H::combine(std::move(h), key.elem_size_in_bytes, key.num_threads,
-                    key.transformation, key.dims, key.permutation,
-                    key.input_tiling, key.input_striding, key.output_tiling);
+                    key.transformation, key.dest_bits_per_element, key.dims,
+                    key.permutation, key.input_tiling, key.input_striding,
+                    key.output_tiling);
 }
 
 TransposePlanCache::TransposePlanCache(int capacity)
@@ -1600,7 +1728,13 @@ absl::StatusOr<std::shared_ptr<TransposePlan>> TransposePlanCache::GetOrCreate(
     key.output_tiling.emplace(o.output_tiling->tiling.begin(),
                               o.output_tiling->tiling.end());
   }
-  key.transformation = o.transformation;
+  TransposePlan::Transformation transformation = o.transformation;
+  if (o.dest_bits_per_element.has_value() &&
+      transformation == TransposePlan::Transformation::kNone) {
+    transformation = TransposePlan::Transformation::kPack;
+  }
+  key.transformation = transformation;
+  key.dest_bits_per_element = o.dest_bits_per_element;
   key.num_threads = o.num_threads;
   return cache_.GetOrCreateIfAbsent(
       key,

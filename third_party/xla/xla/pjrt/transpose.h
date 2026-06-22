@@ -92,6 +92,9 @@ class TransposePlan {
     // Convert doubles into the ef57 extended precision pair-of-floats
     // representation used on TPU.
     kF64ToEf57 = 1,
+
+    // Pack 8-bit integers into sub-byte packed representation.
+    kPack = 2,
   };
 
   // Requested contiguity of chunks.
@@ -118,6 +121,7 @@ class TransposePlan {
     std::optional<Striding> input_striding = std::nullopt;
     std::optional<Tiling> output_tiling = std::nullopt;
     Transformation transformation = Transformation::kNone;
+    std::optional<int> dest_bits_per_element = std::nullopt;
 
     // Requested number of chunks (threads). We will attempt to create
     // approximately this many chunks. The actual number of chunks may be
@@ -299,7 +303,13 @@ class TransposePlan {
   // address calculations with strides in bytes; the strides need not be
   // multiples of the element size.
   template <typename T, Transformation transformation>
-  void ExecuteTyped(const char* a, char* b, absl::Span<Node const> nodes) const;
+  void ExecuteTyped(const char* a, char* b, absl::Span<Node const> nodes,
+                    int bits_per_element) const;
+
+  void ExecuteInternal(
+      const void* a, void* b,
+      std::optional<absl::FunctionRef<void(std::function<void(void)>)>>
+          schedule_work) const;
 
   // Number of chunks requested.
   int num_chunks_requested_ = 1;
@@ -390,6 +400,8 @@ class TransposePlan {
   //     bound transformation, and
   // (b) it allows us to support non-trivial striding.
   Transformation transformation_ = Transformation::kNone;
+  int bits_per_element_ = 0;
+  int fallback_pack_bits_ = 0;
 
   ChunkContiguity chunk_contiguity_ = ChunkContiguity::kNone;
 
@@ -408,6 +420,7 @@ struct TransposePlanCacheKey {
   std::optional<absl::InlinedVector<int64_t, 4>> input_striding;
   std::optional<absl::InlinedVector<int64_t, 4>> output_tiling;
   TransposePlan::Transformation transformation;
+  std::optional<int> dest_bits_per_element;
   int num_threads;
 
   bool operator==(const TransposePlanCacheKey& other) const;
