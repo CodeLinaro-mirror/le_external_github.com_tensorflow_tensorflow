@@ -440,8 +440,6 @@ enum MegaScaleStatType : uint8_t {
   kMegaScaleLoopIteration,
   kMegaScaleGraphProtos,
   kMegaScaleNetworkTransportLatency,
-  kMegaScaleTransmissionBudgetUs,
-  kMegaScaleDelayBudgetUs,
   kMegaScaleHloModule,
   kMegaScaleMultiSliceTopology,
   kMegaScaleActivationToNetworkReceiveDurationUs,
