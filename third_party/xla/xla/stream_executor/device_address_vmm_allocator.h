@@ -134,7 +134,9 @@ namespace stream_executor {
 // reactivates the old mapping instead of unmapping and remapping. If a
 // requested reservation address is still stale for a different raw allocation,
 // Map() waits for that deferred unmap to complete before installing the new
-// mapping.
+// mapping. If the source allocation has a stale alias in a different
+// reservation, Map() likewise waits for that alias before mapping the source
+// into the requested reservation.
 //
 // Each registered device has independent state protected by its own mutex, so
 // operations on different devices can proceed in parallel. The per-device map
@@ -584,6 +586,15 @@ class DeviceAddressVmmAllocator : public DeviceAddressAllocator {
   absl::StatusOr<DeviceAddressBase> ValidateReservationRange(
       MemoryReservation* reservation, uint64_t reservation_offset,
       uint64_t size) const;
+
+  // Performs one Map() attempt without waiting or releasing state.mu. Returns
+  // an empty optional after mapping or reactivating the requested alias, or the
+  // key of one stale reservation mapping to wait for before retrying.
+  absl::StatusOr<std::optional<PendingDeallocationKey>> TryMapWithoutWaiting(
+      PerDeviceState& state, DeviceAddressBase addr,
+      MemoryReservation& reservation, uint64_t reservation_offset,
+      uint64_t size, DeviceAddressBase reservation_address)
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(state.mu);
 
   struct OverlappingRecord {
     AllocationRecord* record = nullptr;
