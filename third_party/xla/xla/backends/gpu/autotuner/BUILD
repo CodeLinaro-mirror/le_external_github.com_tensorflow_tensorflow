@@ -30,6 +30,8 @@ cc_library(
         "//xla/service:compiler",
         "//xla/service:executable",
         "//xla/service:gpu_topology",
+        "//xla/stream_executor:device_description",
+        "//xla/stream_executor:semantic_version",
         "//xla/stream_executor:stream_executor_h",
         "//xla/tools:hlo_decomposer_lib",
         "//xla/tsl/platform:errors",
@@ -88,6 +90,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@llvm-project//mlir:IR",
+        "@triton//:TritonPluginUtils",
     ],
 )
 
@@ -154,6 +157,7 @@ cc_library(
         "//xla/service/gpu:matmul_utils",
         "//xla/stream_executor:blas",
         "//xla/stream_executor:device_description",
+        "//xla/stream_executor:semantic_version",
         "//xla/stream_executor:stream_executor_h",
         "//xla/stream_executor/gpu:gpu_blas_lt",
         "//xla/tsl/platform:errors",
@@ -335,6 +339,7 @@ cc_library(
         "@com_google_protobuf//:any_cc_proto",
         "@com_google_protobuf//:protobuf",
         "@llvm-project//mlir:IR",
+        "@triton//:TritonPluginUtils",
     ],
 )
 
@@ -458,6 +463,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:config",
     ],
 )
 
@@ -566,6 +572,7 @@ cc_library(
         "//xla/service/gpu:matmul_utils",
         "//xla/stream_executor:blas",
         "//xla/stream_executor:device_description",
+        "//xla/stream_executor:semantic_version",
         "//xla/stream_executor:stream_executor_h",
         "//xla/stream_executor/gpu:gpu_blas_lt",
         "//xla/stream_executor/rocm:amdhipblaslt_plugin",
@@ -918,7 +925,10 @@ xla_cc_binary(
         "//xla/backends/autotuner:codegen_backend",
         "//xla/backends/autotuner:codegen_orchestrator",
         "//xla/backends/autotuner:config_assigner",
+        "//xla/backends/autotuner:directory_cache",
+        "//xla/backends/autotuner:local_cache",
         "//xla/backends/autotuner:profiler",
+        "//xla/backends/autotuner:tiered_cache",
         "//xla/hlo/analysis:symbolic_map",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/parser:hlo_parser",
@@ -985,7 +995,10 @@ xla_test(
         "//xla/backends/autotuner:codegen_backend",
         "//xla/backends/autotuner:codegen_orchestrator",
         "//xla/backends/autotuner:config_assigner",
+        "//xla/backends/autotuner:directory_cache",
+        "//xla/backends/autotuner:local_cache",
         "//xla/backends/autotuner:profiler",
+        "//xla/backends/autotuner:tiered_cache",
         "//xla/hlo/analysis:symbolic_map",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/parser:hlo_parser",
