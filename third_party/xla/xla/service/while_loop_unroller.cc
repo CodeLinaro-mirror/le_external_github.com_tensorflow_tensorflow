@@ -60,7 +60,7 @@ limitations under the License.
 #include "xla/shape.h"
 #include "xla/shape_util.h"
 #include "xla/status_macros.h"
-#include "xla/tsl/platform/errors.h"
+#include "xla/tsl/platform/logging.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
@@ -80,6 +80,7 @@ std::unique_ptr<HloComputation> MakeTrivialLoopCondition(
   absl::StatusOr<HloInstruction*> param_instruction =
       condition_builder.AddParameter(
           while_op->while_condition()->parameter_instruction(0)->Clone());
+  CHECK_OK(param_instruction.status());
 
   HloInstruction* indvar_instruction =
       condition_builder.AddInstruction(HloInstruction::CreateGetTupleElement(
@@ -110,7 +111,9 @@ absl::Status HandleDynamicGteOrTuple(HloInstruction* instr) {
     return instr->parent()->ReplaceInstruction(
         instr, instr->AddInstruction(HloInstruction::CreateGetTupleElement(
                    instr->mutable_operand(0), index.value())));
-  } else if (instr->IsCustomCall("DynamicTuple")) {
+  }
+
+  if (instr->IsCustomCall("DynamicTuple")) {
     HloEvaluator evaluator(/*max_loop_iterations=*/0);
     std::vector<HloInstruction*> tuple_operands;
     ASSIGN_OR_RETURN(
@@ -305,10 +308,11 @@ absl::StatusOr<bool> UnrollInternal(HloInstruction* while_op,
   for (int64_t i = config.init; i < config.trip_count + config.init; ++i) {
     CHECK(OverflowSafeAdd(i, (int64_t)1).has_value());
 
-    HloComputation* unrolled_body = module->AddEmbeddedComputation(
-        UnrollSingleIterationOfTrivialLoop(while_op, config, i,
-                                           next_scheduling_id)
-            .value());
+    ASSIGN_OR_RETURN(auto unrolled_comp,
+                     UnrollSingleIterationOfTrivialLoop(while_op, config, i,
+                                                        next_scheduling_id));
+    HloComputation* unrolled_body =
+        module->AddEmbeddedComputation(std::move(unrolled_comp));
     unrolled_body_call_op =
         computation->AddInstruction(HloInstruction::CreateCall(
             while_op->shape(), call_operands, unrolled_body));
@@ -339,11 +343,13 @@ absl::StatusOr<UnrollResult> UnrollInternalWrappedAndReturnReplacement(
 
   auto body_builder =
       HloComputation::Builder(absl::StrCat("unrolled-body-", while_op->name()));
-  absl::StatusOr<HloInstruction*> p = body_builder.AddParameter(
-      while_op->while_body()->parameter_instruction(0)->Clone());
+  ASSIGN_OR_RETURN(
+      HloInstruction * p,
+      body_builder.AddParameter(
+          while_op->while_body()->parameter_instruction(0)->Clone()));
 
   // We assume while has only one tuple parameter
-  call_operands.emplace_back(std::move(p.value()));
+  call_operands.emplace_back(p);
 
   ASSIGN_OR_RETURN(int64_t next_scheduling_id,
                    NextSchedulingGroupId(*while_op->GetModule()));
@@ -352,10 +358,11 @@ absl::StatusOr<UnrollResult> UnrollInternalWrappedAndReturnReplacement(
   for (int64_t i = config.init; i < config.trip_count + config.init; ++i) {
     CHECK(OverflowSafeAdd(i, (int64_t)1).has_value());
 
-    HloComputation* unrolled_body = module->AddEmbeddedComputation(
-        UnrollSingleIterationOfTrivialLoop(while_op, config, i,
-                                           next_scheduling_id)
-            .value());
+    ASSIGN_OR_RETURN(auto unrolled_comp,
+                     UnrollSingleIterationOfTrivialLoop(while_op, config, i,
+                                                        next_scheduling_id));
+    HloComputation* unrolled_body =
+        module->AddEmbeddedComputation(std::move(unrolled_comp));
 
     unrolled_body_call_op = body_builder.AddInstruction(
         HloInstruction::CreateCall(while_op->shape(), call_operands,
@@ -403,14 +410,14 @@ bool IsLoopInductionVar(const HloInstruction* instr,
   if (!instr->parent()->IsFusionComputation()) {
     return Match(instr, match::GetTupleElement(match::Parameter(),
                                                config.induction_var_idx));
-  } else {
-    if (!Match(instr, match::Parameter())) {
-      return false;
-    }
-    HloInstruction* caller_fusion = instr->parent()->FusionInstruction();
-    return IsLoopInductionVar(caller_fusion->operand(instr->parameter_number()),
-                              config);
   }
+
+  if (!Match(instr, match::Parameter())) {
+    return false;
+  }
+  HloInstruction* caller_fusion = instr->parent()->FusionInstruction();
+  return IsLoopInductionVar(caller_fusion->operand(instr->parameter_number()),
+                            config);
 }
 
 // Recursively checks if the given instruction inside a while loop can be
@@ -611,6 +618,7 @@ absl::Status FindIndicesCoveredByDynamicInstructionsInInnerLoop(
   // Step 0: Propagate predefined ranges to GTEs in the while body.
   std::vector<std::pair<const HloInstruction*, Range>>
       additional_predefined_ranges;
+  // NOLINTNEXTLINE(custom-deterministic-iteration-order)
   for (const auto& [instr, range] : predefined_ranges) {
     const HloInstruction* gte = MaybeFindParameterGte(while_instr, instr);
     if (gte == nullptr) {
@@ -769,6 +777,9 @@ bool IsInputWriteOnly(int64_t input_idx, const HloComputation* computation) {
       case HloOpcode::kDynamicUpdateSlice:
         // DUS operations with first operand as input are permitted.
         if (user->operand(0) != instr) {
+          return false;
+        }
+        if (!WhileUtil::IsUpdatedBufferWriteOnly(user)) {
           return false;
         }
         break;
