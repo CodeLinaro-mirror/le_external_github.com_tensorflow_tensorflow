@@ -38,6 +38,7 @@ limitations under the License.
 #include "xla/backends/autotuner/codegen_orchestrator.h"
 #include "xla/backends/autotuner/config_assigner.h"
 #include "xla/backends/autotuner/directory_cache.h"
+#include "xla/backends/autotuner/hlo_extractor.h"
 #include "xla/backends/autotuner/local_cache.h"
 #include "xla/backends/autotuner/profiler.h"
 #include "xla/backends/autotuner/tiered_cache.h"
@@ -262,7 +263,17 @@ absl::Status RunAutotuning(const std::vector<std::string>& hlo_files,
     autotuner_cache = std::make_unique<PrintingAutotunerCache>();
   }
 
-  auto should_autotune = [](const xla::HloInstruction&) { return true; };
+  InstructionFilterFn need_autotune = GetShouldAutotuneInstructionFn(
+      debug_options,
+      env.target_config->device_description.gpu_compute_capability());
+
+  auto should_autotune = [&autotuner_cache,
+                          &need_autotune](const xla::HloInstruction& instr) {
+    if (!need_autotune(instr)) {
+      return false;
+    }
+    return !autotuner_cache->Lookup(&instr).has_value();
+  };
 
   for (const auto& hlo_file : hlo_files) {
     LOG(INFO) << "Autotuning " << hlo_file;
