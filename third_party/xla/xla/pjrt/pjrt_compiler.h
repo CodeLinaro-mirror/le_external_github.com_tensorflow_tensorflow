@@ -37,6 +37,7 @@ limitations under the License.
 #include "xla/pjrt/maybe_owning_mlir_module.h"
 #include "xla/pjrt/pjrt_abi_version.h"
 #include "xla/pjrt/pjrt_common.h"
+#include "xla/pjrt/pjrt_compiler_variant.h"
 #include "xla/pjrt/pjrt_device_description.h"
 #include "xla/pjrt/pjrt_device_dimensions.h"
 #include "xla/pjrt/pjrt_executable.h"
@@ -502,6 +503,18 @@ absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
 absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
     CompileOptions options, MaybeOwningMlirModule module,
     const PjRtTopologyDescription& topology, PjRtClient* client = nullptr);
+
+// Variant of `PjRtCompile` that accepts a compiler variant.
+absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
+    CompileOptions options, const XlaComputation& computation,
+    const PjRtTopologyDescription& topology, PjRtCompilerVariant variant,
+    PjRtClient* client = nullptr);
+
+// Variant of `PjRtCompile` that accepts a compiler variant.
+absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
+    CompileOptions options, MaybeOwningMlirModule module,
+    const PjRtTopologyDescription& topology, PjRtCompilerVariant variant,
+    PjRtClient* client = nullptr);
 
 // Stores a compilation phase's compiler and validator functions.
 // This struct bundles the essential functional components required to define

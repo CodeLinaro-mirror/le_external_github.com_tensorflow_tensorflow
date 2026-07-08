@@ -33,8 +33,10 @@ limitations under the License.
 #include "xla/tsl/platform/status_macros.h"
 #include "xla/hlo/builder/xla_computation.h"
 #include "xla/pjrt/maybe_owning_mlir_module.h"
+#include "xla/pjrt/pjrt_compiler_variant.h"
 #include "xla/pjrt/pjrt_executable.h"
 #include "xla/pjrt/proto/pjrt_partial_program.pb.h"
+#include "xla/pjrt/tpu/tpu_compiler_variant.h"
 
 namespace xla {
 
@@ -202,9 +204,15 @@ absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
   }
 
   auto platform_name = topology.platform_name();
-  auto compiler_variant = options.compiler_variant.value_or("");
-  std::pair<std::string, std::string> key{std::string(platform_name),
-                                          std::string(compiler_variant)};
+  std::string compiler_variant;
+  if (xla::IsTpuId(topology.platform_id())) {
+    ASSIGN_OR_RETURN(PjRtCompilerVariant variant,
+                     xla::PickTpuCompilerVariant());
+    compiler_variant = CompilerVariantToString(variant);
+    compiler_variant =
+        compiler_variant == kLinkedVariant ? "" : compiler_variant;
+  }
+
   ASSIGN_OR_RETURN(PjRtCompiler * compiler,
                    GetPjRtCompiler(platform_name, compiler_variant));
   return compiler->Compile(std::move(options), computation, topology, client);
@@ -217,8 +225,53 @@ absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
     return (*topology_compiler)
         ->Compile(std::move(options), std::move(module), topology, client);
   }
+
   auto platform_name = topology.platform_name();
-  auto compiler_variant = options.compiler_variant.value_or("");
+  std::string compiler_variant;
+  if (xla::IsTpuId(topology.platform_id())) {
+    ASSIGN_OR_RETURN(PjRtCompilerVariant variant,
+                     xla::PickTpuCompilerVariant());
+    compiler_variant = CompilerVariantToString(variant);
+    compiler_variant =
+        compiler_variant == kLinkedVariant ? "" : compiler_variant;
+  }
+
+  ASSIGN_OR_RETURN(PjRtCompiler * compiler,
+                   GetPjRtCompiler(platform_name, compiler_variant));
+  return compiler->Compile(std::move(options), std::move(module), topology,
+                           client);
+}
+
+absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
+    CompileOptions options, const XlaComputation& computation,
+    const PjRtTopologyDescription& topology, PjRtCompilerVariant variant,
+    PjRtClient* client) {
+  auto topology_compiler = topology.compiler();
+  if (topology_compiler.has_value()) {
+    return (*topology_compiler)
+        ->Compile(std::move(options), computation, topology, client);
+  }
+
+  auto platform_name = topology.platform_name();
+  std::string compiler_variant = CompilerVariantToString(variant);
+  compiler_variant = compiler_variant == kLinkedVariant ? "" : compiler_variant;
+  ASSIGN_OR_RETURN(PjRtCompiler * compiler,
+                   GetPjRtCompiler(platform_name, compiler_variant));
+  return compiler->Compile(std::move(options), computation, topology, client);
+}
+
+absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCompile(
+    CompileOptions options, MaybeOwningMlirModule module,
+    const PjRtTopologyDescription& topology, PjRtCompilerVariant variant,
+    PjRtClient* client) {
+  if (std::optional<PjRtCompiler*> topology_compiler = topology.compiler()) {
+    return (*topology_compiler)
+        ->Compile(std::move(options), std::move(module), topology, client);
+  }
+
+  auto platform_name = topology.platform_name();
+  std::string compiler_variant = CompilerVariantToString(variant);
+  compiler_variant = compiler_variant == kLinkedVariant ? "" : compiler_variant;
   ASSIGN_OR_RETURN(PjRtCompiler * compiler,
                    GetPjRtCompiler(platform_name, compiler_variant));
   return compiler->Compile(std::move(options), std::move(module), topology,
