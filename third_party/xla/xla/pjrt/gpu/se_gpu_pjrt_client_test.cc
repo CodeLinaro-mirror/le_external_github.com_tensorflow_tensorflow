@@ -118,6 +118,7 @@ limitations under the License.
 namespace xla {
 namespace {
 
+using ::absl_testing::IsOkAndHolds;
 using ::absl_testing::StatusIs;
 using ::testing::_;
 using ::testing::Contains;
@@ -1808,6 +1809,36 @@ ENTRY %Add.6 (a.1: f32[], b.2: f32[]) -> (f32[], f32[]) {
                   absl::StatusCode::kInternal,
                   HasSubstr("PjRt client type expected by the serialized "
                             "executable: SomeGpuClient")));
+}
+
+TEST(StreamExecutorGpuClientTest,
+     SerializeStreamExecutorExecutableSplitProtoAndDeserialize) {
+  ASSERT_OK_AND_ASSIGN(auto client,
+                       GetStreamExecutorGpuClient(GpuClientOptions()));
+  static constexpr absl::string_view kAddProgram =
+      R"hlo(
+      HloModule Add, entry_computation_layout={(f32[], f32[])->(f32[], f32[])}
+
+      ENTRY %Add (a: f32[], b: f32[]) -> (f32[], f32[]) {
+        %a = f32[] parameter(0)
+        %b = f32[] parameter(1)
+        %add = f32[] add(f32[] %a, f32[] %b)
+        ROOT %tuple = (f32[], f32[]) tuple(f32[] %add, f32[] %add)
+      }
+)hlo";
+  ASSERT_OK_AND_ASSIGN(auto executable,
+                       CompileExecutable(kAddProgram, *client));
+  auto se_exe = executable->GetExecutable();
+  ASSERT_OK_AND_ASSIGN(std::string serialized, se_exe->SerializeExecutable());
+
+  {
+    // Check that the executable is a serialized as a split proto, meaning it
+    // supports executables larger than 2GB.
+    auto reader = std::make_unique<riegeli::StringReader<>>(serialized);
+    ASSERT_THAT(IsSplitProto(*reader), IsOkAndHolds(true));
+  }
+
+  ASSERT_OK(client->DeserializeExecutable(serialized, std::nullopt));
 }
 
 TEST(StreamExecutorGpuClientTest, MlirParameterLayoutIsSetInHlo) {

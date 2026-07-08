@@ -28,6 +28,8 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "xla/tsl/platform/status_macros.h"
+#include "riegeli/base/maker.h"
+#include "riegeli/bytes/string_writer.h"
 #include "xla/client/local_client.h"
 #include "xla/layout.h"
 #include "xla/pjrt/compiled_memory_stats.h"
@@ -45,12 +47,11 @@ limitations under the License.
 #include "xla/service/computation_layout.h"
 #include "xla/service/executable.h"
 #include "xla/service/hlo.pb.h"
+#include "xla/service/hlo_cost_analysis.h"
 #include "xla/shape.h"
 #include "xla/stream_executor/abi/executable_abi_version.h"
-#include "xla/tsl/lib/strings/proto_serialization.h"
-#include "xla/tsl/platform/errors.h"
-#include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
+#include "xla/util/split_proto/split_executable_and_options_writer.h"
 
 namespace xla {
 
@@ -61,10 +62,8 @@ absl::StatusOr<std::string> StreamExecutorExecutable::SerializeExecutable()
     ASSIGN_OR_RETURN(*proto.mutable_compile_options(),
                      compile_options_.ToProto());
     std::string result;
-    if (!tsl::SerializeToStringDeterministic(proto, &result)) {
-      return absl::InternalError(
-          "Failed to serialize ExecutableAndOptionsProto");
-    }
+    RETURN_IF_ERROR(WriteSplitExecutableAndOptions(
+        proto, riegeli::Maker<riegeli::StringWriter>(&result)));
     return result;
   }
   std::string serialized;
@@ -103,9 +102,8 @@ absl::StatusOr<std::string> StreamExecutorExecutable::SerializeExecutable()
   ASSIGN_OR_RETURN(*proto.mutable_compile_options(),
                    compile_options_.ToProto());
   std::string result;
-  if (!tsl::SerializeToStringDeterministic(proto, &result)) {
-    return absl::InternalError("Failed to serialize ExecutableAndOptionsProto");
-  }
+  RETURN_IF_ERROR(WriteSplitExecutableAndOptions(
+      proto, riegeli::Maker<riegeli::StringWriter>(&result)));
   return result;
 }
 
