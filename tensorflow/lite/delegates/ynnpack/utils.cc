@@ -217,7 +217,8 @@ bool IsUnaryOp(int builtin_code) {
          builtin_code == kTfLiteBuiltinHardSwish ||
          builtin_code == kTfLiteBuiltinRelu ||
          builtin_code == kTfLiteBuiltinRelu6 ||
-         builtin_code == kTfLiteBuiltinReluN1To1;
+         builtin_code == kTfLiteBuiltinReluN1To1 ||
+         builtin_code == kTfLiteBuiltinRelu0To1;
 }
 
 bool IsBinaryOp(int builtin_code) {
@@ -584,6 +585,54 @@ TfLiteStatus ApplyActivation(TfLiteContext* context, ynn_subgraph_t subgraph,
   } else {
     TF_LITE_ENSURE(context, false);
   }
+
+  return kTfLiteOk;
+}
+
+TfLiteStatus ApplyClamp(TfLiteContext* context, ynn_subgraph_t subgraph,
+                        double min_val, double max_val, uint32_t input_id,
+                        uint32_t& output_id, int output_tensor_index,
+                        ynn_type internal_type) {
+  const TfLiteTensor& output_tensor = context->tensors[output_tensor_index];
+  bool is_quantized =
+      IsQuantized(output_tensor) &&
+      (internal_type == ynn_type_int8 || internal_type == ynn_type_uint8);
+
+  auto quantize_val = [&](double val) -> double {
+    if (!is_quantized) return val;
+    float scale = output_tensor.params.scale;
+    int32_t zero_point = output_tensor.params.zero_point;
+    if (internal_type == ynn_type_int8) {
+      return QuantizeValue<int8_t>(val, scale, zero_point);
+    } else {
+      return QuantizeValue<uint8_t>(val, scale, zero_point);
+    }
+  };
+
+  uint32_t current_input_id = input_id;
+
+  uint32_t min_const_id = YNN_INVALID_VALUE_ID;
+  TF_LITE_ENSURE_STATUS(DefineScalarConstant(
+      context, subgraph, internal_type, quantize_val(min_val), &min_const_id));
+
+  uint32_t max_output_id = YNN_INVALID_VALUE_ID;
+  TF_LITE_ENSURE_EQ(
+      context,
+      ynn_define_binary(subgraph, ynn_binary_max, current_input_id,
+                        min_const_id, &max_output_id, 0),
+      ynn_status_success);
+
+  current_input_id = max_output_id;
+
+  uint32_t max_const_id = YNN_INVALID_VALUE_ID;
+  TF_LITE_ENSURE_STATUS(DefineScalarConstant(
+      context, subgraph, internal_type, quantize_val(max_val), &max_const_id));
+
+  TF_LITE_ENSURE_EQ(
+      context,
+      ynn_define_binary(subgraph, ynn_binary_min, current_input_id,
+                        max_const_id, &output_id, 0),
+      ynn_status_success);
 
   return kTfLiteOk;
 }
