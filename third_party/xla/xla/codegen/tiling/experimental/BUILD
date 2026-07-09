@@ -152,6 +152,32 @@ xla_cc_test(
 )
 
 xla_cc_test(
+    name = "reshape_tile_propagation_test",
+    srcs = ["reshape_tile_propagation_test.cc"],
+    deps = [
+        ":test_utils",
+        ":tile",
+        ":tile_propagation",
+        "//xla:shape_util",
+        "//xla:util",
+        "//xla/hlo/analysis:symbolic_map",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/testlib:hlo_hardware_independent_test_base",
+        "//xla/hlo/testlib:verified_hlo_module",
+        "//xla/hlo/utils:hlo_traversal",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+xla_cc_test(
     name = "tiling_space_test",
     srcs = ["tiling_space_test.cc"],
     deps = [
@@ -310,6 +336,7 @@ cc_binary(
         "//xla/hlo/analysis:symbolic_map",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/utils:hlo_traversal",
+        "//xla/tsl/platform:status_macros",
         "//xla/tsl/util:command_line_flags",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log",

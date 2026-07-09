@@ -26,7 +26,6 @@ limitations under the License.
 #include "xla/codegen/tiling/experimental/tiling_space.h"
 #include "xla/hlo/analysis/indexing_test_utils.h"
 #include "xla/shape.h"
-#include "xla/shape_util.h"
 
 namespace xla::gpu::experimental {
 
@@ -40,6 +39,20 @@ MATCHER_P(MatchString, tile_string, "") {
   if (!matches) {
     *result_listener << GetMismatchReport(expected_index, actual_index,
                                           tile_string, arg.ToString());
+  }
+  return matches;
+}
+
+MATCHER_P(MatchToString, test_string, "") {
+  absl::string_view expected_string = test_string;
+  std::string actual_string = ToString(arg);
+  const auto [expected_index, actual_index] =
+      FindApproximateMismatch(expected_string, actual_string);
+  const bool matches = expected_index == expected_string.size() &&
+                       actual_index == actual_string.size();
+  if (!matches) {
+    *result_listener << GetMismatchReport(expected_index, actual_index,
+                                          expected_string, actual_string);
   }
   return matches;
 }
