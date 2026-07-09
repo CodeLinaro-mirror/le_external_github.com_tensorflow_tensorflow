@@ -37,13 +37,25 @@ class Chipset;
 // 'gpu.launc_func' ops during the fusion rewrite pass above.
 ArrayAttr getWrittenOperandsAttribute(Operation* op);
 
-/// Pass that transforms gpu modules in standard dialect to NNVM.
-std::unique_ptr<OperationPass<mlir::gpu::GPUModuleOp>>
-createGpuKernelToNvvmPass(bool useBarePtrCallConv = false);
+/// Pass that transforms gpu modules in standard dialect to NVVM.
+inline std::unique_ptr<OperationPass<mlir::gpu::GPUModuleOp>>
+createGpuKernelToNvvmPass(bool useBarePtrCallConv = false) {
+  GpuKernelToNVVMPassOptions options;
+  options.useBarePtrCallConv = useBarePtrCallConv;
+  return std::unique_ptr<OperationPass<mlir::gpu::GPUModuleOp>>(
+      static_cast<OperationPass<mlir::gpu::GPUModuleOp>*>(
+          createGpuKernelToNVVMPass(options).release()));
+}
 
 /// Pass that transforms gpu modules in standard dialect to ROCDL.
-std::unique_ptr<OperationPass<mlir::gpu::GPUModuleOp>>
-createGpuKernelToRocdlPass(const std::string& chipset = "gfx000");
+inline std::unique_ptr<OperationPass<mlir::gpu::GPUModuleOp>>
+createGpuKernelToRocdlPass(const std::string& chipset = "gfx000") {
+  GpuKernelToROCDLPassOptions options;
+  options.chipset = chipset;
+  return std::unique_ptr<OperationPass<mlir::gpu::GPUModuleOp>>(
+      static_cast<OperationPass<mlir::gpu::GPUModuleOp>*>(
+          createGpuKernelToROCDLPass(options).release()));
+}
 
 #define GEN_PASS_REGISTRATION
 #include "transforms/gpu_passes.h.inc"

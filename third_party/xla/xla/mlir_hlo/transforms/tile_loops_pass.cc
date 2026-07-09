@@ -47,9 +47,7 @@ namespace {
 // This is the implementation of the TileLoops pass declared in
 //  include/transforms/passes.td
 class TileLoopsPass : public impl::TileLoopsPassBase<TileLoopsPass> {
- public:
-  // Creates a TileLoopsPass with tiles sizes provided through `tile_sizes`
-  // and unroll factors provided through `unroll_factors`.
+  using impl::TileLoopsPassBase<TileLoopsPass>::TileLoopsPassBase;
   explicit TileLoopsPass(ArrayRef<int64_t> tileSizes,
                          ArrayRef<int64_t> unrollFactors) {
     tile_sizes_ = tileSizes;
@@ -128,11 +126,6 @@ void TileLoopsPass::runOnOperation() {
       ->getCanonicalizationPatterns(patterns);
   if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
     return signalPassFailure();
-}
-
-std::unique_ptr<OperationPass<func::FuncOp>> createTileLoopsPass(
-    ArrayRef<int64_t> tileSizes, ArrayRef<int64_t> unrollFactors) {
-  return std::make_unique<TileLoopsPass>(tileSizes, unrollFactors);
 }
 
 }  // namespace mlir
