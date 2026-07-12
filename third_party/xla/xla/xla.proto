@@ -853,11 +853,6 @@ message DebugOptions {
   // If true, autotune all fusions with block level emitter.
   optional bool xla_gpu_experimental_all_fusions_with_triton = 444;
 
-  // Enables an Ahead-of-Time (AOT) compilation flow where the compiled binary
-  // includes the generated Thunks. In contrast, the legacy flow only compiles
-  // up to the HLO optimization stage, before Thunk generation.
-  optional bool xla_gpu_experimental_aot_compiled_thunks = 435;
-
   // Specifies the behavior of per kernel autotuning cache.
   optional AutotuneCacheMode xla_gpu_experimental_autotune_cache_mode = 324;
 
@@ -1746,6 +1741,7 @@ message DebugOptions {
   reserved "xla_gpu_enable_triton_softmax_priority_fusion";
   reserved "xla_gpu_enable_xla_runtime_executable";
   reserved "xla_gpu_ensure_minor_dot_contraction_dims";
+  reserved "xla_gpu_experimental_aot_compiled_thunks";
   reserved "xla_gpu_experimental_allow_unroll_factor_eight";
   reserved "xla_gpu_experimental_enable_command_buffer_on_thunks";
   reserved "xla_gpu_experimental_enable_dynamic_dot_search_space";
@@ -1799,7 +1795,7 @@ message DebugOptions {
       243, 249, 263, 264, 266, 270, 271, 275, 276, 278, 279, 281, 282, 286, 298,
       299, 302, 303, 309, 313, 314, 319, 320, 325, 326, 332, 346, 352, 354, 355,
       358, 361, 367, 369, 371, 385, 388, 389, 394, 396, 398, 402, 420, 423, 430,
-      443, 446, 458, 464, 477;
+      435, 443, 446, 458, 464, 477;
 }
 
 // Contains flags which affects the GPU compilation result.
