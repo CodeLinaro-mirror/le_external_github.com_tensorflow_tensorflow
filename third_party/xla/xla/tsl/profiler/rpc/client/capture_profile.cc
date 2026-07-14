@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "xla/tsl/profiler/rpc/client/capture_profile.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -325,6 +326,21 @@ absl::Status ExportToTensorBoard(const XSpace& xspace,
   return ExportToTensorBoard(xspace, logdir,
                              tsl::profiler::GetCurrentTimeStampAsString(),
                              also_export_trace_json);
+}
+
+absl::Status ExportToTensorBoard(const std::vector<XSpace>& xspaces,
+                                 absl::string_view logdir,
+                                 const std::string& run) {
+  std::string repository_root =
+      tsl::profiler::GetTensorBoardProfilePluginDir(std::string(logdir));
+  std::string host = tsl::port::Hostname();
+
+  for (size_t i = 0; i < xspaces.size(); ++i) {
+    RETURN_IF_ERROR(tsl::profiler::SaveXSpaceChunk(
+        repository_root, run, host, static_cast<int>(i), xspaces[i]));
+  }
+
+  return absl::OkStatus();
 }
 
 absl::Status CaptureRemoteTrace(

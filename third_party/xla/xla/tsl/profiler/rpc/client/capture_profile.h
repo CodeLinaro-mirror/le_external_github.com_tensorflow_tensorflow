@@ -19,9 +19,12 @@ limitations under the License.
 
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "xla/tsl/platform/status.h"
+#include "absl/status/status.h"
+#include "absl/strings/string_view.h"
+#include "xla/tsl/profiler/rpc/client/save_profile.h"
 #include "tsl/profiler/protobuf/profiler_options.pb.h"
 #include "tsl/profiler/protobuf/profiler_service.pb.h"
 #include "tsl/profiler/protobuf/xplane.pb.h"
@@ -39,6 +42,16 @@ absl::Status ExportToTensorBoard(const tensorflow::profiler::XSpace& xspace,
                                  const std::string& logdir,
                                  const std::string& run,
                                  bool also_export_trace_json = false);
+
+absl::Status ExportToTensorBoard(
+    const std::vector<tensorflow::profiler::XSpace>& xspaces,
+    absl::string_view logdir, const std::string& run);
+
+inline absl::Status ExportToTensorBoard(
+    const std::vector<tensorflow::profiler::XSpace>& xspaces,
+    absl::string_view logdir) {
+  return ExportToTensorBoard(xspaces, logdir, GetCurrentTimeStampAsString());
+}
 
 // Collects one sample of monitoring profile and shows user-friendly metrics.
 // If timestamp flag is true, timestamp will be displayed in "%H:%M:%S" format.
