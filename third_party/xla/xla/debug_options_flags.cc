@@ -389,7 +389,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
 
   opts.set_xla_gpu_experimental_enable_fusion_block_level_rewriter(false);
 
-  opts.set_xla_gpu_default_to_alg_dot_bf16_bf16_f32(false);
+  opts.set_xla_gpu_precision_like_on_tpu(false);
   opts.set_xla_gpu_enable_libnvptxcompiler(
       stream_executor::IsLibNvPtxCompilerSupported());
   opts.set_xla_gpu_libnvjitlink_mode(DebugOptions::LIB_NV_JIT_LINK_MODE_AUTO);
@@ -1862,11 +1862,10 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
 
   flag_list->push_back(tsl::Flag(
       "xla_gpu_default_to_alg_dot_bf16_bf16_f32",
-      bool_setter_for(
-          &DebugOptions::set_xla_gpu_default_to_alg_dot_bf16_bf16_f32),
-      debug_options->xla_gpu_default_to_alg_dot_bf16_bf16_f32(),
+      bool_setter_for(&DebugOptions::set_xla_gpu_precision_like_on_tpu),
+      debug_options->xla_gpu_precision_like_on_tpu(),
       "Use the dot precision algorithm `ALG_DOT_BF16_BF16_F32 by default for "
-      "f32 dots."));
+      "f32 dots. This leads to the same precision as on TPU."));
   flag_list->push_back(
       tsl::Flag("xla_gpu_deterministic_ops",
                 bool_setter_for(&DebugOptions::set_xla_gpu_deterministic_ops),

@@ -643,10 +643,6 @@ message DebugOptions {
   // ops by default. This is expected to improve performance at the expense of
   // numerical accuracy.
   //
-  // At this point, XLA may still choose a higher precision dot algorithm, but
-  // we expect this to change at a later point.
-  optional bool xla_gpu_default_to_alg_dot_bf16_bf16_f32 = 441;
-
   // Guarantees run-to-run determinism.
   // This flag disables autotuning and selects the first __valid__ autotune
   // config.
@@ -1149,6 +1145,10 @@ message DebugOptions {
   optional PGLEStrictnessLevel xla_gpu_pgle_accuracy_checker = 341;
 
   optional string xla_gpu_pgle_profile_file_or_directory_path = 210;
+
+  // At this point, XLA may still choose a higher precision dot algorithm, but
+  // we expect this to change at a later point.
+  optional bool xla_gpu_precision_like_on_tpu = 441;
 
   // Prints statistics about the HLO passes: how many times each pass
   // was run, and how long it took.

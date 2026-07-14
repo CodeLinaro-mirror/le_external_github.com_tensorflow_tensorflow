@@ -209,7 +209,7 @@ absl::StatusOr<std::optional<Type>> DotDefaultOperandsType(
       return lhs_type;
     }
   }
-  if (debug_options.xla_gpu_default_to_alg_dot_bf16_bf16_f32()) {
+  if (debug_options.xla_gpu_precision_like_on_tpu()) {
     return b.getBF16Type();
   }
   return lhs_type;
