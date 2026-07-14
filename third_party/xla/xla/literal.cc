@@ -2091,15 +2091,38 @@ static bool EqualIncludingNan(std::complex<T> a, std::complex<T> b) {
          EqualIncludingNan(a.imag(), b.imag());
 }
 
+template <class T>
+inline constexpr bool is_padding_free_v =
+    std::is_trivially_copyable_v<T> &&
+    (std::has_unique_object_representations_v<T> ||
+     (std::is_floating_point_v<T> && !std::is_same_v<T, long double>));
+
+// std::complex<T> is guaranteed layout-compatible with T[2]
+template <class U>
+inline constexpr bool is_padding_free_v<std::complex<U>> = is_padding_free_v<U>;
+
+// Specializations for custom float types that don't have unique object
+// representations (e.g. because they wrap compiler float types or have
+// NaN/signed zero semantics)
+template <>
+inline constexpr bool is_padding_free_v<Eigen::half> = true;
+template <>
+inline constexpr bool is_padding_free_v<Eigen::bfloat16> = true;
+
 template <typename NativeT>
 static bool AllElementsEqualValue(absl::Span<const NativeT> data,
                                   NativeT value) {
-  for (int64_t i = 0; i < data.size(); ++i) {
-    if (memcmp(&data[i], &value, sizeof value)) {
-      return false;
-    }
+  static_assert(is_padding_free_v<NativeT>, "NativeT must be padding-free");
+  if (data.empty()) {
+    return true;
   }
-  return true;
+  if (memcmp(&data[0], &value, sizeof(NativeT)) != 0) {
+    return false;
+  }
+  if (data.size() == 1) {
+    return true;
+  }
+  return memcmp(&data[0], &data[1], (data.size() - 1) * sizeof(NativeT)) == 0;
 }
 
 bool Literal::Piece::IsAll(const Literal& scalar) const {
