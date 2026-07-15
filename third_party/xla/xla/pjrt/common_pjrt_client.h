@@ -63,6 +63,9 @@ class CommonPjRtClient : public PjRtClient {
  public:
   using PjRtClient::PjRtClient;
 
+  using ExecuteArgHold =
+      std::variant<PjRtRawBufferRef, CommonPjRtBuffer::ScopedHold>;
+
   // A thread pool for dispatching background work.
   // TODO(parkers): make pure virtual and update all clients.
   virtual AsyncWorkRunner* async_work_runner() const { return nullptr; }
@@ -421,7 +424,7 @@ class CommonPjRtClient : public PjRtClient {
       PjRtDeviceEventRefVector& extra_deps,
       PjRtDeviceEventRefVector& control_deps,
       absl::InlinedVector<PjRtRawBufferRef, 4>& input_buffers,
-      absl::InlinedVector<CommonPjRtBuffer::ScopedHold, 4>& device_buffers,
+      absl::InlinedVector<ExecuteArgHold, 4>& device_buffers,
       PjRtDevice* device, int replica, int partition,
       absl::Span<const Shape> parameter_device_shapes, bool& is_error,
       bool allow_fallback_for_donation = false);
@@ -429,7 +432,7 @@ class CommonPjRtClient : public PjRtClient {
   absl::StatusOr<absl::InlinedVector<PjRtRawBufferRef, 4>>
   AllocateOutputBuffersWithInputReuse(
       const Shape& output_device_shape,
-      absl::Span<const CommonPjRtBuffer::ScopedHold> input_device_buffer_holds,
+      absl::Span<const ExecuteArgHold> input_device_buffer_holds,
       const HloInputOutputAliasConfig& alias_config, PjRtDevice* device,
       absl::Span<const int> output_memory_space_kind_ids,
       const ExecuteOptions& options);
@@ -694,7 +697,7 @@ class CommonPjRtLoadedExecutable : public PjRtLoadedExecutable {
     PjRtDevice* device;
     std::unique_ptr<PjRtRawLoadedExecutable> executable;
     absl::InlinedVector<PjRtRawBufferRef, 4> input_buffers;
-    absl::InlinedVector<CommonPjRtBuffer::ScopedHold, 4> device_buffers;
+    absl::InlinedVector<CommonPjRtClient::ExecuteArgHold, 4> device_buffers;
     PjRtDeviceEventRefVector extra_deps;
     PjRtDeviceEventRefVector control_deps;
     absl::InlinedVector<PjRtRawBufferRef, 4> output_leaf_buffers;

@@ -69,6 +69,7 @@ limitations under the License.
 #include "xla/pjrt/raw_buffer.h"
 #include "xla/pjrt/staging_buffer.h"
 #include "xla/pjrt/transpose.h"
+#include "xla/pjrt/undonatable_common_pjrt_buffer.h"
 #include "xla/pjrt/utils.h"
 #include "xla/primitive_util.h"
 #include "xla/runtime/device_id.h"
@@ -1064,10 +1065,9 @@ absl::Status CommonPjRtClient::PrepareArguments(
     absl::Span<int const> donated_params, PjRtDeviceEventRefVector& extra_deps,
     PjRtDeviceEventRefVector& control_deps,
     absl::InlinedVector<PjRtRawBufferRef, 4>& input_buffers,
-    absl::InlinedVector<CommonPjRtBuffer::ScopedHold, 4>& device_buffers,
-    PjRtDevice* device, int replica, int partition,
-    absl::Span<const Shape> parameter_device_shapes, bool& is_error,
-    bool allow_fallback_for_donation) {
+    absl::InlinedVector<ExecuteArgHold, 4>& device_buffers, PjRtDevice* device,
+    int replica, int partition, absl::Span<const Shape> parameter_device_shapes,
+    bool& is_error, bool allow_fallback_for_donation) {
   absl::flat_hash_set<void*> extra_deps_seen;
   absl::flat_hash_set<void*> control_deps_seen;
   if (argument_handles.size() != parameter_device_shapes.size()) {
@@ -1088,17 +1088,15 @@ absl::Status CommonPjRtClient::PrepareArguments(
     std::vector<std::pair<int, size_t>> donated_buffer_stats;
     for (int i = 0; i < argument_handles.size(); ++i) {
       PjRtBuffer* handle = argument_handles[i];
-      auto* tfrt_buffer = absl::down_cast<CommonPjRtBufferImpl*>(handle);
-      if (tfrt_buffer->device() != device) {
+      if (handle->device() != device) {
         return InvalidArgument(
             "Buffer passed to Execute() as argument %d to replica %d is on "
             "device %s, but replica is assigned to device %s.",
-            i, replica, tfrt_buffer->device()->DebugString(),
-            device->DebugString());
+            i, replica, handle->device()->DebugString(), device->DebugString());
       }
 
       const Shape& expected_shape = parameter_device_shapes[i];
-      const Shape& on_device_shape = tfrt_buffer->on_device_shape();
+      const Shape& on_device_shape = handle->on_device_shape();
 
       if (options.strict_shape_checking &&
           // Skip shape check for non-array shapes (e.g. tuples).
@@ -1129,6 +1127,75 @@ absl::Status CommonPjRtClient::PrepareArguments(
             "`ExecuteOptions::non_donatable_input_indices`");
       }
       bool must_donate = donated_param && !donation_denied_at_runtime;
+
+      auto strip_dynamic_shape_metadata = [&](PjRtRawBufferRef actual_buffer)
+          -> absl::StatusOr<PjRtRawBufferRef> {
+        if (!on_device_shape.is_dynamic() || expected_shape.is_dynamic()) {
+          return actual_buffer;
+        }
+        ASSIGN_OR_RETURN(auto handle_logical_device_shape,
+                         handle->logical_on_device_shape());
+        auto* client = absl::down_cast<CommonPjRtClient*>(
+            actual_buffer->memory_space()->client());
+        auto ds_kind = client->GetDynamicShapeKind(
+            actual_buffer->memory_space()->kind_id());
+        auto status_or_buffer = xla::RemoveDynamicShapeMetadataIfPresent(
+            actual_buffer, on_device_shape, handle_logical_device_shape,
+            ds_kind);
+        if (!status_or_buffer.ok()) {
+          absl::Status status = status_or_buffer.status();
+          tsl::errors::AppendToMessage(
+              &status, absl::StrCat("; Error when preparing the input buffer "
+                                    "to Execute() as argument ",
+                                    i, " to replica ", replica));
+          return status;
+        }
+        return status_or_buffer;
+      };
+
+      auto accumulate_definition_events =
+          [&](absl::Span<const PjRtDeviceEventRef> events) {
+            for (const auto& ev : events) {
+              if (ev) {
+                switch (ev.ptr().state()) {
+                  case PJRT_DeviceEvent_State_Error:
+                    is_error = true;
+                    ABSL_FALLTHROUGH_INTENDED;
+                  case PJRT_DeviceEvent_State_Unavailable:
+                    if (extra_deps_seen.insert(ev.ptr().ToC().device_event)
+                            .second) {
+                      extra_deps.push_back(ev);
+                    }
+                    break;
+                  default:
+                    break;
+                }
+              }
+            }
+          };
+
+      if (auto* undonatable =
+              dynamic_cast<UndonatableCommonPjRtBuffer*>(handle)) {
+        if (must_donate) {
+          return InvalidArgument(
+              "Donation requested on UndonatableCommonPjRtBuffer for argument "
+              "%d to replica %d.",
+              i, replica);
+        }
+        ASSIGN_OR_RETURN(
+            auto actual_buffer,
+            strip_dynamic_shape_metadata(
+                undonatable->AcquireRawBufferRef("PrepareArguments")));
+        // Extract definition events directly to enforce data dependencies
+        // (blocking or aborting on errors) since standard PjRt holds are
+        // bypassed.
+        accumulate_definition_events(undonatable->definition_events());
+        input_buffers.push_back(actual_buffer);
+        device_buffers.emplace_back(std::move(actual_buffer));
+        continue;
+      }
+
+      auto* tfrt_buffer = absl::down_cast<CommonPjRtBufferImpl*>(handle);
       RETURN_IF_ERROR(TestBufferDonationClashes(
           tfrt_buffer, donation_clashes, must_donate, i, replica, partition));
       if (allow_fallback_for_donation && must_donate) {
@@ -1151,7 +1218,8 @@ absl::Status CommonPjRtClient::PrepareArguments(
             must_donate ? CommonPjRtBuffer::ScopedHold::kDonation
                         : CommonPjRtBuffer::ScopedHold::kUsage));
       }
-      CommonPjRtBuffer::ScopedHold& hold = device_buffers.back();
+      CommonPjRtBuffer::ScopedHold& hold =
+          std::get<CommonPjRtBuffer::ScopedHold>(device_buffers.back());
       if (!hold.ok()) {
         return InvalidArgument(
             "Invalid buffer passed to Execute() as argument %d to replica %d: "
@@ -1161,50 +1229,16 @@ absl::Status CommonPjRtClient::PrepareArguments(
       auto* device_buffer = hold.buffer();
 
       if (device_buffer->raw_buffer()) {
-        PjRtRawBufferRef actual_buffer = device_buffer->raw_buffer();
-        if (on_device_shape.is_dynamic() && !expected_shape.is_dynamic()) {
-          ASSIGN_OR_RETURN(auto handle_logical_device_shape,
-                           handle->logical_on_device_shape());
-          auto* client = absl::down_cast<CommonPjRtClient*>(
-              actual_buffer->memory_space()->client());
-          auto ds_kind = client->GetDynamicShapeKind(
-              actual_buffer->memory_space()->kind_id());
-          auto status_or_buffer = xla::RemoveDynamicShapeMetadataIfPresent(
-              actual_buffer, on_device_shape, handle_logical_device_shape,
-              ds_kind);
-
-          if (!status_or_buffer.ok()) {
-            absl::Status status = status_or_buffer.status();
-            tsl::errors::AppendToMessage(
-                &status, absl::StrCat("; Error when preparing the input buffer "
-                                      "to Execute() as argument ",
-                                      i, " to replica ", replica));
-            return status;
-          }
-          actual_buffer = std::move(status_or_buffer).value();
-        }
+        ASSIGN_OR_RETURN(
+            PjRtRawBufferRef actual_buffer,
+            strip_dynamic_shape_metadata(device_buffer->raw_buffer()));
         input_buffers.push_back(std::move(actual_buffer));
       } else {
         is_error = true;
       }
 
       // Definition events are never modified after buffer construction.
-      for (const auto& ev : device_buffer->definition_events()) {
-        if (ev) {
-          switch (ev.ptr().state()) {
-            case PJRT_DeviceEvent_State_Error:
-              is_error = true;
-              ABSL_FALLTHROUGH_INTENDED;
-            case PJRT_DeviceEvent_State_Unavailable:
-              if (extra_deps_seen.insert(ev.ptr().ToC().device_event).second) {
-                extra_deps.push_back(ev);
-              }
-              break;
-            case PJRT_DeviceEvent_State_Ready:
-              break;
-          }
-        }
-      }
+      accumulate_definition_events(device_buffer->definition_events());
       // If we are trying to donate this buffer, we must wait on its usage
       // events as well as its definition events to ensure that all reads on
       // this buffer (e.g., d2h transfer) have been completed before it can be
@@ -1256,7 +1290,7 @@ absl::Status CommonPjRtClient::PrepareArguments(
 absl::StatusOr<absl::InlinedVector<PjRtRawBufferRef, 4>>
 CommonPjRtClient::AllocateOutputBuffersWithInputReuse(
     const Shape& output_device_shape,
-    absl::Span<const CommonPjRtBuffer::ScopedHold> input_device_buffer_holds,
+    absl::Span<const ExecuteArgHold> input_device_buffer_holds,
     const HloInputOutputAliasConfig& alias_config, PjRtDevice* device,
     absl::Span<const int> output_memory_space_kind_ids,
     const ExecuteOptions& options) {
@@ -1296,12 +1330,13 @@ CommonPjRtClient::AllocateOutputBuffersWithInputReuse(
     if (num_input_pjrt_buffers > 1 && alias->parameter_index.size() == 1) {
       parameter_index = alias->parameter_index[0];
     }
-    if (input_device_buffer_holds[parameter_index].type() !=
-        CommonPjRtBuffer::ScopedHold::kDonation) {
+    const auto* hold = std::get_if<CommonPjRtBuffer::ScopedHold>(
+        &input_device_buffer_holds[parameter_index]);
+    if (hold == nullptr ||
+        hold->type() != CommonPjRtBuffer::ScopedHold::kDonation) {
       return true;
     }
-    auto& buffer =
-        input_device_buffer_holds[parameter_index].buffer()->raw_buffer();
+    auto& buffer = hold->buffer()->raw_buffer();
     return buffer && !buffer->is_mutable();
   };
 
@@ -1379,8 +1414,8 @@ CommonPjRtClient::AllocateOutputBuffersWithInputReuse(
         return Unimplemented("Alias %s not supported: found %d inputs.",
                              alias->ToString(), num_input_pjrt_buffers);
       }
-      const CommonPjRtBuffer::ScopedHold& input_hold =
-          input_device_buffer_holds[parameter_number];
+      const auto& input_hold = std::get<CommonPjRtBuffer::ScopedHold>(
+          input_device_buffer_holds[parameter_number]);
       buffers[i] = input_hold.buffer()->raw_buffer();
     }
   }
@@ -1988,12 +2023,19 @@ CommonPjRtLoadedExecutable::ExecuteLaunch(ExecuteLaunchArgs& launch_args,
   {
     tsl::profiler::TraceMe t3("Handle input event recording");
     // Handle input event recording.
-    for (CommonPjRtBuffer::ScopedHold& b : launch_args.device_buffers) {
-      if (b.type() == CommonPjRtBuffer::ScopedHold::kUsage) {
-        b.ConvertUsageHold(results.primary_execute_event);
+    for (CommonPjRtClient::ExecuteArgHold& b : launch_args.device_buffers) {
+      if (auto* hold = std::get_if<CommonPjRtBuffer::ScopedHold>(&b)) {
+        if (hold->type() == CommonPjRtBuffer::ScopedHold::kUsage) {
+          hold->ConvertUsageHold(results.primary_execute_event);
+        } else {
+          CHECK(hold->type() == CommonPjRtBuffer::ScopedHold::kDonation);
+          hold->ConfirmDonation();
+        }
       } else {
-        CHECK(b.type() == CommonPjRtBuffer::ScopedHold::kDonation);
-        b.ConfirmDonation();
+        PjRtRawBufferRef& ref = std::get<PjRtRawBufferRef>(b);
+        if (ref) {
+          ref.release()->DecrefAfter({results.primary_execute_event});
+        }
       }
     }
   }
