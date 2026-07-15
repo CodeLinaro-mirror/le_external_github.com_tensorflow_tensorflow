@@ -5397,13 +5397,18 @@ LogicalResult ConvertToHloModule::LowerReturn(
     return failure();
   }
 
-  if (ret_tuple_sharding) {
+  if (ret_tuple_sharding ||
+      (!ret_shardings.empty() && ret_shardings[0].has_value())) {
     if (std::optional<xla::OpSharding> sharding =
             getTupleShardingForSingleElementReturnLowering(operand, builder)) {
       builder->SetSharding(sharding.value());
     }
     auto tuple = Tuple(builder, {operand});
-    builder->SetSharding(*ret_shardings[0]);
+    if (!ret_shardings.empty() && ret_shardings[0].has_value()) {
+      builder->SetSharding(*ret_shardings[0]);
+    } else {
+      builder->ClearSharding();
+    }
     *return_value = GetTupleElement(tuple, 0);
     builder->ClearSharding();
   } else {
