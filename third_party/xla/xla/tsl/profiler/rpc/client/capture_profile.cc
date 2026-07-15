@@ -327,6 +327,24 @@ absl::Status ExportToTensorBoard(const XSpace& xspace,
                              also_export_trace_json);
 }
 
+absl::Status ExportToTensorBoard(std::vector<XSpace>& xspaces,
+                                 absl::string_view logdir,
+                                 absl::string_view run) {
+  if (xspaces.empty()) {
+    return absl::OkStatus();
+  }
+
+  std::string repository_root =
+      GetTensorBoardProfilePluginDir(std::string(logdir));
+  std::string host = tsl::port::Hostname();
+  return SaveXSpaceChunks(repository_root, run, host, xspaces);
+}
+
+absl::Status ExportToTensorBoard(std::vector<XSpace>& xspaces,
+                                 absl::string_view logdir) {
+  return ExportToTensorBoard(xspaces, logdir, GetCurrentTimeStampAsString());
+}
+
 absl::Status CaptureRemoteTrace(
     const char* service_addr, const char* logdir, const char* worker_list,
     bool include_dataset_ops, int duration_ms, int num_tracing_attempts,
