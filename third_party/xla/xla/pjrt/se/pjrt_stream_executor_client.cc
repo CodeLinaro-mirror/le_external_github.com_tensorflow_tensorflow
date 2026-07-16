@@ -2413,6 +2413,7 @@ PjRtStreamExecutorClient::DeserializeExecutable(
     ASSIGN_OR_RETURN(compile_options,
                      CompileOptions::FromProto(proto.compile_options()));
   }
+  RETURN_IF_ERROR(compile_options.ApplyAllOptionOverrides());
 
   tsl::profiler::TraceMe traceme(
       "PjRtStreamExecutorClient::DeserializeExecutable");
