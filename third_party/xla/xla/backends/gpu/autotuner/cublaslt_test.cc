@@ -140,6 +140,18 @@ TEST_F(CublasLtBackendTest, GetSupportedConfigs) {
               absl_testing::IsOkAndHolds(testing::SizeIs(testing::Gt(0))));
 }
 
+TEST_F(CublasLtBackendTest, GetSupportedConfigsReturnsEmptyForDeviceless) {
+  CublasLtBackend backend_without_stream_executor(
+      /*stream_executor=*/nullptr, &debug_options_, &compiler_,
+      &target_config_);
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> hlo_module,
+                       ParseAndReturnVerifiedModule(kCublasLtCustomCallHlo));
+  absl::StatusOr<std::vector<std::unique_ptr<BackendConfig>>> configs =
+      backend_without_stream_executor.GetSupportedConfigs(
+          *hlo_module->entry_computation()->root_instruction()->operand(0));
+  EXPECT_THAT(configs, absl_testing::IsOkAndHolds(testing::SizeIs(0)));
+}
+
 TEST_F(CublasLtBackendTest,
        GetSupportedConfigsReturnsEmptyVectorForNonCublasLtCustomCall) {
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> hlo_module,

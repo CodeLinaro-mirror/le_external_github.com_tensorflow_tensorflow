@@ -140,6 +140,18 @@ TEST_F(HipblasLtBackendTest, GetSupportedConfigs) {
               absl_testing::IsOkAndHolds(testing::SizeIs(testing::Gt(0))));
 }
 
+TEST_F(HipblasLtBackendTest, GetSupportedConfigsReturnsEmptyForDeviceless) {
+  HipblasLtBackend backend_without_stream_executor(
+      /*stream_executor=*/nullptr, &debug_options_, &compiler_,
+      &target_config_);
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> hlo_module,
+                       ParseAndReturnVerifiedModule(kHipblasLtCustomCallHlo));
+  absl::StatusOr<std::vector<std::unique_ptr<BackendConfig>>> configs =
+      backend_without_stream_executor.GetSupportedConfigs(
+          *hlo_module->entry_computation()->root_instruction()->operand(0));
+  EXPECT_THAT(configs, absl_testing::IsOkAndHolds(testing::IsEmpty()));
+}
+
 TEST_F(HipblasLtBackendTest,
        GetSupportedConfigsReturnsEmptyVectorForNonHipblasLtCustomCall) {
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> hlo_module,

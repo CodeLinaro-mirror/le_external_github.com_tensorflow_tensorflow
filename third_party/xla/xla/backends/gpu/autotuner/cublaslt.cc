@@ -20,7 +20,9 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/status/statusor.h"
 #include "xla/tsl/platform/status_macros.h"
 #include "xla/autotuning.pb.h"
@@ -37,8 +39,6 @@ limitations under the License.
 #include "xla/stream_executor/blas.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/gpu/gpu_blas_lt.h"
-#include "xla/tsl/platform/errors.h"
-#include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
 
@@ -84,7 +84,7 @@ bool CublasLtBackend::IsSupported(const HloInstruction& instr) {
 
 absl::StatusOr<std::vector<std::unique_ptr<BackendConfig>>>
 CublasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
-  if (!IsSupported(instr)) {
+  if (stream_executor() == nullptr || !IsSupported(instr)) {
     return std::vector<std::unique_ptr<BackendConfig>>();
   }
 

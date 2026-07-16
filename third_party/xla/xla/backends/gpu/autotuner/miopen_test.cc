@@ -120,6 +120,17 @@ TEST_F(MIOpenBackendTest, GetSupportedConfigsFromMIOpenCustomCall) {
   EXPECT_NE(algorithm_config.algo_id(), 0);
 }
 
+TEST_F(MIOpenBackendTest, GetSupportedConfigsReturnsEmptyForDeviceless) {
+  MIOpenBackend backend_without_stream_executor(
+      nullptr, &debug_options_, &compiler_, &target_config_, &allocator_);
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> hlo_module,
+                          ParseAndReturnVerifiedModule(kMIOpenCustomCallHlo));
+  absl::StatusOr<std::vector<std::unique_ptr<BackendConfig>>> configs =
+      backend_without_stream_executor.GetSupportedConfigs(
+          (*hlo_module->entry_computation()->root_instruction()->operand(0)));
+  EXPECT_THAT(configs, IsOkAndHolds(SizeIs(0)));
+}
+
 TEST_F(MIOpenBackendTest, GetDefaultConfigFromMIOpenCustomCall) {
   if (!IsRocm()) {
     GTEST_SKIP() << "Skipping test on non-ROCm platform";
