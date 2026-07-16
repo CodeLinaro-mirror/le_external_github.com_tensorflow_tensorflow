@@ -41,7 +41,8 @@ namespace xla::xtile {
 namespace {
 
 template <typename StableHloOp, typename FloatArithOp, typename IntArithOp,
-          typename UnsignedIntArithOp = IntArithOp>
+          typename UnsignedIntArithOp = IntArithOp,
+          typename ComplexArithOp = void>
 class LowerStableHloOpToArith : public mlir::OpRewritePattern<StableHloOp> {
  public:
   using mlir::OpRewritePattern<StableHloOp>::OpRewritePattern;
@@ -57,6 +58,10 @@ class LowerStableHloOpToArith : public mlir::OpRewritePattern<StableHloOp> {
   mlir::LogicalResult matchAndRewrite(
       StableHloOp op, mlir::PatternRewriter& rewriter) const override {
     auto result_type = mlir::getElementTypeOrSelf(op.getResult().getType());
+    if (mlir::isa<mlir::ComplexType>(result_type)) {
+      return rewriter.notifyMatchFailure(
+          op, "complex types are legalized by StablehloLegalizeToLinalg");
+    }
     if (result_type.isFloat()) {
       if (NeedsPromotion(op, result_type)) {
         mlir::Type f32_type = rewriter.getF32Type();
@@ -81,7 +86,9 @@ class LowerStableHloOpToArith : public mlir::OpRewritePattern<StableHloOp> {
         rewriter.replaceOpWithNewOp<mlir::arith::TruncFOp>(
             op, op.getResult().getType(), promoted_op->getResult(0));
       } else {
-        rewriter.replaceOpWithNewOp<FloatArithOp>(op, op.getOperands());
+        auto new_op =
+            FloatArithOp::create(rewriter, op.getLoc(), op.getOperands());
+        rewriter.replaceOp(op, new_op);
       }
     } else {
       mlir::Operation* new_op = nullptr;
@@ -91,7 +98,6 @@ class LowerStableHloOpToArith : public mlir::OpRewritePattern<StableHloOp> {
       if (result_type.isUnsignedInteger()) {
         llvm::SmallVector<mlir::Value> signless_operands;
         signless_operands.reserve(op.getOperands().size());
-        mlir::Type operand_type = op.getOperands().front().getType();
         for (mlir::Value operand : op.getOperands()) {
           signless_operands.push_back(
               ::xla::xtile::UnsignedIntegerToSignlessInteger(rewriter,
@@ -104,7 +110,8 @@ class LowerStableHloOpToArith : public mlir::OpRewritePattern<StableHloOp> {
         rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
             op, op.getResult().getType(), new_op->getResult(0));
       } else {
-        new_op = rewriter.replaceOpWithNewOp<IntArithOp>(op, op.getOperands());
+        new_op = IntArithOp::create(rewriter, op.getLoc(), op.getOperands());
+        rewriter.replaceOp(op, new_op);
       }
 
       // Special case for division with zero.

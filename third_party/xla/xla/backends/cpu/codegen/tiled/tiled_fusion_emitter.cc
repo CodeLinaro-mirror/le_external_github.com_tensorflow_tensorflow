@@ -314,8 +314,6 @@ bool IsSupportedInstruction(const HloInstruction& inst) {
     case HloOpcode::kBitcastConvert:
     case HloOpcode::kMap:
     case HloOpcode::kPopulationCount:
-    case HloOpcode::kReal:
-    case HloOpcode::kImag:
     case HloOpcode::kSign:
     case HloOpcode::kRoundNearestAfz:
     case HloOpcode::kRoundNearestEven:
@@ -553,10 +551,6 @@ bool IsSupportedTilingType(PrimitiveType type) {
   }
 
   if (primitive_util::BitWidth(type) < 8) {
-    return false;
-  }
-
-  if (primitive_util::IsComplexType(type)) {
     return false;
   }
 

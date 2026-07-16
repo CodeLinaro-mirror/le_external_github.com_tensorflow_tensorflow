@@ -397,6 +397,10 @@ absl::StatusOr<Type> PrimitiveTypeToMlirType(
             "F8E4M3FNUZ is not supported on this GPU.");
       }
       return b.getType<mlir::Float8E4M3FNUZType>();
+    case C64:
+      return mlir::ComplexType::get(b.getF32Type());
+    case C128:
+      return mlir::ComplexType::get(b.getF64Type());
     default:
       return absl::UnimplementedError(
           absl::StrCat("This type is not supported yet: ",
@@ -416,6 +420,10 @@ absl::StatusOr<PrimitiveType> GetPrimitiveType(Type t) {
   if (t.isInteger(8)) return t.isSignedInteger() ? S8 : U8;
   if (t.isInteger(4)) return t.isSignedInteger() ? S4 : U4;
   if (t.isInteger(1)) return PRED;
+  if (auto complex_type = mlir::dyn_cast<mlir::ComplexType>(t)) {
+    if (complex_type.getElementType().isF32()) return C64;
+    if (complex_type.getElementType().isF64()) return C128;
+  }
   if (mlir::isa<mlir::Float8E5M2Type>(t)) return F8E5M2;
   if (mlir::isa<mlir::Float8E4M3FNType>(t)) return F8E4M3FN;
   if (mlir::isa<mlir::Float8E8M0FNUType>(t)) return F8E8M0FNU;
@@ -523,10 +531,7 @@ absl::StatusOr<Value> EmitElementwise(mlir::ImplicitLocOpBuilder& b,
       return mlir::stablehlo::XorOp::create(b, inputs[0],
                                             OnesLike(b, inputs[0].getType()));
     case HloOpcode::kNegate:
-      if (is_integer) {
-        return Subtract(b, {ZerosLike(b, inputs[0]), inputs[0]});
-      }
-      return ma::NegFOp::create(b, inputs[0]);
+      return mlir::stablehlo::NegOp::create(b, inputs[0]);
     case HloOpcode::kConvert: {
       ASSIGN_OR_RETURN(Type dst_ty,
                        PrimitiveTypeToMlirType(b, hlo.shape().element_type()));
@@ -600,10 +605,7 @@ absl::StatusOr<Value> EmitElementwise(mlir::ImplicitLocOpBuilder& b,
     case HloOpcode::kLog1p:
       return mm::Log1pOp::create(b, inputs[0]);
     case HloOpcode::kPower:
-      if (is_integer) {
-        return mm::IPowIOp::create(b, inputs[0], inputs[1]);
-      }
-      return mm::PowFOp::create(b, inputs[0], inputs[1]);
+      return mlir::stablehlo::PowOp::create(b, inputs[0], inputs[1]);
     case HloOpcode::kRemainder:
       return mlir::stablehlo::RemOp::create(b, inputs[0], inputs[1]);
     case HloOpcode::kRsqrt:
@@ -622,6 +624,12 @@ absl::StatusOr<Value> EmitElementwise(mlir::ImplicitLocOpBuilder& b,
       return mm::CbrtOp::create(b, inputs[0]);
     case HloOpcode::kIsFinite:
       return mm::IsFiniteOp::create(b, inputs[0]);
+    case HloOpcode::kComplex:
+      return mlir::stablehlo::ComplexOp::create(b, inputs[0], inputs[1]);
+    case HloOpcode::kReal:
+      return mlir::stablehlo::RealOp::create(b, inputs[0]);
+    case HloOpcode::kImag:
+      return mlir::stablehlo::ImagOp::create(b, inputs[0]);
     default:
       return absl::InvalidArgumentError(
           absl::StrCat("Unsupported elementwise operation ", hlo.ToString()));
