@@ -191,44 +191,12 @@ TEST_F(HloVerifierTest, IsShapePrefix) {
   ShapeVerifier verifier(opts);
 
   Shape f32_scalar = ShapeUtil::MakeShape(F32, {});
-  Shape s32_scalar = ShapeUtil::MakeShape(S32, {});
-  Shape f32_vector = ShapeUtil::MakeShape(F32, {4});
-
-  // Same shapes
-  EXPECT_TRUE(
-      HloVerifierTestHelper::IsShapePrefix(verifier, f32_scalar, f32_scalar));
-
-  // Different non-tuple shapes
-  EXPECT_FALSE(
-      HloVerifierTestHelper::IsShapePrefix(verifier, f32_scalar, s32_scalar));
-  EXPECT_FALSE(
-      HloVerifierTestHelper::IsShapePrefix(verifier, f32_scalar, f32_vector));
-
-  // Tuples
   Shape tuple_f32_scalar = ShapeUtil::MakeTupleShape({f32_scalar});
   Shape tuple_f32_scalar_f32_vector =
-      ShapeUtil::MakeTupleShape({f32_scalar, f32_vector});
+      ShapeUtil::MakeTupleShape({f32_scalar, ShapeUtil::MakeShape(F32, {4})});
 
-  // Prefix match
   EXPECT_TRUE(HloVerifierTestHelper::IsShapePrefix(
       verifier, tuple_f32_scalar, tuple_f32_scalar_f32_vector));
-
-  // Not prefix (larger)
-  EXPECT_FALSE(HloVerifierTestHelper::IsShapePrefix(
-      verifier, tuple_f32_scalar_f32_vector, tuple_f32_scalar));
-
-  // Mismatched element in tuple
-  Shape tuple_s32_scalar = ShapeUtil::MakeTupleShape({s32_scalar});
-  EXPECT_FALSE(HloVerifierTestHelper::IsShapePrefix(
-      verifier, tuple_s32_scalar, tuple_f32_scalar_f32_vector));
-
-  // Nested tuples
-  Shape nested_tuple1 = ShapeUtil::MakeTupleShape({tuple_f32_scalar});
-  Shape nested_tuple2 =
-      ShapeUtil::MakeTupleShape({tuple_f32_scalar_f32_vector});
-
-  EXPECT_TRUE(HloVerifierTestHelper::IsShapePrefix(verifier, nested_tuple1,
-                                                   nested_tuple2));
 }
 
 TEST_F(HloVerifierTest, LateBindingWithCallStart_StartFromZeroOperand) {

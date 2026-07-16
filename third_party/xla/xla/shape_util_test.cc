@@ -243,6 +243,29 @@ TEST(ShapeUtilTest, CompatibleTuples) {
   EXPECT_TRUE(ShapeUtil::Compatible(tuple1, tuple2));
 }
 
+TEST(ShapeUtilTest, IsPrefix) {
+  Shape f32_scalar = ShapeUtil::MakeShape(F32, {});
+  Shape s32_scalar = ShapeUtil::MakeShape(S32, {});
+  Shape f32_vector = ShapeUtil::MakeShape(F32, {4});
+
+  EXPECT_TRUE(ShapeUtil::IsPrefix(f32_scalar, f32_scalar));
+  EXPECT_FALSE(ShapeUtil::IsPrefix(f32_scalar, s32_scalar));
+  EXPECT_FALSE(ShapeUtil::IsPrefix(f32_scalar, f32_vector));
+
+  Shape empty_tuple = ShapeUtil::MakeTupleShape({});
+  Shape tuple1 = ShapeUtil::MakeTupleShape({f32_scalar});
+  Shape tuple2 = ShapeUtil::MakeTupleShape({f32_scalar, f32_vector});
+
+  EXPECT_TRUE(ShapeUtil::IsPrefix(empty_tuple, tuple1));
+  EXPECT_TRUE(ShapeUtil::IsPrefix(empty_tuple, tuple2));
+  EXPECT_TRUE(ShapeUtil::IsPrefix(tuple1, tuple2));
+  EXPECT_FALSE(ShapeUtil::IsPrefix(tuple2, tuple1));
+
+  Shape nested_tuple1 = ShapeUtil::MakeTupleShape({tuple1, f32_scalar});
+  Shape nested_tuple2 = ShapeUtil::MakeTupleShape({tuple2, f32_scalar});
+  EXPECT_TRUE(ShapeUtil::IsPrefix(nested_tuple1, nested_tuple2));
+}
+
 TEST(ShapeUtilTest, MakeMaybeTupleShape) {
   Shape s1 = ShapeUtil::MakeValidatedMaybeTupleShape(
                  {ShapeUtil::MakeValidatedShape(F32, {3, 2}).value()})
