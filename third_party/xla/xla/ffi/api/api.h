@@ -188,6 +188,8 @@ inline std::ostream& operator<<(std::ostream& os,
       return os << "prepare";
     case XLA_FFI_ExecutionStage_INITIALIZE:
       return os << "initialize";
+    case XLA_FFI_ExecutionStage_RECORD:
+      return os << "record";
     case XLA_FFI_ExecutionStage_EXECUTE:
       return os << "execute";
   }
@@ -242,6 +244,7 @@ enum class ExecutionStage : uint8_t {
   kInstantiate = XLA_FFI_ExecutionStage_INSTANTIATE,
   kPrepare = XLA_FFI_ExecutionStage_PREPARE,
   kInitialize = XLA_FFI_ExecutionStage_INITIALIZE,
+  kRecord = XLA_FFI_ExecutionStage_RECORD,
   kExecute = XLA_FFI_ExecutionStage_EXECUTE,
 };
 
@@ -296,6 +299,9 @@ class Ffi {
 
   // Creates an empty binding for the execute stage.
   static Binding<ExecutionStage::kExecute> BindExecute();
+
+  // Creates an empty binding for the record stage.
+  static Binding<ExecutionStage::kRecord> BindRecord();
 
   // Automatic FFI binding that does binding specification inference from the
   // `fn` type signature and binds `fn` to it. This enables a more concise FFI
@@ -774,6 +780,10 @@ inline Binding<ExecutionStage::kInitialize> Ffi::BindInitialize() {
 
 inline Binding<ExecutionStage::kExecute> Ffi::BindExecute() {
   return Bind<ExecutionStage::kExecute>();
+}
+
+inline Binding<ExecutionStage::kRecord> Ffi::BindRecord() {
+  return Bind<ExecutionStage::kRecord>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1524,7 +1534,7 @@ struct AttrDecoding;
 //   struct CtxDecoding<MyType> {
 //    using Type = <handler argument type for context type MyType>;
 //    static std::optional<Type> Decode(const XLA_FFI_Api* api,
-//                                      XLA_FFI_ExecutionContext* ctx);
+//                                      XLA_FFI_InvokeContext* ctx);
 //   }
 //
 template <typename T>
@@ -1542,7 +1552,7 @@ struct CtxDecoding;
 //   template<ExecutionStage stage>
 //   struct ResultEncoding<stage, absl::Status> {
 //     XLA_FFI_Error* Encode(const XLA_FFI_Api* api,
-//                           XLA_FFI_ExecutionContext* ctx,
+//                           XLA_FFI_InvokeContext* ctx,
 //                           absl::Status status) {...}
 //   };
 //
@@ -1561,7 +1571,7 @@ struct CtxDecoding;
 //   template<ExecutionStage stage>
 //   struct ResultEncoding<state, xla::ffi::Future> {
 //     std::variant<XLA_FFI_Error*, XLA_FFI_Future*> Encode(
-//       const XLA_FFI_Api* api, XLA_FFI_ExecutionContext* ctx,
+//       const XLA_FFI_Api* api, XLA_FFI_InvokeContext* ctx,
 //       xla::ffi::Future future) {...}
 //   };
 //
@@ -1760,6 +1770,53 @@ struct Decode<CtxTag<T>> {
 };
 
 }  // namespace internal
+
+//===----------------------------------------------------------------------===//
+// Decoding for Extensions
+//===----------------------------------------------------------------------===//
+
+// Type tag for decoding an Extension.
+template <typename T>
+struct FfiExtension {};
+
+// Context decoding for an Extension.
+//
+// Example: Ffi::Bind().Ctx<FFIExtension<MyExtension>>()
+//                     .To([](const MyExtension* ext) { ... });
+// Returned value is guaranteed to be non-null.
+template <typename T>
+struct CtxDecoding<FfiExtension<T>> {
+  using Type = const T*;
+
+  static std::optional<Type> Decode(const XLA_FFI_Api* api,
+                                    XLA_FFI_InvokeContext* ctx,
+                                    DiagnosticEngine& diagnostic) {
+    XLA_FFI_InvokeContext_FindExtension_Args args;
+    args.struct_size = XLA_FFI_InvokeContext_FindExtension_Args_STRUCT_SIZE;
+    args.extension_start = nullptr;
+    args.ctx = ctx;
+    args.extension_type = T::kExtensionType;
+    args.extension = nullptr;
+
+    XLA_FFI_Error* error = api->XLA_FFI_InvokeContext_FindExtension(&args);
+    if (error != nullptr) {
+      diagnostic.Emit("Failed to find extension: ")
+          << internal::GetErrorMessage(api, error);
+      internal::DestroyError(api, error);
+      return std::nullopt;
+    }
+
+    if (args.extension == nullptr) {
+      diagnostic.Emit("Extension not found in context");
+      return std::nullopt;
+    }
+
+    // args.extension_type is a contract that guarantees that the extension is
+    // of type T.
+    // NOLINTNEXTLINE
+    return reinterpret_cast<Type>(args.extension);
+  }
+};
 
 //===----------------------------------------------------------------------===//
 // Type-safe wrapper for accessing a variable number of arguments.
@@ -1964,18 +2021,54 @@ struct internal::Decode<internal::AttrsTag<T>> {
 };
 
 //===----------------------------------------------------------------------===//
+// Helpers for creating and reading extensions.
+//===----------------------------------------------------------------------===//
+
+// Creates an extension header for a given extension struct.
+// Eg:
+// struct MyExtension {
+//   static constexpr int64_t kExtensionType = 1234;
+//   XLA_FFI_Extension extension_base;
+//   int32_t my_data;
+// };
+// ...
+// MyExtension ext;
+// ext.extension_base = MakeExtensionHeader<MyExtension>();
+template <typename T>
+inline XLA_FFI_Extension MakeExtensionHeader() {
+  return XLA_FFI_Extension{
+      /*.struct_size=*/sizeof(T),
+      /*.id=*/
+      XLA_FFI_ExtensionId{/*extension_type=*/T::kExtensionType,
+                          /*major_version=*/T::kMajorVersion,
+                          /*minor_version=*/T::kMinorVersion},
+      /*.next=*/nullptr,
+  };
+}
+
+//===----------------------------------------------------------------------===//
 // Type-safe wrapper for accessing context.
 //===----------------------------------------------------------------------===//
 
 namespace internal {
 
+inline XLA_FFI_Error* MakeError(const XLA_FFI_Api* api, XLA_FFI_Error_Code errc,
+                                std::string message) {
+  XLA_FFI_Error_Create_Args args;
+  args.struct_size = XLA_FFI_Error_Create_Args_STRUCT_SIZE;
+  args.extension_start = nullptr;
+  args.errc = errc;
+  args.message = message.c_str();
+  return api->XLA_FFI_Error_Create(&args);
+}
+
 class ContextBase {
  public:
-  ContextBase(const XLA_FFI_Api* api, XLA_FFI_ExecutionContext* ctx)
+  ContextBase(const XLA_FFI_Api* api, XLA_FFI_InvokeContext* ctx)
       : api_(api), ctx_(ctx) {}
 
   const XLA_FFI_Api* api() const { return api_; }
-  XLA_FFI_ExecutionContext* ctx() const { return ctx_; }
+  XLA_FFI_InvokeContext* ctx() const { return ctx_; }
 
  protected:
   template <typename T>
@@ -1986,7 +2079,7 @@ class ContextBase {
 
  private:
   const XLA_FFI_Api* api_;
-  XLA_FFI_ExecutionContext* ctx_;
+  XLA_FFI_InvokeContext* ctx_;
 };
 
 }  // namespace internal
