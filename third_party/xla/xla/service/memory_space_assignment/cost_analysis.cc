@@ -458,8 +458,10 @@ float CostAnalysis::GetInstructionElapsed(
     return 0.0f;
   }
   float overhead = GetDefaultMemoryAccessOverhead(instruction);
-  return std::max(GetInstructionElapsedDueToCompute(instruction),
-                  GetInstructionElapsedDueToMemory(instruction) + overhead);
+  float cost =
+      std::max(GetInstructionElapsedDueToCompute(instruction),
+               GetInstructionElapsedDueToMemory(instruction) + overhead);
+  return std::max(cost, 1e-8f);
 }
 
 float CostAnalysis::GetInstructionElapsedInAlternateMemory(
@@ -471,11 +473,12 @@ float CostAnalysis::GetInstructionElapsedInAlternateMemory(
   }
   float overhead = GetDefaultMemoryAccessOverhead(
       instruction, operands_in_alternate_mem, outputs_in_alternate_mem);
-  return std::max(
+  float cost = std::max(
       GetInstructionElapsedDueToCompute(instruction),
       GetInstructionElapsedDueToMemory(instruction, operands_in_alternate_mem,
                                        outputs_in_alternate_mem) +
           overhead);
+  return std::max(cost, 1e-8f);
 }
 
 float CostAnalysis::GetInstructionElapsedInAlternateMemory(
@@ -484,9 +487,10 @@ float CostAnalysis::GetInstructionElapsedInAlternateMemory(
   if (ExcludeInstructionFromElapsed(instruction, options_.execution_threads)) {
     return 0.0f;
   }
-  return std::max(
+  float cost = std::max(
       GetInstructionElapsedDueToCompute(instruction),
       GetInstructionElapsedDueToMemory(instruction, is_in_alternate_mem));
+  return std::max(cost, 1e-8f);
 }
 
 float CostAnalysis::GetAsyncCopyElapsed(int64_t size_in_bytes) const {

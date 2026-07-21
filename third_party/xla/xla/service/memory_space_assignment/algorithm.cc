@@ -10786,19 +10786,51 @@ std::vector<MsaAlgorithm::Chunk> MsaAlgorithm::FindBestChunkCandidates(
   alternate_mem_interval->UpdateEndTime(end_time);
   std::vector<Chunk> chunk_candidates =
       FindChunkCandidates(*alternate_mem_interval, preferred_offset->offset);
-  int64_t candidates_start =
-      absl::c_min_element(chunk_candidates, [](const Chunk& c1,
-                                               const Chunk& c2) {
-        return c1.offset < c2.offset;
-      })->offset;
-  int64_t max_chunk_end =
-      absl::c_max_element(chunk_candidates, [](const Chunk& c1,
-                                               const Chunk& c2) {
-        return c1.chunk_end() < c2.chunk_end();
-      })->chunk_end();
-  if (candidates_start == preferred_offset->offset &&
-      max_chunk_end <= options_.max_size_in_bytes) {
-    return chunk_candidates;
+  if (!chunk_candidates.empty()) {
+    int64_t candidates_start =
+        absl::c_min_element(chunk_candidates, [](const Chunk& c1,
+                                                 const Chunk& c2) {
+          return c1.offset < c2.offset;
+        })->offset;
+    int64_t max_chunk_end =
+        absl::c_max_element(chunk_candidates, [](const Chunk& c1,
+                                                 const Chunk& c2) {
+          return c1.chunk_end() < c2.chunk_end();
+        })->chunk_end();
+    if (candidates_start == preferred_offset->offset &&
+        max_chunk_end <= options_.max_size_in_bytes) {
+      return chunk_candidates;
+    }
+  }
+
+  // If FindChunkCandidates failed to allocate at preferred_offset, check if
+  // it was only due to colocation interference.
+  const auto& full_interval = alternate_mem_interval->full_buffer_interval();
+  Chunk preferred_chunk =
+      Chunk::FromOffsetSize(preferred_offset->offset, full_interval.size);
+  if (preferred_chunk.chunk_end() <= options_.max_size_in_bytes) {
+    bool only_colocated_interference = true;
+    interval_tree_.ApplyToNodesOverlappingInTime(
+        full_interval.start, full_interval.end,
+        [&](const BufferIntervalTreeNode* node) {
+          if (node->chunk.size == 0 || preferred_chunk.size == 0) {
+            return;
+          }
+          if (node->chunk.OverlapsWith(preferred_chunk)) {
+            // Check if this chunk is used by any non-colocated value.
+            if (!IsChunkOnlyUsedByColocatedValues(node->chunk,
+                                                  full_interval.buffer)) {
+              only_colocated_interference = false;
+            }
+          }
+        });
+    if (only_colocated_interference) {
+      VLOG(1) << "FindBestChunkCandidates: Overriding HeapSimulator "
+                 "rejection for colocated offset "
+              << preferred_offset->offset << " for value "
+              << full_interval.buffer->ToShortString();
+      return {preferred_chunk};
+    }
   }
   return {};
 }
@@ -10904,6 +10936,35 @@ int64_t AsynchronousCopyResource::GetScaledIntegerResource(
   }
   auto scaled_value_int = static_cast<int64_t>(scaled_value);
   return scaled_value_int;
+}
+
+bool MsaAlgorithm::IsChunkOnlyUsedByColocatedValues(
+    const Chunk& chunk, const HloValue* value) const {
+  if (chunk.size == 0) {
+    return true;
+  }
+  const HloBuffer& hlo_buffer =
+      alias_analysis_.GetBufferContainingValue(*value);
+  absl::flat_hash_set<const HloValue*> colocated_values(
+      hlo_buffer.values().begin(), hlo_buffer.values().end());
+
+  for (const auto& entry : result_.chunk_map) {
+    const HloValue* other_value = entry.first;
+    const Chunk& other_chunk = entry.second;
+    if (other_chunk.size == 0) {
+      continue;
+    }
+    if (other_chunk.OverlapsWith(chunk)) {
+      if (!colocated_values.contains(other_value)) {
+        VLOG(3) << "Chunk " << chunk.ToString()
+                << " overlaps with non-colocated value "
+                << other_value->ToShortString() << " at chunk "
+                << other_chunk.ToString();
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 }  // namespace memory_space_assignment

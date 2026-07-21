@@ -1822,6 +1822,8 @@ class MsaAlgorithm : public GlobalDecreasingSizeBestFitHeap<HloValue> {
   // AliasedOffset map for efficient lookup.
   std::list<AliasedOffset> aliased_offsets_;
   absl::flat_hash_map<const Allocation*, AliasedOffset*> aliased_offset_map_;
+  bool IsChunkOnlyUsedByColocatedValues(const Chunk& chunk,
+                                        const HloValue* value) const;
   // This map contains required memory assignments for HloValues (e.g., input
   // and outputs).
   absl::flat_hash_map<const HloValue*, std::vector<RequiredMemoryAssignment>>
