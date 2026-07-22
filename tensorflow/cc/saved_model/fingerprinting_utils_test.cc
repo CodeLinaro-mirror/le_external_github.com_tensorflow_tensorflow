@@ -391,6 +391,22 @@ TEST(FingerprintingTest, TestHashSavedObjectGraph) {
       absl_testing::IsOkAndHolds(17454850744699451884U));
 }
 
+TEST(FingerprintingTest, CreateFingerprintDefCpbEmptyMetaGraphsReturnsError) {
+  const std::string synthetic_empty_dir =
+      "/tmp/synthetic_empty_saved_model_dir";
+  absl::StatusOr<FingerprintDef> result =
+      CreateFingerprintDefCpb(synthetic_empty_dir, "saved_model.cpb");
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(FingerprintingTest, CreateFingerprintDefNonExistentDirectoryReturnsError) {
+  const std::string synthetic_dir =
+      "/tmp/synthetic_non_existent_model_path_12345";
+  absl::StatusOr<FingerprintDef> result =
+      CreateFingerprintDefCpb(synthetic_dir, "saved_model.cpb");
+  EXPECT_FALSE(result.ok());
+}
+
 }  // namespace
 
 }  // namespace tensorflow::saved_model::fingerprinting
