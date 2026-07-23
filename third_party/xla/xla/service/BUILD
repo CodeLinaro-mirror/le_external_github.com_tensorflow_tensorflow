@@ -3367,6 +3367,25 @@ cc_library(
 )
 
 cc_library(
+    name = "async_collective_custom_call_rewriter",
+    srcs = ["async_collective_custom_call_rewriter.cc"],
+    hdrs = ["async_collective_custom_call_rewriter.h"],
+    deps = [
+        ":collective_ops_utils",
+        ":shape_inference",
+        "//third_party/gloop/util/status:ret_check",
+        "//xla:shape_util",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/pass:hlo_pass",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
     name = "all_gather_decomposer",
     srcs = ["all_gather_decomposer.cc"],
     hdrs = ["all_gather_decomposer.h"],
@@ -5766,6 +5785,7 @@ cc_library(
         ":hlo_module_config",
         ":pattern_matcher",
         ":source_target_pairs",
+        "//third_party/json",
         "//xla:executable_run_options",
         "//xla:literal",
         "//xla:literal_util",
