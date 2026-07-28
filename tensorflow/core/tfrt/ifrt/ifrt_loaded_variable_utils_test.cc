@@ -26,15 +26,18 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "tensorflow/compiler/mlir/tfrt/transforms/ifrt/ifrt_types.h"
 #include "xla/hlo/ir/hlo_sharding.h"
+#include "xla/pjrt/pjrt_client.h"
+#include "xla/pjrt/undonatable_common_pjrt_buffer.h"
 #include "xla/python/ifrt/array.h"
 #include "xla/python/ifrt/client.h"
 #include "xla/python/ifrt/device.h"
+#include "xla/python/ifrt/sharding.h"
 #include "xla/python/ifrt/test_util.h"
+#include "xla/python/pjrt_ifrt/pjrt_array.h"
 #include "xla/tsl/concurrency/future.h"
 #include "xla/tsl/concurrency/ref_count.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/platform/env.h"
-#include "xla/tsl/platform/status_matchers.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/test.h"
 #include "xla/tsl/platform/threadpool.h"
@@ -177,6 +180,88 @@ TEST(ShardingUtilsTest, ShardTensorToIfrtLoadedVariableSucceed) {
     EXPECT_THAT(host_tensor, TensorEq(input_tensor));
   }
 }
+
+TEST(ShardingUtilsTest, LoadVariableWithUndonatableBuffer) {
+  auto input_tensor =
+      test::AsTensor<int32_t>({1, 2, 3, 4}, TensorShape({2, 2}));
+
+  Tensor variable_handle(DT_RESOURCE, TensorShape({}));
+  ResourceHandle resource_handle;
+  resource_handle.set_name("var_x");
+  resource_handle.set_dtypes_and_shapes({{
+      DT_INT32,
+      TensorShape({2, 2}),
+  }});
+  variable_handle.flat<ResourceHandle>()(0) = std::move(resource_handle);
+
+  IfrtRestoreTensorRegistry restored_tensor_registry;
+  TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<xla::ifrt::Client> client,
+                          xla::ifrt::test_util::GetClient());
+  constexpr int kMaxParallelism = 16;
+  tsl::thread::ThreadPool thread_pool(tsl::Env::Default(), tsl::ThreadOptions(),
+                                      "Resharding", kMaxParallelism);
+  IfrtLoadedVariableRegistry loaded_variable_registry;
+  auto restore_work_queue = tfrt::CreateMultiThreadedWorkQueue(
+      /*num_threads=*/4, /*num_blocking_threads=*/4);
+
+  VariableDeviceShardingConfig sharding_config{
+      .device_ids = {0},
+      .hlo_sharding = xla::HloSharding::Replicate(),
+  };
+
+  auto [promise, future] = tsl::MakePromise<tensorflow::Tensor>();
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      DtypeAndShape dtype_and_shape,
+      GetDtypeAndShape(variable_handle.scalar<ResourceHandle>()()));
+  IfrtRestoreTensorRegistry::RestoredTensorInfo restored_tensor_info = {
+      false, tsl::Future<DtypeAndShape>(dtype_and_shape), future};
+
+  TF_ASSERT_OK(
+      restored_tensor_registry.TryRegister("var_x", restored_tensor_info));
+  TF_ASSERT_OK_AND_ASSIGN(xla::ifrt::Device * device,
+                          client->LookupDevice(xla::ifrt::DeviceId(0)));
+  TF_ASSERT_OK_AND_ASSIGN(auto device_list, client->MakeDeviceList({device}));
+  TF_ASSERT_OK(AsyncLoadRestoredTensorAsIfrtLoadedVariable(
+      "var_x", client, thread_pool, restored_tensor_registry,
+      loaded_variable_registry, restore_work_queue.get(), sharding_config,
+      /*xla_input_layout=*/nullptr, /*shape_on_device=*/nullptr, device_list,
+      /*use_undonatable_variable_buffer=*/true));
+  promise.Set(input_tensor);
+
+  IfrtLoadedVariableRegistry::Key key{
+      .device_ids = {0},
+      .input_name = "var_x",
+      .hlo_sharding = sharding_config.hlo_sharding,
+  };
+
+  TF_ASSERT_OK_AND_ASSIGN(auto v,
+                          loaded_variable_registry.GetLoadedVariable(key));
+  TF_ASSERT_OK_AND_ASSIGN(auto assembled_array, v.array.Await());
+
+  auto* pjrt_array =
+      dynamic_cast<xla::ifrt::PjRtCompatibleArray*>(assembled_array.get());
+  ASSERT_NE(assembled_array, nullptr);
+  ASSERT_EQ(pjrt_array->pjrt_buffers().size(), 1);
+
+  for (const std::shared_ptr<xla::PjRtBuffer>& buffer :
+       pjrt_array->pjrt_buffers()) {
+    auto* undonatable_buffer =
+        dynamic_cast<xla::UndonatableCommonPjRtBuffer*>(buffer.get());
+    ASSERT_NE(undonatable_buffer, nullptr);
+    TF_ASSERT_OK(undonatable_buffer->GetReadyFuture().Await());
+    tensorflow::Tensor host_tensor(input_tensor.dtype(), input_tensor.shape());
+    auto raw_buffer =
+        undonatable_buffer->AcquireRawBufferRef("LoadedVariableTest");
+    TF_ASSERT_OK(
+        raw_buffer
+            ->CopyRawDeviceToHost(host_tensor.data(), /*offset=*/0,
+                                  /*transfer_size=*/host_tensor.TotalBytes())
+            .Await());
+    EXPECT_THAT(host_tensor, TensorEq(input_tensor));
+  }
+}
+
 }  // namespace
 }  // namespace ifrt_serving
 

@@ -71,7 +71,8 @@ absl::Status AsyncLoadRestoredTensorAsIfrtLoadedVariable(
     const VariableDeviceShardingConfig& sharding_config,
     const xla::ifrt::LayoutRef& xla_input_layout,
     std::shared_ptr<const xla::Shape> shape_on_device,
-    const xla::ifrt::DeviceListRef& device_list);
+    const xla::ifrt::DeviceListRef& device_list,
+    bool use_undonatable_variable_buffer = false);
 
 }  // namespace ifrt_serving
 }  // namespace tensorflow

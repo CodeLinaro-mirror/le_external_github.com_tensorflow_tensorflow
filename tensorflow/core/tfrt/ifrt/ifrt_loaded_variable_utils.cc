@@ -20,16 +20,26 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/container/inlined_vector.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "llvm/Support/Casting.h"
 #include "tensorflow/compiler/mlir/tfrt/transforms/ifrt/ifrt_types.h"
+#include "xla/future.h"
+#include "xla/pjrt/abstract_tracked_device_buffer.h"
+#include "xla/pjrt/device_event.h"
+#include "xla/pjrt/pjrt_client.h"
+#include "xla/pjrt/raw_buffer.h"
+#include "xla/pjrt/undonatable_common_pjrt_buffer.h"
 #include "xla/python/ifrt/array.h"
 #include "xla/python/ifrt/client.h"
 #include "xla/python/ifrt/device_list.h"
 #include "xla/python/ifrt/layout.h"
+#include "xla/python/pjrt_ifrt/pjrt_array.h"
 #include "xla/shape.h"
 #include "xla/tsl/concurrency/future.h"
 #include "xla/tsl/platform/errors.h"
@@ -49,20 +59,67 @@ namespace ifrt_serving {
 
 namespace {
 
+absl::StatusOr<std::shared_ptr<xla::PjRtBuffer>> MakeBufferUndonatable(
+    std::shared_ptr<xla::PjRtBuffer> pjrt_buffer) {
+  auto* common_pjrt_buffer =
+      dynamic_cast<xla::CommonPjRtBuffer*>(pjrt_buffer.get());
+  if (common_pjrt_buffer == nullptr) {
+    return pjrt_buffer;
+  }
+
+  std::shared_ptr<xla::PjRtBuffer> undonatable_buffer;
+  RETURN_IF_ERROR(common_pjrt_buffer->AcquireScopedRawBuffer(
+      [&](xla::PjRtRawBufferRef raw_buffer,
+          xla::PjRtDeviceEventRefVector definition_events)
+          -> absl::StatusOr<xla::PjRtDeviceEventRef> {
+        absl::InlinedVector<xla::PjRtDeviceEventRef, 2> events;
+        events.reserve(definition_events.size());
+        xla::ConsumeEvents(std::move(definition_events),
+                           [&](xla::PjRtDeviceEventRef definition_event) {
+                             events.push_back(std::move(definition_event));
+                           });
+        undonatable_buffer = std::make_shared<xla::UndonatableCommonPjRtBuffer>(
+            std::make_shared<const xla::Shape>(
+                common_pjrt_buffer->on_device_shape()),
+            std::move(raw_buffer), std::move(events),
+            common_pjrt_buffer->memory_space());
+        return xla::PjRtDeviceEventRef();
+      }));
+  return undonatable_buffer;
+}
+
 absl::StatusOr<xla::ifrt::ArrayRef> LoadIfrtVariable(
     std::shared_ptr<xla::ifrt::Client> ifrt_client,
     const tsl::thread::ThreadPool& thread_pool,
     const tensorflow::Tensor& variable,
     const VariableDeviceShardingConfig& sharding_config,
     const xla::ifrt::LayoutRef& xla_input_layout,
-    const xla::ifrt::DeviceListRef& device_list) {
-  TF_ASSIGN_OR_RETURN(
+    const xla::ifrt::DeviceListRef& device_list,
+    bool use_undonatable_variable_buffer) {
+  ASSIGN_OR_RETURN(
       auto sharding,
       tensorflow::ifrt_serving::ToIfrtSharding(
           *ifrt_client, sharding_config.hlo_sharding, device_list));
-  return tensorflow::ifrt_serving::MakeArrayFromTensor(
-      *ifrt_client, variable, device_list, std::move(sharding), thread_pool,
-      xla_input_layout);
+  ASSIGN_OR_RETURN(auto variable_array,
+                   tensorflow::ifrt_serving::MakeArrayFromTensor(
+                       *ifrt_client, variable, device_list, std::move(sharding),
+                       thread_pool, xla_input_layout));
+
+  if (!use_undonatable_variable_buffer) {
+    return variable_array;
+  }
+  if (auto* pjrt_compatible_array =
+          llvm::dyn_cast_or_null<xla::ifrt::PjRtCompatibleArray>(
+              variable_array.get())) {
+    ASSIGN_OR_RETURN(auto pjrt_buffers,
+                     pjrt_compatible_array->mutable_pjrt_buffers());
+    for (std::shared_ptr<xla::PjRtBuffer>& pjrt_buffer : pjrt_buffers) {
+      ASSIGN_OR_RETURN(std::shared_ptr<xla::PjRtBuffer> converted,
+                       MakeBufferUndonatable(pjrt_buffer));
+      pjrt_buffer = std::move(converted);
+    }
+  }
+  return variable_array;
 }
 
 }  // namespace
@@ -102,7 +159,8 @@ absl::Status AsyncLoadRestoredTensorAsIfrtLoadedVariable(
     const VariableDeviceShardingConfig& sharding_config,
     const xla::ifrt::LayoutRef& xla_input_layout,
     std::shared_ptr<const xla::Shape> shape_on_device,
-    const xla::ifrt::DeviceListRef& device_list) {
+    const xla::ifrt::DeviceListRef& device_list,
+    bool use_undonatable_variable_buffer) {
   if (loaded_variable_registry
           .GetLoadedVariable(IfrtLoadedVariableRegistry::KeyView(
               sharding_config.device_ids, tensor_name,
@@ -156,7 +214,7 @@ absl::Status AsyncLoadRestoredTensorAsIfrtLoadedVariable(
        sharding_config = sharding_config,
        loaded_variable_promise = std::move(loaded_variable_promise),
        bg_context = std::move(bg_context), xla_input_layout = xla_input_layout,
-       device_list = device_list](
+       device_list = device_list, use_undonatable_variable_buffer](
           absl::StatusOr<tensorflow::Tensor> restored_tensor) mutable {
         if (!restored_tensor.ok()) {
           loaded_variable_promise.Set(restored_tensor.status());
@@ -171,12 +229,14 @@ absl::Status AsyncLoadRestoredTensorAsIfrtLoadedVariable(
              loaded_variable_promise = std::move(loaded_variable_promise),
              bg_context = std::move(bg_context),
              xla_input_layout = std::move(xla_input_layout),
-             device_list = std::move(device_list)]() mutable {
+             device_list = std::move(device_list),
+             use_undonatable_variable_buffer]() mutable {
               tensorflow::WithContext wc(bg_context);
               absl::StatusOr<xla::ifrt::ArrayRef> variable_array =
                   LoadIfrtVariable(ifrt_client, thread_pool, restored_tensor,
                                    sharding_config, xla_input_layout,
-                                   device_list);
+                                   device_list,
+                                   use_undonatable_variable_buffer);
               loaded_variable_promise.Set(std::move(variable_array));
             });
       });
