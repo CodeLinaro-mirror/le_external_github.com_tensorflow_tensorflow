@@ -1023,6 +1023,7 @@ TEST_P(MMapWeightCacheProviderTest, XnnpackCApiJourney) {
     std::unordered_map<size_t, size_t> tensor_buffer_identifiers;
     for (int i = 0; i < kBufferCount; ++i) {
       tensors[i].data.data = (void*)(fake_buffer_pointer + i);
+      tensors[i].bytes = 1;
       tensor_buffer_identifiers[i] = i;
     }
 
