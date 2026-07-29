@@ -78,6 +78,18 @@ TfLiteStatus Interpreter::ModifyGraphWithDelegate(
       reinterpret_cast<TfLiteDelegate*>(delegate));
 }
 
+TfLiteStatus Interpreter::ModifyGraphWithDelegate(
+    TfLiteDelegate* delegate, const std::vector<int>& active_subgraph_indices) {
+  return ModifyGraphWithDelegateImpl(delegate, active_subgraph_indices);
+}
+
+TfLiteStatus Interpreter::ModifyGraphWithDelegate(
+    TfLiteOpaqueDelegateStruct* delegate,
+    const std::vector<int>& active_subgraph_indices) {
+  return ModifyGraphWithDelegateImpl(
+      reinterpret_cast<TfLiteDelegate*>(delegate), active_subgraph_indices);
+}
+
 bool Interpreter::HasDelegates() { return primary_subgraph().HasDelegates(); }
 
 TfLiteStatus Interpreter::SetBufferHandle(int tensor_index,
