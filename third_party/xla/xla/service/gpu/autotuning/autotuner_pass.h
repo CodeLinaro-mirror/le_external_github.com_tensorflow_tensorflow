@@ -54,9 +54,8 @@ ConfigAssigner::Options GetConfigAssignerOptions(
 CodegenOrchestrator::Options GetCodegenOrchestratorOptions(
     const DebugOptions& debug_options);
 
-ProfileOptions GetProfileOptions(
-    const DebugOptions& debug_options,
-    const ConfigAssigner::Options& config_assigner_options);
+ProfileOptions GetProfileOptions(const DebugOptions& debug_options,
+                                 bool should_init_buffers);
 
 InstructionFilterFn GetShouldAutotuneInstructionFn(
     const DebugOptions& debug_options,

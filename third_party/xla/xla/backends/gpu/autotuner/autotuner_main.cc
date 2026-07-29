@@ -149,8 +149,6 @@ struct AutotunerEnvironment {
 
 absl::StatusOr<AutotunerEnvironment> CreateAutotunerEnvironment(
     const DebugOptions& debug_options) {
-  ConfigAssigner::Options assigner_options =
-      GetConfigAssignerOptions(debug_options);
   CodegenOrchestrator::Options orchestrator_options =
       GetCodegenOrchestratorOptions(debug_options);
   ABSL_ASSIGN_OR_RETURN(std::string platform_name,
@@ -198,7 +196,9 @@ absl::StatusOr<AutotunerEnvironment> CreateAutotunerEnvironment(
         << stream_executor_0->GetDeviceDescription().name() << ", device " << i
         << " is " << stream_executor->GetDeviceDescription().name();
     auto profiler = GpuProfiler::Create(
-        stream_executor, GetProfileOptions(debug_options, assigner_options));
+        stream_executor,
+        GetProfileOptions(debug_options,
+                          debug_options.xla_gpu_autotune_level() >= 4));
     TF_RET_CHECK(profiler != nullptr)
         << "Failed to create profiler for device " << i;
 
@@ -221,14 +221,12 @@ absl::StatusOr<AutotunerEnvironment> CreateAutotunerEnvironment(
                                   orchestrator_options, thread_pool.get()));
 
   Autotuner::Options autotuner_options;
-  autotuner_options.scratch_bytes_window_size_us =
-      assigner_options.scratch_bytes_window_size_us;
   autotuner_options.correctness_check_options.enable_correctness_check =
-      assigner_options.check_buffers;
+      debug_options.xla_gpu_autotune_level() >= 4;
   autotuner_options.correctness_check_options.relative_tolerance =
-      assigner_options.relative_tolerance;
+      debug_options.xla_gpu_autotune_gemm_rtol();
   autotuner_options.correctness_check_options.crash_on_failure =
-      assigner_options.crash_on_check_failure;
+      debug_options.xla_gpu_crash_on_verification_failures();
 
   ABSL_ASSIGN_OR_RETURN(auto autotuner,
                    Autotuner::Create(std::move(autotuner_orchestrator),
