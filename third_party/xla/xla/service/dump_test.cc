@@ -718,5 +718,60 @@ TEST(DumpHloIfEnabled, CompactGte) {
   EXPECT_TRUE(absl::StrContains(data, "%p0#1"));
 }
 
+class DumpModuleFilterTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    env_ = tsl::Env::Default();
+    ASSERT_TRUE(env_->LocalTempFilename(&dump_dir_));
+    options_ = GetDebugOptionsFromFlags();
+    options_.set_xla_dump_to(dump_dir_);
+    options_.set_xla_dump_hlo_as_text(true);
+  }
+
+  bool Run(absl::string_view module_re) {
+    options_.set_xla_dump_hlo_module_re(std::string(module_re));
+    HloModuleConfig config;
+    config.set_debug_options(options_);
+    auto m_or_status = ParseAndReturnUnverifiedModule(kModuleStr, config);
+    if (!m_or_status.ok()) return false;
+    auto m = std::move(m_or_status).value();
+
+    bool hlo_dumped = !DumpHloModuleIfEnabled(*m, "dump").empty();
+
+    HloModuleProto proto;
+    proto.set_name("my_proto");
+    DumpPerModuleProtobufToFile(*m, proto, options_, "my_name");
+
+    std::vector<std::string> matches;
+    if (!env_->GetMatchingPaths(tsl::io::JoinPath(dump_dir_, "*my_name*"),
+                                &matches)
+             .ok()) {
+      return false;
+    }
+    bool proto_dumped = !matches.empty();
+
+    return hlo_dumped && proto_dumped;
+  }
+
+  tsl::Env* env_;
+  std::string dump_dir_;
+  DebugOptions options_;
+  const char* kModuleStr = R"(
+    HloModule my_module
+    test {
+      p0 = s32[11] parameter(0)
+      ROOT x = s32[11] negate(p0)
+    }
+  )";
+};
+
+TEST_F(DumpModuleFilterTest, DisablesDumpWhenFilterDoesNotMatch) {
+  EXPECT_FALSE(Run("other_module"));
+}
+
+TEST_F(DumpModuleFilterTest, EnablesDumpWhenFilterMatches) {
+  EXPECT_TRUE(Run("my_.*"));
+}
+
 }  // namespace
 }  // namespace xla
