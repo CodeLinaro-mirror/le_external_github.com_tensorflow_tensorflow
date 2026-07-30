@@ -53,8 +53,8 @@ __global__ void SparseTensorDenseMatMulKernel(
   GPU_1D_KERNEL_LOOP(index, nnz * p) {
     const int a_ix = index / p;
     const int j = index % p;
-    const int i = ldg(a_indices + 2 * a_ix + ((ADJ_A) ? 1 : 0));
-    const int k = ldg(a_indices + 2 * a_ix + ((ADJ_A) ? 0 : 1));
+    const int i = ldg(a_indices + 2LL * a_ix + ((ADJ_A) ? 1 : 0));
+    const int k = ldg(a_indices + 2LL * a_ix + ((ADJ_A) ? 0 : 1));
     if (!FastBoundsCheck(i, m)) {
       continue;  // Nowhere to signal an error :(
     }
