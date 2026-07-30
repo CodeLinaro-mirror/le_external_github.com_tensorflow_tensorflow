@@ -748,10 +748,89 @@ class LayoutAssignment : public HloModulePass {
   // Initializes the layout assignment object for a new Run() call.
   absl::Status Init(HloModule* module);
 
+  // Clones conditional computations with multiple callsites and adds copies
+  // for operands of Send and layout-constrained CustomCall instructions.
+  absl::Status PrepareHloForLayoutAssignment(
+      HloModule* module,
+      const absl::flat_hash_set<absl::string_view>& execution_threads);
+
+  // Verifies that the entry computation layout is compatible with the entry
+  // computation shape.
+  absl::Status VerifyEntryComputationLayout(const HloModule* module) const;
+
+  // Sets up propagation by running points-to analysis, gathering computations
+  // to work on, and initializing entry computation constraints.
+  absl::StatusOr<std::vector<HloComputation*>> SetupPropagation(
+      HloModule* module,
+      const absl::flat_hash_set<absl::string_view>& execution_threads);
+
+  // Resolves input-output aliasing by resetting layouts to match if they
+  // mismatch. Returns true if any layouts were changed.
+  absl::StatusOr<bool> ResolveInputOutputAliasing(
+      HloModule* module, ComputationLayout* entry_constraint);
+
   // Adds constraints which must be satisfied for correctness on all
   // backends. Called once prior to propagating constraints.
   absl::Status AddMandatoryConstraints(
       ChannelLayoutConstraints* channel_constraints,
+      LayoutConstraints* constraints);
+
+  // Adds constraints for instructions that define values with pre-existing
+  // layouts.
+  absl::Status AddInstructionLayoutConstraints(
+      ChannelLayoutConstraints* channel_constraints,
+      LayoutConstraints* constraints);
+
+  absl::Status AddInfeedConstraints(HloInstruction* instruction);
+  absl::Status AddOutfeedConstraints(HloInstruction* instruction);
+  absl::Status AddParameterConstraints(HloInstruction* instruction,
+                                       LayoutConstraints* constraints);
+  absl::Status AddCollectiveConstraints(HloInstruction* instruction);
+  absl::Status AddCrossModuleAllReduceConstraints(
+      HloInstruction* instruction,
+      ChannelLayoutConstraints* channel_constraints);
+
+  // Adds constraints for instructions that call or interact with
+  // sub-computations.
+  absl::Status AddSubcomputationLayoutConstraints(
+      LayoutConstraints* constraints);
+
+  absl::Status AddCallConstraints(HloInstruction* instruction);
+  absl::Status AddWhileConstraints(HloInstruction* instruction,
+                                   LayoutConstraints* constraints);
+  absl::Status AddConditionalConstraints(HloInstruction* instruction);
+  absl::Status AddAsyncStartConstraints(HloInstruction* instruction);
+  absl::Status AddAsyncUpdateConstraints(HloInstruction* instruction);
+  absl::Status AddAsyncDoneConstraints(HloInstruction* instruction,
+                                       LayoutConstraints* constraints);
+
+  absl::Status ConstrainAsyncOperands(HloInstruction* instruction,
+                                      int first_operand_idx,
+                                      int start_param_idx,
+                                      const ComputationLayout& async_layout);
+  absl::Status AddAsyncOpResultLayoutConstraint(
+      HloInstruction* instruction, const ComputationLayout& async_layout,
+      LayoutConstraints* async_constraint);
+
+  // Sets the computation result layout based on constraints and
+  // sub-computations.
+  absl::Status AddComputationResultLayoutConstraints(
+      LayoutConstraints* constraints);
+
+  // Constrains layouts for custom calls that have specific layout requirements.
+  absl::Status AddCustomCallConstraints(LayoutConstraints* constraints);
+
+  // Initializes unconstrained_buffer_ids_ with all array-shaped logical buffers
+  // in the given computation.
+  void InitUnconstrainedBuffers(HloComputation* computation);
+
+  // Records instructions that lack layout constraints before applying default
+  // layouts.
+  void RecordUnconstrainedLayoutInstructions();
+
+  // Iteratively assigns layouts to remaining unconstrained buffers and
+  // propagates until all buffers are constrained.
+  absl::Status AssignLayoutsToUnconstrainedBuffers(
       LayoutConstraints* constraints);
 
   // Return a vector containing the constraints which have been added to the
