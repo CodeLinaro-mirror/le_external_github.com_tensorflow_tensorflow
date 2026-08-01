@@ -68,7 +68,8 @@ BasicAtomProgramCompiler::BasicAtomProgramCompiler(
       strict_memory_reservation_(strict_memory_reservation) {}
 
 tsl::Future<LoadedExecutableRef> BasicAtomProgramCompiler::CompileXla(
-    std::unique_ptr<HloProgram> hlo_program, xla::CompileOptions options) {
+    std::unique_ptr<HloProgram> hlo_program, xla::CompileOptions options,
+    std::vector<tsl::RCReference<LoadedHostCallback>> loaded_host_callbacks) {
   // Rewrite device assignment from logical ids to IFRT device ids.
   xla::DeviceAssignment device_assignment =
       options.executable_build_options.device_assignment();
@@ -111,7 +112,8 @@ tsl::Future<LoadedExecutableRef> BasicAtomProgramCompiler::CompileXla(
 
   return client_->GetDefaultCompiler()->CompileAndLoad(
       std::move(hlo_program), std::make_unique<XlaCompileOptions>(
-                                  std::move(options), std::move(devices)));
+                                  std::move(options), std::move(devices),
+                                  std::move(loaded_host_callbacks)));
 }
 
 tsl::Future<LoadedExecutableRef> BasicAtomProgramCompiler::CompileMpmdReshard(
