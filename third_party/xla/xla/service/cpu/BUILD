@@ -1108,7 +1108,9 @@ cc_library(
     srcs = ["fusion_wrapper.cc"],
     hdrs = ["fusion_wrapper.h"],
     deps = [
+        ":ir_emission_utils",
         "//xla:xla_data_proto_cc",
+        "//xla/backends/cpu/codegen:target_machine_features",
         "//xla/backends/cpu/codegen/tiled:tiled_fusion_emitter",
         "//xla/codegen/emitters:fusion_wrapper_base",
         "//xla/hlo/ir:hlo",
@@ -1121,6 +1123,7 @@ xla_cc_test(
     srcs = ["fusion_wrapper_test.cc"],
     deps = [
         ":fusion_wrapper",
+        ":target_machine_features_stub",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/testlib:hlo_hardware_independent_test_base",
         "//xla/tests:xla_internal_test_main",
