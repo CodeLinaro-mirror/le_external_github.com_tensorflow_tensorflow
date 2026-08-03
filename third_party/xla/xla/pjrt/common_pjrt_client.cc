@@ -250,10 +250,14 @@ absl::StatusOr<PjRtDeviceEventRef> CommonPjRtClient::LinearizeHostBufferInto(
   if (device_shape.IsToken()) {
     return raw_buffer->MakeAllocationReadyEvent();
   }
+  absl::InlinedVector<uint32_t, 4> dynamic_sizes;
+  if (RequiresRuntimeShapeMetadata(device_shape, raw_buffer->memory_space())) {
+    dynamic_sizes = {dims.begin(), dims.end()};
+  }
   return LinearizeIntoImpl(data, type, dims, byte_strides,
                            host_buffer_semantics,
                            std::move(on_done_with_host_buffer), device_shape,
-                           /*dynamic_sizes=*/{}, raw_buffer);
+                           dynamic_sizes, raw_buffer);
 }
 
 absl::StatusOr<PjRtDeviceEventRef> CommonPjRtClient::LinearizeInto(
@@ -266,7 +270,7 @@ absl::StatusOr<PjRtDeviceEventRef> CommonPjRtClient::LinearizeInto(
   RETURN_IF_ERROR(
       ShapeUtil::ByteStrides(literal.shape(), absl::MakeSpan(strides)));
   absl::InlinedVector<uint32_t, 4> dynamic_sizes;
-  if (literal.shape().is_dynamic()) {
+  if (RequiresRuntimeShapeMetadata(device_shape, raw_buffer->memory_space())) {
     dynamic_sizes.reserve(literal.shape().dimensions().size());
     for (int i = 0; i < literal.shape().dimensions().size(); ++i) {
       dynamic_sizes.push_back(literal.GetDynamicSize(i));
@@ -1985,10 +1989,9 @@ absl::Status CommonPjRtLoadedExecutable::CheckBufferCompatibilities(
     PjRtDynamicShapeKind ds_kind = common_client->GetDynamicShapeKind(
         argument_handles[i]->memory_space()->kind_id());
 
-    bool both_are_dynamic =
-        !expected_shape.is_static() && !actual_shape.is_static();
+    bool expected_dynamic = !expected_shape.is_static();
 
-    if (both_are_dynamic && ds_kind == PjRtDynamicShapeKind::kPrefix) {
+    if (expected_dynamic && ds_kind == PjRtDynamicShapeKind::kPrefix) {
       // Both shapes dynamic of kPrefix kind.
       // Element type check
       if (expected_shape.element_type() != actual_shape.element_type()) {
@@ -2020,7 +2023,10 @@ absl::Status CommonPjRtLoadedExecutable::CheckBufferCompatibilities(
       ASSIGN_OR_RETURN(Shape actual_logical_shape,
                        argument_handles[i]->logical_on_device_shape());
       for (int d = 0; d < expected_shape.dimensions().size(); ++d) {
-        if (actual_logical_shape.dimensions(d) > expected_shape.dimensions(d)) {
+        int64_t expected_dim = expected_shape.dimensions(d);
+        int64_t actual_dim = actual_logical_shape.dimensions(d);
+        if (expected_dim != Shape::kUnboundedSize &&
+            actual_dim > expected_dim) {
           return error::RuntimeProgramInputMismatch(
               "Executable(%s) expected parameter %d dimension %d runtime size "
               "<= %lld, but got buffer with size %lld",
@@ -3463,6 +3469,15 @@ CommonPjRtClient::CreateBuffersForAsyncHostToDevice(
     PjRtMemorySpace* memory_space) {
   return xla::CreateAsyncHostToDeviceTransferManager(
       shape_specs, std::move(device_layouts), memory_space);
+}
+
+bool CommonPjRtClient::RequiresRuntimeShapeMetadata(
+    const xla::Shape& shape, PjRtMemorySpace* memory_space) const {
+  PjRtDynamicShapeKind layout_kind =
+      GetDynamicShapeKind(memory_space->kind_id());
+  auto requirements =
+      PjRtShapeAndMetadataTransferRequirements::Get(shape, layout_kind);
+  return requirements.metadata_size > 0;
 }
 
 }  // namespace xla
