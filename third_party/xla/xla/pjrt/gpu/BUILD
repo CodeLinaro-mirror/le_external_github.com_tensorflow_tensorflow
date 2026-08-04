@@ -919,6 +919,7 @@ cc_library(
         "//xla/pjrt:pjrt_compiler",
         "//xla/pjrt:pjrt_device_description",
         "//xla/pjrt:pjrt_device_dimensions",
+        "//xla/pjrt:pjrt_topology_description_registry",
         "//xla/pjrt/proto:topology_description_proto_cc",
         "//xla/pjrt/se:pjrt_stream_executor_device_description",
         "//xla/runtime:device_id",
