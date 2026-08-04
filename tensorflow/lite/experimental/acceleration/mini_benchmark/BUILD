@@ -943,10 +943,29 @@ cc_library(
         "//tensorflow/lite/acceleration/configuration:configuration_fbs",
         "//tensorflow/lite/acceleration/configuration/c:delegate_plugin",
         "//tensorflow/lite/core/acceleration/configuration:delegate_registry",
+        "//tensorflow/lite/core/c:common",
         "@com_google_absl//absl/memory",
         "@flatbuffers",
     ],
     alwayslink = 1,
+)
+
+cc_test(
+    name = "gpu_module_plugin_test",
+    srcs = ["gpu_module_plugin_test.cc"],
+    tags = [
+        "no_mac",
+        "no_windows",
+        "tflite_not_portable_ios",
+    ],
+    deps = [
+        ":gpu_module_plugin",
+        "//tensorflow/lite/acceleration/configuration:configuration_cc_proto",
+        "//tensorflow/lite/acceleration/configuration:configuration_fbs",
+        "//tensorflow/lite/acceleration/configuration:proto_to_flatbuffer",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+    ],
 )
 
 embedded_binary(
@@ -988,6 +1007,7 @@ cc_test(
     deps = [
         ":embedded_mobilenet_model",
         ":embedded_mobilenet_validation_model",
+        ":gpu_module_plugin",
         ":mini_benchmark_test_helper",
         ":status_codes",
         ":validator",
