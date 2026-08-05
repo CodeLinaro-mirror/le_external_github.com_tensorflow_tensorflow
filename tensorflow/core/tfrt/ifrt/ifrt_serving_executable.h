@@ -210,6 +210,7 @@ class IfrtServingExecutable {
     std::vector<std::shared_ptr<const xla::ifrt::Shape>> ifrt_input_shapes;
     std::vector<xla::ifrt::LayoutRef> xla_input_layouts;
     xla::ifrt::LoadedExecutableRef ifrt_executable;
+    std::vector<bool> donatable_input_indices;
     tensorflow::tpu::TPUCompileMetadataProto compile_metadata;
     std::vector<std::unique_ptr<TfHostCallback>> host_callbacks;
 

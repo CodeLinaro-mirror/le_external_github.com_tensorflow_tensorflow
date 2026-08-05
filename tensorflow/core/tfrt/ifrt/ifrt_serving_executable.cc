@@ -110,6 +110,7 @@ limitations under the License.
 #include "tensorflow/core/tfrt/ifrt/ifrt_tensor_utils.h"
 #include "tensorflow/core/tfrt/ifrt/sharding_utils.h"
 #include "tensorflow/core/tfrt/ifrt/tf_host_callback.h"
+#include "tensorflow/core/tfrt/ifrt/undonatable_buffer_converter.h"
 #include "tsl/platform/tstring.h"
 #include "tsl/profiler/lib/traceme.h"
 #include "tfrt/host_context/concurrent_work_queue.h"  // from @tf_runtime
@@ -633,6 +634,19 @@ absl::Status IfrtServingExecutable::PopulateInvariantMetadata(
         xla::ifrt::PjRtLayout::Create(parameter_layouts[i]));
   }
 
+  if (ifrt_executable != nullptr) {
+    executable_bundle.donatable_input_indices.resize(
+        executable_bundle.xla_input_layouts.size(), false);
+    auto donatable_indices_or = ifrt_executable->GetDonatableInputIndices();
+    if (donatable_indices_or.ok()) {
+      for (int index : *donatable_indices_or) {
+        if (index >= 0 &&
+            index < executable_bundle.donatable_input_indices.size()) {
+          executable_bundle.donatable_input_indices[index] = true;
+        }
+      }
+    }
+  }
   executable_bundle.ifrt_executable = std::move(ifrt_executable);
   executable_bundle.compile_metadata =
       std::move(tf2hlo_result.compile_metadata);
@@ -1358,12 +1372,18 @@ absl::Status IfrtServingExecutable::AsyncLoadIfrtArray(
     std::shared_ptr<const xla::Shape> shape_on_device =
         executable_bundle.xla_input_shapes[i];
 
+    ifrt_serving::LoadedVariableArrayFn array_post_processor = nullptr;
+    if (i >= executable_bundle.donatable_input_indices.size() ||
+        !executable_bundle.donatable_input_indices[i]) {
+      array_post_processor = MakeArrayBuffersUndonatable;
+    }
+
     TF_RETURN_IF_ERROR(
         ifrt_serving::AsyncLoadRestoredTensorAsIfrtLoadedVariable(
             tensor_name, ifrt_client_, thread_pool_,
             ifrt_restore_tensor_registry_, ifrt_loaded_variable_registry_,
             checkpoint_loader_queue_, sharding_config, std::move(layout_ref),
-            std::move(shape_on_device), devices));
+            std::move(shape_on_device), devices, array_post_processor));
   }
   return absl::OkStatus();
 }
