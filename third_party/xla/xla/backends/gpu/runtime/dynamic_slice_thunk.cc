@@ -425,8 +425,9 @@ absl::Status DynamicSliceThunk::ExecuteOnStream(const ExecuteParams& params) {
   return absl::OkStatus();
 }
 
-absl::Status DynamicSliceThunk::WalkNested(Walker callback) {
-  return embedded_executor_.thunks().WalkNested(callback);
+absl::Status DynamicSliceThunk::WalkNested(Walker pre_order,
+                                           Walker post_order) {
+  return embedded_executor_.thunks().WalkNested(pre_order, post_order);
 }
 
 absl::Status DynamicSliceThunk::TransformNested(Transformer callback) {

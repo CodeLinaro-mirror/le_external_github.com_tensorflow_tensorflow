@@ -171,7 +171,7 @@ class DynamicSliceThunk : public Thunk {
     return offset_primitive_types_;
   }
 
-  absl::Status WalkNested(Walker callback) override;
+  absl::Status WalkNested(Walker pre_order, Walker post_order) override;
   absl::Status TransformNested(Transformer callback) override;
 
   BufferUses buffer_uses() const override;
