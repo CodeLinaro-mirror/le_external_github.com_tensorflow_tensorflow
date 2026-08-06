@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//xla:xla.default.bzl", "xla_cc_test")
 load("//xla/tests:build_defs.bzl", "xla_test")
@@ -65,9 +66,9 @@ cc_library(
         "//xla/stream_executor:semantic_version",
         "//xla/stream_executor:stream_executor_h",
         "//xla/tsl/platform:env",
-        "//xla/tsl/platform:status_macros",
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
@@ -159,9 +160,9 @@ cc_library(
     deps = [
         "//xla/service:gpu_topology",
         "//xla/service:gpu_topology_proto_cc",
-        "//xla/tsl/platform:status_macros",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -227,4 +228,12 @@ xla_test(
         "@tsl//tsl/platform:path",
         "@tsl//tsl/platform:protobuf",
     ],
+)
+
+bzl_library(
+    name = "target_config_map_bzl",
+    srcs = ["target_config_map.bzl"],
+    parse_tests = False,
+    visibility = ["//visibility:private"],
+    deps = ["//xla/tsl:package_groups_bzl"],
 )
