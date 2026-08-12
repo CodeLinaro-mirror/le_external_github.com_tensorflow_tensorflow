@@ -69,7 +69,7 @@ def TPU_TiledLayoutAttr
     ArrayRefParameter<"int64_t", "">:$tile_strides
   );
   let extraClassDeclaration = [{
-    static ::llvm::SmallVector<int64_t> getDefaultTileStrides(::llvm::ArrayRef<::xla::Tile> tiles, ::llvm::ArrayRef<int64_t> shape);
+    static ::llvm::SmallVector<int64_t> getContiguousTileStrides(::llvm::ArrayRef<::xla::Tile> tiles, ::llvm::ArrayRef<int64_t> shape);
     static TiledLayoutAttr getContiguous(::mlir::MLIRContext* context, ::llvm::ArrayRef<::xla::Tile> tiles, ::llvm::ArrayRef<int64_t> shape);
 
     // Returns the number of trailing dimensions where tiles can be statically
@@ -101,6 +101,10 @@ def TPU_TiledLayoutAttr
 
     ::llvm::SmallVector<int64_t> getExpandedShape(::llvm::ArrayRef<int64_t> shape) const;
     ::llvm::SmallVector<int64_t> getExpandedStrides() const;
+
+    // Returns true if any of the tile strides are dynamic.
+    bool hasDynamicStrides() const;
+    int64_t getNumDynamicStrides() const;
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -178,7 +182,7 @@ def TPU_ReduceOp : TPU_Op<"reduce", [Pure, SameOperandsAndResultRank]> {
   let hasVerifier = 1;
 }
 
-// tpu.scan performs a scan across a vector.
+// tpu.scan performs a scan across a vector along the specified dimension.
 //
 // If a mask is provided, all output elements before the first unmasked input
 // element is undefined. Subsequent masked elements will hold the result
@@ -199,7 +203,8 @@ def TPU_ScanOp : TPU_Op<"scan"> {
   let arguments = (ins
     VectorOfNonZeroRankOf<[I1, I16, I32, BF16, F32]>:$input,
     TPU_ReductionKindAttr:$kind,
-    Optional<VectorOfNonZeroRankOf<[I1]>>:$mask
+    Optional<VectorOfRankAndType<[1], [I1]>>:$mask,
+    I64Attr:$dimension
   );
   let results = (outs VectorOfNonZeroRankOf<[I16, I32, BF16, F32]>:$output);
   let assemblyFormat = [{
@@ -1223,15 +1228,16 @@ def TPU_ReinterpretCastOp : TPU_Op<"reinterpret_cast", [Pure, AttrSizedOperandSe
     // NOTE: The size of the shift must be a multiple of the memory space word
     // size for lowering to succeed.
     Optional<I32>:$dynamic_offset,
-    Variadic<I32>:$dynamic_sizes
+    Variadic<I32>:$dynamic_sizes,
+    Variadic<I32>:$dynamic_strides
   );
   let results = (outs AnyMemRef:$result);
   let assemblyFormat = [{
-    $input ($dynamic_offset^)? (`<` $dynamic_sizes^ `>`)? attr-dict `:` type($input) `->` type($result)
+    $input ($dynamic_offset^)? (`<` $dynamic_sizes^ `>`)? (`[` $dynamic_strides^ `]`)? attr-dict `:` type($input) `->` type($result)
   }];
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins "::mlir::Type":$result_type, "::mlir::Value":$input, CArg<"::mlir::Value", "nullptr">:$dynamic_offset, CArg<"::mlir::ValueRange", "{}">:$dynamic_sizes)>
+    OpBuilder<(ins "::mlir::Type":$result_type, "::mlir::Value":$input, CArg<"::mlir::Value", "nullptr">:$dynamic_offset, CArg<"::mlir::ValueRange", "{}">:$dynamic_sizes, CArg<"::mlir::ValueRange", "{}">:$dynamic_strides)>
   ];
   let hasVerifier = 1;
 }
