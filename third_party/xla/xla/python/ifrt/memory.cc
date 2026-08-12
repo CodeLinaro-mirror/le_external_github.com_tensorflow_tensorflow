@@ -37,40 +37,37 @@ struct MemoryKindsSet {
   absl::node_hash_set<std::string> memory_kinds_set ABSL_GUARDED_BY(mu);
 };
 
+absl::string_view InternMemoryKind(absl::string_view memory_kind) {
+  if (memory_kind.data() == MemoryKind::kDefault.data() &&
+      memory_kind.size() == MemoryKind::kDefault.size()) {
+    memory_kind = MemoryKind::kDefault;
+  }
+  static auto* const global_set = []() {
+    auto* const set = new MemoryKindsSet();
+    absl::MutexLock lock(set->mu);
+    set->memory_kinds_set.insert(std::string(MemoryKind::kDefault));
+    return set;
+  }();
+  absl::MutexLock lock(global_set->mu);
+  auto it = global_set->memory_kinds_set.find(memory_kind);
+  if (it == global_set->memory_kinds_set.end()) {
+    return *global_set->memory_kinds_set.insert(std::string(memory_kind)).first;
+  }
+  return *it;
+}
+
 }  // namespace
 
-MemoryKind::MemoryKind(std::optional<absl::string_view> memory_kind) {
-  static auto* const global_set = new MemoryKindsSet();
-  if (!memory_kind.has_value()) {
-    return;
-  }
-  absl::MutexLock lock(global_set->mu);
-  auto it = global_set->memory_kinds_set.find(*memory_kind);
-  if (it == global_set->memory_kinds_set.end()) {
-    memory_kind_ =
-        *global_set->memory_kinds_set.insert(std::string(*memory_kind)).first;
-  } else {
-    memory_kind_ = *it;
-  }
-}
+MemoryKind::MemoryKind() : memory_kind_(InternMemoryKind(kDefault)) {}
 
-std::string MemoryKind::ToString() const {
-  if (memory_kind_.has_value()) {
-    return std::string(*memory_kind_);
-  }
-  return "(default)";
-}
+MemoryKind::MemoryKind(std::optional<absl::string_view> memory_kind)
+    : memory_kind_(InternMemoryKind(memory_kind.value_or(kDefault))) {}
+
+std::string MemoryKind::ToString() const { return std::string(memory_kind_); }
 
 MemoryKind CanonicalizeMemoryKind(MemoryKind memory_kind,
                                   const Device* device) {
-  if (memory_kind.memory_kind().has_value()) {
-    return memory_kind;
-  }
-  auto default_memory = device->DefaultMemory();
-  if (default_memory.ok()) {
-    return (*default_memory)->Kind();
-  }
-  return MemoryKind();
+  return memory_kind;
 }
 
 char Memory::ID = 0;
