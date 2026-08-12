@@ -690,8 +690,6 @@ Build(
     },
     repo_env={
         "TF_CUDA_COMPUTE_CAPABILITIES": "10",
-        "HERMETIC_CUDA_VERSION": "12.8.0",
-        "HERMETIC_CUDNN_VERSION": "9.8.0",
     },
     extra_setup_commands=(["nvidia-smi"],),
     subcommand="build",
@@ -713,8 +711,6 @@ Build(
     },
     repo_env={
         "TF_CUDA_COMPUTE_CAPABILITIES": "10",
-        "HERMETIC_CUDA_VERSION": "12.8.0",
-        "HERMETIC_CUDNN_VERSION": "9.8.0",
     },
     extra_setup_commands=(["nvidia-smi"],),
     subcommand="build",
