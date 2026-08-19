@@ -92,7 +92,8 @@ namespace {
 // autotuning results.
 std::string GetKvStoreKey(
     const HloModule* module, int shard_index,
-    const std::vector<std::unique_ptr<CodegenBackend>>& codegen_backends) {
+    const std::vector<std::unique_ptr<CodegenBackend>>& codegen_backends,
+    bool is_new_format) {
   std::vector<std::string> names;
   names.reserve(codegen_backends.size());
   for (const auto& backend : codegen_backends) {
@@ -101,7 +102,9 @@ std::string GetKvStoreKey(
   absl::c_sort(names);
   std::string backend_names = absl::StrJoin(names, ",");
   uint32_t backend_fingerprint = tsl::Fingerprint32(backend_names);
-  return absl::StrCat("autotune_results_", module->GetFingerprint128(), "_",
+  absl::string_view prefix =
+      is_new_format ? "autotune_cache_" : "autotune_results_";
+  return absl::StrCat(prefix, module->GetFingerprint128(), "_",
                       backend_fingerprint, "_", shard_index);
 }
 
@@ -152,7 +155,7 @@ absl::Status ConfigAssigner::AssignConfigs(
     MultiProcessKeyValueStore& sharding_kv_store) {
   // Sharding the instructions only makes sense if we can have different
   // configs for different shards, which only happens due to online tuning.
-  if (options_.select_first_config) {
+  if (!options_.allow_autotuning) {
     VLOG(1) << "Falling back to non-sharded config assignment as online "
                "tuning is disabled.";
     return AssignConfigs(module, should_assign_config);
@@ -203,7 +206,8 @@ absl::Status ConfigAssigner::AssignConfigs(
   // 4. Store the results for this shard as a serialized string to the KV store.
   KeyValueStoreInterface& kv_store = *sharding_kv_store.key_value_store;
   const std::string local_key =
-      GetKvStoreKey(module, my_shard_index, orchestrator_->codegen_backends());
+      GetKvStoreKey(module, my_shard_index, orchestrator_->codegen_backends(),
+                    options_.use_new_cache_format);
   std::string local_results;
   if (!autotuned_instructions.empty()) {
     ABSL_ASSIGN_OR_RETURN(local_results,
@@ -235,7 +239,8 @@ absl::Status ConfigAssigner::AssignConfigs(
       continue;
     }
     const std::string remote_key =
-        GetKvStoreKey(module, i, orchestrator_->codegen_backends());
+        GetKvStoreKey(module, i, orchestrator_->codegen_backends(),
+                      options_.use_new_cache_format);
     VLOG(2) << "Shard " << my_shard_index << ": waiting for results from shard "
             << i << " / " << total_shards << " at " << remote_key;
     // TODO(b/361009609): reset to infinite duration once issue with MPI is
@@ -307,7 +312,7 @@ tsl::Future<ConfigAssigner::Config> ConfigAssigner::GetConfig(
 
   // TODO (b/446870267): Improve the cache fallback logic as we move to offline
   // autotuning.
-  if (options_.select_first_config) {
+  if (!options_.allow_autotuning) {
     absl::StatusOr<std::vector<Config>> supported_configs =
         orchestrator_->GetSupportedConfigs(*instr);
 
@@ -447,10 +452,12 @@ std::string ConfigAssigner::Options::ToString() const {
   return absl::StrFormat(
       R"json({
   "expect_all_instructions_in_cache": %v,
-  "select_first_config": %v,
-  "dump_hlos": %v
+  "allow_autotuning": %v,
+  "dump_hlos": %v,
+  "use_new_cache_format": %v
 })json",
-      expect_all_instructions_in_cache, select_first_config, dump_hlos);
+      expect_all_instructions_in_cache, allow_autotuning, dump_hlos,
+      use_new_cache_format);
 }
 
 AutotunerCacheInterface::CacheStats ConfigAssigner::GetCacheStats() const {
