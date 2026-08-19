@@ -41,6 +41,11 @@ _MEM = flags.DEFINE_list(
     "comma-separated list of memory space IDs (ex: 0,0,3). "
     "0 is HBM, 3 is CMEM, 1 is VMEM, 2 is Sync flag.",
 )
+_SUBBLOCK_M = flags.DEFINE_integer(
+    "subblock_m",
+    None,
+    "Subblock size in the m dimension on which the matmuls are emitted.",
+)
 _WINDOW = flags.DEFINE_list(
     "window",
     None,
@@ -133,6 +138,18 @@ def main(_):
   lhs_mem = mem_spaces[lhs_mem]
   rhs_mem = mem_spaces[rhs_mem]
   out_mem = mem_spaces[out_mem]
+
+  subblock_m = _SUBBLOCK_M.value
+  if subblock_m is None:
+    # Choose a subblock size that utilizes all accumulators.
+    pinfo = platform_info.get_platform_info()
+    num_accumulators = pinfo.num_accumulators
+    if num_accumulators > 0:
+      # Each accumulator can hold `num_sublanes` rows of results.
+      num_sublanes, _ = pinfo.vreg_size
+      subblock_m = num_sublanes * num_accumulators
+      logging.info("Using subblock_m size: %s", subblock_m)
+
   internal_scratch_in_bytes = (
       platform_info.get_default_internal_scratch_bytes()
   )
@@ -157,6 +174,7 @@ def main(_):
         rhs_dtype,
         out_dtype,
         acc_dtype,
+        subblock_m=subblock_m,
     ).select_window(
         vmem_limit_bytes,
         p_state,
@@ -201,6 +219,7 @@ def main(_):
       rhs_dtype=rhs_dtype,
       out_dtype=out_dtype,
       acc_dtype=acc_dtype,
+      subblock_m=subblock_m,
   )
   bm = dense_matmul_lib.DenseMatmulBenchmark(
       cfg,
