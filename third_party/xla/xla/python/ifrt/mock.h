@@ -173,6 +173,10 @@ class MockClient : public RTTIExtends<MockClient, Client> {
               (absl::Span<MakeArraysFromHostBufferShardsSpec> specs,
                HostBufferSemantics semantics),
               (final));
+  MOCK_METHOD(absl::Status, CopyArraysToHostBufferShards,
+              (absl::Span<CopyArraysToHostBufferShardsSpec> specs,
+               ArrayCopySemantics semantics),
+              (final));
   MOCK_METHOD(absl::StatusOr<std::vector<ArrayRef>>, MakeErrorArrays,
               (const absl::Status& error,
                absl::Span<const ArraySpec> array_specs),

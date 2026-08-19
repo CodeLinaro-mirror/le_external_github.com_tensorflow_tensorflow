@@ -32,6 +32,7 @@ limitations under the License.
 #include "xla/python/ifrt/bundle.h"
 #include "xla/python/ifrt/client.h"
 #include "xla/python/ifrt/device.h"
+#include "xla/python/ifrt/device_list.h"
 #include "xla/python/ifrt/executable.h"
 #include "xla/python/ifrt/layout.h"
 #include "xla/python/ifrt/rtti.h"
@@ -40,6 +41,7 @@ limitations under the License.
 #include "xla/python/ifrt/value.h"
 #include "xla/python/ifrt/value_util.h"
 #include "xla/python/pjrt_ifrt/pjrt_layout.h"
+#include "xla/tsl/concurrency/future.h"
 #include "xla/tsl/concurrency/ref_count.h"
 
 namespace xla {
@@ -212,6 +214,82 @@ absl::StatusOr<std::vector<ArrayRef>> ClientMakeArraysFromHostBufferShards(
     arrays.push_back(std::move(array));
   }
   return arrays;
+}
+
+absl::Status ClientCopyArraysToHostBufferShards(
+    Client* client, absl::Span<Client::CopyArraysToHostBufferShardsSpec> specs,
+    ArrayCopySemantics semantics) {
+  // Validate the input specs.
+  for (int i = 1; i < specs.size(); ++i) {
+    if (specs[0].array != nullptr && specs[i].array != nullptr &&
+        specs[0].array->sharding().devices() !=
+            specs[i].array->sharding().devices()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "All arrays in CopyArraysToHostBufferShards must have the "
+          "same device list, but got ",
+          specs[0].array->sharding().devices(), " vs. ",
+          specs[i].array->sharding().devices()));
+    }
+  }
+  for (const Client::CopyArraysToHostBufferShardsSpec& spec : specs) {
+    if (spec.array == nullptr) {
+      return absl::InvalidArgumentError(
+          "CopyArraysToHostBufferShards called with a null array.");
+    }
+    if (spec.buffers.empty()) {
+      return absl::InvalidArgumentError(
+          "CopyArraysToHostBufferShards called with no host buffers.");
+    }
+    const Sharding& sharding = spec.array->sharding();
+    DeviceList* addressable_devices =
+        sharding.devices()->AddressableDeviceList();
+    if (addressable_devices->empty()) {
+      return absl::InvalidArgumentError(
+          "CopyArraysToHostBufferShards called on a host with no addressable "
+          "devices.");
+    }
+  }
+
+  for (Client::CopyArraysToHostBufferShardsSpec& spec : specs) {
+    // Split the array into single-device arrays.
+    ABSL_ASSIGN_OR_RETURN(
+        std::vector<ArrayRef> single_device_arrays,
+        spec.array->DisassembleIntoSingleDeviceArrays(
+            semantics, SingleDeviceShardSemantics::kAddressableShards));
+
+    // Pick a source array shard for each host buffer and issue the copy.
+    for (auto& buffer : spec.buffers) {
+      Client::CopyArraysToHostBufferShardsSpec::ShardIndices& shard_indices =
+          buffer.first;
+      Client::MutableHostBuffer& host_buffer = buffer.second;
+      if (shard_indices.empty()) {
+        return absl::InvalidArgumentError(
+            "No source shard indices specified for a host buffer in "
+            "CopyArraysToHostBufferShards.");
+      }
+      // If multiple array source shards are specified, pick the first one to
+      // copy from.
+      int64_t shard_idx = shard_indices.front();
+      if (shard_idx < 0 || shard_idx >= single_device_arrays.size()) {
+        return absl::OutOfRangeError(
+            absl::StrCat("Shard index ", shard_idx, " out of range [0, ",
+                         single_device_arrays.size(), ")"));
+      }
+      std::optional<absl::Span<const int64_t>> byte_strides;
+      if (host_buffer.byte_strides.has_value()) {
+        byte_strides = absl::MakeConstSpan(*host_buffer.byte_strides);
+      }
+      tsl::Future<> future = single_device_arrays[shard_idx]->CopyToHostBuffer(
+          host_buffer.data, byte_strides, semantics);
+      if (host_buffer.on_done != nullptr) {
+        future.OnReady(
+            [on_done = std::move(host_buffer.on_done)](absl::Status status) {
+              on_done(std::move(status));
+            });
+      }
+    }
+  }
+  return absl::OkStatus();
 }
 
 absl::StatusOr<LoadedExecutable::ExecuteBundleResult>

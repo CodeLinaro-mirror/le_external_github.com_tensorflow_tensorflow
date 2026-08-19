@@ -141,6 +141,11 @@ MockClient::MockClient(std::unique_ptr<xla::ifrt::Client> delegated)
                  HostBufferSemantics semantics) {
             return delegated_->MakeArraysFromHostBufferShards(specs, semantics);
           });
+  ON_CALL(*this, CopyArraysToHostBufferShards)
+      .WillByDefault([this](absl::Span<CopyArraysToHostBufferShardsSpec> specs,
+                            ArrayCopySemantics semantics) {
+        return delegated_->CopyArraysToHostBufferShards(specs, semantics);
+      });
   ON_CALL(*this, MakeErrorArrays)
       .WillByDefault([this](const absl::Status& error,
                             absl::Span<const ArraySpec> array_specs) {

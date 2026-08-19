@@ -212,6 +212,14 @@ class CompileOnlyIfRtClient final
         "client.");
   }
 
+  absl::Status CopyArraysToHostBufferShards(
+      absl::Span<CopyArraysToHostBufferShardsSpec> specs,
+      ifrt::ArrayCopySemantics semantics) override {
+    return absl::UnimplementedError(
+        "CopyArraysToHostBufferShards not available with compile-only "
+        "client");
+  }
+
   absl::StatusOr<std::vector<ifrt::ArrayRef>> MakeErrorArrays(
       const absl::Status& error,
       absl::Span<const ifrt::ArraySpec> array_specs) override {

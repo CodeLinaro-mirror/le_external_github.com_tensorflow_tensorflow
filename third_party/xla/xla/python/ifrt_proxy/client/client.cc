@@ -45,6 +45,7 @@
 #include "xla/python/ifrt/attribute_map.h"
 #include "xla/python/ifrt/basic_device_list.h"
 #include "xla/python/ifrt/client.h"
+#include "xla/python/ifrt/client_impl_util.h"
 #include "xla/python/ifrt/device.h"
 #include "xla/python/ifrt/device_list.h"
 #include "xla/python/ifrt/dtype.h"
@@ -251,6 +252,12 @@ Client::MakeArraysFromHostBufferShards(
     xla::ifrt::Client::HostBufferSemantics semantics) {
   return Array::MakeArraysFromHostBufferShards(this, rpc_helper_, specs,
                                                semantics);
+}
+
+absl::Status Client::CopyArraysToHostBufferShards(
+    absl::Span<CopyArraysToHostBufferShardsSpec> specs,
+    ArrayCopySemantics semantics) {
+  return xla::ifrt::ClientCopyArraysToHostBufferShards(this, specs, semantics);
 }
 
 absl::StatusOr<std::vector<xla::ifrt::ArrayRef>> Client::MakeErrorArrays(

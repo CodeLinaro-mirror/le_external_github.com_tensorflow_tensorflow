@@ -1144,6 +1144,12 @@ PjRtClient::MakeArraysFromHostBufferShards(
   return ClientMakeArraysFromHostBufferShards(this, specs, semantics);
 }
 
+absl::Status PjRtClient::CopyArraysToHostBufferShards(
+    absl::Span<CopyArraysToHostBufferShardsSpec> specs,
+    ArrayCopySemantics semantics) {
+  return ClientCopyArraysToHostBufferShards(this, specs, semantics);
+}
+
 absl::StatusOr<std::vector<ArrayRef>> PjRtClient::MakeErrorArrays(
     const absl::Status& error, absl::Span<const ArraySpec> array_specs) {
   if (error.ok()) {

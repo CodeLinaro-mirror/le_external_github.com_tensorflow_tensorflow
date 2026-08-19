@@ -52,7 +52,7 @@ limitations under the License.
 #include "xla/python/ifrt/topology.h"
 #include "xla/python/ifrt/tuple.h"
 #include "xla/python/ifrt/value.h"
-#include "xla/service/computation_placer.h"
+#include "xla/service/device_assignment.h"
 #include "xla/tsl/concurrency/future.h"
 #include "xla/tsl/concurrency/ref_count.h"
 
@@ -192,6 +192,49 @@ class Client : public RTTIExtends<Client, RTTIRoot> {
   virtual absl::StatusOr<std::vector<ArrayRef>> MakeArraysFromHostBufferShards(
       absl::Span<MakeArraysFromHostBufferShardsSpec> specs,
       HostBufferSemantics semantics) = 0;
+
+  // Represents a mutable destination host buffer shard.
+  struct MutableHostBuffer {
+    // `data` points to the backing array of the host buffer. Caution:
+    // `byte_strides` are allowed to be negative, in which case `data` may need
+    // to point to the interior of the buffer, not necessarily its start.
+    void* data;
+
+    DType dtype;
+    Shape shape;
+
+    using ByteStrides = std::vector<int64_t>;
+    std::optional<ByteStrides> byte_strides;
+
+    // `on_done` is optional and may be null. `on_done` will be called with the
+    // copy status when the runtime has finished writing data to the host
+    // buffer.
+    std::function<void(absl::Status)> on_done;
+  };
+
+  // Represents the specification of copying an array to host buffer shards.
+  //
+  // `buffers` is a list of pairs of addressable shard indices and a destination
+  // mutable host buffer.
+  //
+  // For replicated or partially-replicated arrays, multiple shard indices that
+  // hold the same shard data can be passed in `ShardIndices`. The runtime
+  // implementation can choose which shard index (or combination of shard
+  // indices) to copy the data to the host buffer from.
+  struct CopyArraysToHostBufferShardsSpec {
+    using ShardIndices = absl::InlinedVector<int64_t, 1>;
+    using Buffers =
+        absl::InlinedVector<std::pair<ShardIndices, MutableHostBuffer>, 1>;
+    ArrayRef array;
+    Buffers buffers;
+  };
+
+  // Copies arrays' shards into the provided destination host buffers.
+  //
+  // All source arrays should use the same device list.
+  virtual absl::Status CopyArraysToHostBufferShards(
+      absl::Span<CopyArraysToHostBufferShardsSpec> specs,
+      ArrayCopySemantics semantics) = 0;
 
   // Creates new arrays that will be fulfilled with the given error status. The
   // status must not be OK.

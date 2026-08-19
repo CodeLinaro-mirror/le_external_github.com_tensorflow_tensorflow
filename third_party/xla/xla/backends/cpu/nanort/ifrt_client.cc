@@ -1412,6 +1412,12 @@ NanoIfrtClient::MakeArraysFromHostBufferShards(
   return ifrt::ClientMakeArraysFromHostBufferShards(this, specs, semantics);
 }
 
+absl::Status NanoIfrtClient::CopyArraysToHostBufferShards(
+    absl::Span<CopyArraysToHostBufferShardsSpec> specs,
+    ifrt::ArrayCopySemantics semantics) {
+  return ifrt::ClientCopyArraysToHostBufferShards(this, specs, semantics);
+}
+
 absl::StatusOr<std::vector<ifrt::ArrayRef>> NanoIfrtClient::MakeErrorArrays(
     const absl::Status& error, absl::Span<const ifrt::ArraySpec> array_specs) {
   return absl::UnimplementedError(
