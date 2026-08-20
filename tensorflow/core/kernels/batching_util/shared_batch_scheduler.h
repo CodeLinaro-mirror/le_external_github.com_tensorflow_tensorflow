@@ -640,9 +640,16 @@ class PriorityTaskQueue {
     int32_t tasks_to_schedule = ApplyBatchPaddingPolicy(
         candidate_size, allowed_batch_sizes_, disable_padding_,
         batch_padding_policy_, model_batch_stats_);
-    auto batch = std::make_unique<Batch<TaskType>>();
     std::vector<std::unique_ptr<TaskType>> tasks =
         RemoveTask(tasks_to_schedule);
+    // If batching down yielded no tasks (e.g. the head task is unsplittable and
+    // larger than tasks_to_schedule), fall back to initial candidate_size to
+    // avoid livelock.
+    if (tasks.empty() && tasks_to_schedule < candidate_size) {
+      tasks = RemoveTask(candidate_size);
+    }
+
+    auto batch = std::make_unique<Batch<TaskType>>();
     for (auto& t : tasks) {
       batch->AddTask(std::move(t), env_->NowMicros());
     }
