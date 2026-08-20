@@ -45,6 +45,7 @@ limitations under the License.
 #include "xla/python/ifrt/rtti.h"
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/ifrt/sharding.h"
+#include "xla/python/pjrt_ifrt/pjrt_array.h"
 #include "xla/python/pjrt_ifrt/xla_sharding.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
@@ -493,6 +494,21 @@ absl::StatusOr<tsl::Future<tensorflow::Tensor>> MakeTensorFromArrayHelper(
           " but got ", fully_replicated_array->shape()));
     }
 
+    auto* pjrt_arr =
+        xla::ifrt::dyn_cast_or_null<xla::ifrt::PjRtCompatibleArray>(
+            fully_replicated_array.get());
+    if (pjrt_arr != nullptr && !pjrt_arr->pjrt_buffers().empty()) {
+      xla::PjRtBuffer* pjrt_buffer = pjrt_arr->pjrt_buffers().front().get();
+      if (pjrt_buffer->has_dynamic_dimensions()) {
+        TF_ASSIGN_OR_RETURN(std::vector<int64_t> logical_dims,
+                            pjrt_buffer->logical_dimensions());
+        tensor_shape = tensorflow::TensorShape();
+        for (int64_t dim : logical_dims) {
+          tensor_shape.AddDim(dim);
+        }
+      }
+    }
+
     tensorflow::Tensor output_tensor(data_type, tensor_shape);
     fully_replicated_array
         ->CopyToHostBuffer(output_tensor.data(),
@@ -517,6 +533,21 @@ absl::StatusOr<tsl::Future<tensorflow::Tensor>> MakeTensorFromArrayHelper(
             xla::ifrt::SingleDeviceShardSemantics::kAddressableShards));
 
     int64_t device_id = hlo_sharding.GetUniqueDevice();
+
+    auto* pjrt_arr =
+        xla::ifrt::dyn_cast_or_null<xla::ifrt::PjRtCompatibleArray>(
+            disassembled_array[device_id].get());
+    if (pjrt_arr != nullptr && !pjrt_arr->pjrt_buffers().empty()) {
+      xla::PjRtBuffer* pjrt_buffer = pjrt_arr->pjrt_buffers().front().get();
+      if (pjrt_buffer->has_dynamic_dimensions()) {
+        TF_ASSIGN_OR_RETURN(std::vector<int64_t> logical_dims,
+                            pjrt_buffer->logical_dimensions());
+        tensor_shape = tensorflow::TensorShape();
+        for (int64_t dim : logical_dims) {
+          tensor_shape.AddDim(dim);
+        }
+      }
+    }
 
     tensorflow::Tensor output_tensor(data_type, tensor_shape);
     disassembled_array[device_id]
@@ -605,7 +636,25 @@ absl::StatusOr<tsl::Future<tensorflow::Tensor>> MakeTensorFromArrayHelper(
   input_tensors.reserve(index_domain_device_arrays.size());
   arrays_copy_status.reserve(index_domain_device_arrays.size());
   for (const auto& [index_domain, array] : index_domain_device_arrays) {
-    tensorflow::TensorShape tensor_shape = ToTensorShape(index_domain.shape());
+    absl::Span<const int64_t> dims = index_domain.shape().dims();
+    std::vector<int64_t> logical_dims;
+
+    auto* pjrt_arr =
+        xla::ifrt::dyn_cast_or_null<xla::ifrt::PjRtCompatibleArray>(
+            array.get());
+    if (pjrt_arr != nullptr && !pjrt_arr->pjrt_buffers().empty()) {
+      xla::PjRtBuffer* pjrt_buffer = pjrt_arr->pjrt_buffers().front().get();
+      if (pjrt_buffer->has_dynamic_dimensions()) {
+        TF_ASSIGN_OR_RETURN(logical_dims, pjrt_buffer->logical_dimensions());
+        dims = logical_dims;
+      }
+    }
+
+    tensorflow::TensorShape tensor_shape;
+    for (int64_t dim : dims) {
+      tensor_shape.AddDim(dim);
+    }
+
     TF_ASSIGN_OR_RETURN(tensorflow::DataType dtype,
                         ToTensorDataType(array->dtype()));
     tensorflow::Tensor tensor(dtype, tensor_shape);
