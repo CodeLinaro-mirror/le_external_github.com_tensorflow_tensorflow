@@ -17,6 +17,10 @@ limitations under the License.
 
 #define EIGEN_USE_GPU
 
+#include <limits>
+
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "unsupported/Eigen/CXX11/Tensor"  // from @eigen_archive
 #include "xla/tsl/platform/statusor.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
@@ -496,13 +500,16 @@ namespace {
 template <typename T, typename Tindex>
 __global__ __launch_bounds__(1024) void GatherOriginalGradValuesKernel(
     GpuLaunchConfig64 cfg, const Tindex* reverse_index_map,
-    const T* grad_values, T* d_values, bool* visited, Tindex N_full) {
+    const T* grad_values, T* d_values, bool* visited, Tindex N_full,
+    int64_t* first_invalid_index) {
   for (int64_t input_i : GpuGridRangeX(cfg.virtual_thread_count)) {
     Tindex output_i = reverse_index_map[input_i];
-    if (output_i >= 0 && output_i < N_full) {
-      d_values[input_i] = grad_values[output_i];
-      visited[output_i] = true;
+    if (output_i < 0 || output_i >= N_full) {
+      GpuAtomicMin(first_invalid_index, input_i);
+      continue;
     }
+    d_values[input_i] = grad_values[output_i];
+    visited[output_i] = true;
   }
 }
 
@@ -532,17 +539,38 @@ struct FillEmptyRowsGrad<GPUDevice, T, Tindex> {
     const Tindex N = reverse_index_map.dimension(0);
     const Tindex N_full = grad_values.dimension(0);
 
+    se::Stream* stream = context->op_device_context()->stream();
+    if (!stream) return absl::InternalError("No GPU stream available.");
+
     Tensor visited_t;
     TF_RETURN_IF_ERROR(
         context->allocate_temp(DT_BOOL, TensorShape({N_full}), &visited_t));
     auto visited = visited_t.vec<bool>();
     visited.device(device) = visited.constant(false);
 
+    constexpr const int64_t kAllIndicesValid =
+        std::numeric_limits<int64_t>::max();
+    ScratchSpace<int64_t> first_invalid_index_host(context, 1,
+                                                   /*on_host=*/true);
+
     if (N > 0) {
+      Tensor first_invalid_index_t;
+      TF_RETURN_IF_ERROR(context->allocate_temp(DT_INT64, TensorShape({1}),
+                                                &first_invalid_index_t));
+      auto first_invalid_index_gpu = first_invalid_index_t.flat<int64_t>();
+      first_invalid_index_gpu.device(device) =
+          first_invalid_index_gpu.constant(kAllIndicesValid);
+
       TF_RETURN_IF_ERROR(wrap_kernel_call(
           GatherOriginalGradValuesKernel<T, Tindex>, /*device=*/device,
-          /*size=*/N, reverse_index_map, grad_values, d_values, visited,
-          N_full));
+          /*size=*/N, reverse_index_map, grad_values, d_values, visited, N_full,
+          first_invalid_index_gpu.data()));
+
+      TF_RETURN_IF_ERROR(
+          stream->Memcpy(first_invalid_index_host.mutable_data(),
+                         stream_executor::DeviceAddressBase(
+                             first_invalid_index_gpu.data(), sizeof(int64_t)),
+                         sizeof(int64_t)));
     }
 
     // Now we mask out the visited values and sum the remaining ones (which
@@ -592,6 +620,23 @@ struct FillEmptyRowsGrad<GPUDevice, T, Tindex> {
           temp_storage_bytes, ", status: ", GpuGetErrorString(gpuprim_status));
     }
 
+    if (N > 0) {
+      TF_RETURN_IF_ERROR(stream->BlockHostUntilDone());
+
+      int64_t first_invalid_index = *first_invalid_index_host.data();
+      if (first_invalid_index != kAllIndicesValid) {
+        Tindex bad_reverse_index;
+        stream_executor::DeviceAddressBase bad_reverse_index_gpu_memory(
+            const_cast<Tindex*>(reverse_index_map.data() + first_invalid_index),
+            sizeof(Tindex));
+        TF_RETURN_IF_ERROR(stream->Memcpy(
+            &bad_reverse_index, bad_reverse_index_gpu_memory, sizeof(Tindex)));
+        TF_RETURN_IF_ERROR(stream->BlockHostUntilDone());
+        return absl::InvalidArgumentError(
+            absl::StrCat("Elements in reverse index must be in [0, ", N_full,
+                         ") but got ", bad_reverse_index));
+      }
+    }
     return absl::OkStatus();
   }
 };
