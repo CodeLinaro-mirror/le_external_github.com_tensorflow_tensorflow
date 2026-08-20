@@ -785,6 +785,16 @@ LogicalResult StridedLoadOp::verify() {
                                         /*min_stride=*/0);
 }
 
+LogicalResult StridedLoadOp::canonicalize(StridedLoadOp op,
+                                          PatternRewriter& rewriter) {
+  if (llvm::all_of(op.getStrides(), [](int32_t s) { return s == 1; })) {
+    rewriter.replaceOpWithNewOp<tpu::VectorLoadOp>(
+        op, op.getType(), op.getBase(), op.getIndices());
+    return success();
+  }
+  return failure();
+}
+
 LogicalResult StridedStoreOp::verify() {
   return verifyStridedOp<StridedStoreOp>(*this, getBase().getType(),
                                          getValueToStore().getType(),
