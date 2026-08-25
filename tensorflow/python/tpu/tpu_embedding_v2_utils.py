@@ -1251,6 +1251,86 @@ class CustomCombiner(_WithSlotVariables):
     return self.combiner
 
 
+@tf_export("tpu.experimental.embedding.PositionalWeightedCombiner")
+class PositionalWeightedCombiner(_WithSlotVariables):
+  """Positional weighted combiner for TPU embeddings on SparseCore.
+
+  This class specifies a positional weighted sum combiner over the TPU embedding
+  lookup results. It also supports a custom optimizer computation to be
+  performed on the positional weights.
+  """
+
+  def __init__(
+      self,
+      max_valency: int,
+      initializer: init_ops_v2.Initializer,
+      combiner_weights_learning_rate: Union[float, Callable[[], float]],
+      custom_computation: core.PolymorphicFunction,
+      slot_names: Optional[List[Text]] = None,
+      slot_initializers: Optional[List[init_ops_v2.Initializer]] = None,
+      hyperparameters: Optional[List[Union[float, Callable[[], float]]]] = None,
+  ) -> Any:
+    """Initializes the positional weighted combiner.
+
+    Args:
+      max_valency: The valency cap of the corresponding feature. This value is
+        also used as the number of positional weights.
+      initializer: The initializer for the positional weights.
+      combiner_weights_learning_rate: The learning rate for the positional
+        weights.
+      custom_computation: The custom optimizer computation on positional
+        weights.
+      slot_names: The names of the slot variables (any if) to use for the custom
+        optimizer.
+      slot_initializers: The initializers for the slot variables for the custom
+        optimizer.
+      hyperparameters: The hyperparameters for the custom optimizer.
+    """
+    super().__init__()
+    self.combiner = "positional_weighted"
+    self.custom_computation = custom_computation
+    self.max_valency = max_valency
+    self.initializer = initializer
+    self.combiner_weights_learning_rate = combiner_weights_learning_rate
+
+    assert max_valency > 0, f"Expect max_valency > 0, but got {max_valency}."
+    assert initializer is not None, "Expect initializer to be not None."
+
+    if slot_names is None:
+      assert slot_initializers is None, (
+          "Expect slot_initializers to be None when slot_names is None, but got"
+          f" {slot_initializers}."
+      )
+    else:
+      assert slot_initializers is not None and len(slot_names) == len(
+          slot_initializers
+      ), (
+          "Expect slot_names and slot_initializers to have the same length, but"
+          f" got {slot_names} and {slot_initializers}."
+      )
+
+    self._slot_names_attr = tuple(slot_names) if slot_names else ()
+    self._slot_initializers_attr = (
+        tuple(slot_initializers) if slot_initializers else ()
+    )
+    self._hyperparameters_attr = (
+        tuple(hyperparameters) if hyperparameters else ()
+    )
+
+  def _slot_names(self) -> List[Text]:
+    return list(self._slot_names_attr)
+
+  def _slot_initializers(self) -> List[init_ops_v2.Initializer]:
+    return list(self._slot_initializers_attr)
+
+  @property
+  def hyperparameters(self) -> List[Union[float, Callable[[], float]]]:
+    return list(self._hyperparameters_attr)
+
+  def __str__(self) -> str:
+    return self.combiner
+
+
 @tf_export("tpu.experimental.embedding.QuantizationConfig")
 class QuantizationConfig:
   """Settings for simulated quantization of the tpu embedding table.
@@ -1432,10 +1512,13 @@ class TableConfig:
             f"String argument `combiner` must be in {accepted_str_combiners}. "
             f"Received: {combiner}")
 
-    elif not isinstance(combiner, CustomCombiner):
+    elif not isinstance(
+        combiner, (CustomCombiner, PositionalWeightedCombiner)
+    ):
       raise ValueError(
-          f"Argument `combiner` should either be a str or a CustomCombiner. "
-          f"Received: {type(combiner)}"
+          "Argument `combiner` should either be a str, CustomCombiner, or"
+          " PositionalWeightedCombiner."
+          f" Received: {type(combiner)}"
       )
 
     if name is None:
