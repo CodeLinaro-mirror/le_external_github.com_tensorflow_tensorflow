@@ -44,6 +44,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
+#include "riegeli/messages/parse_message.h"
 #include "xla/array.h"
 #include "xla/backends/cpu/collectives/cpu_collectives.h"
 #include "xla/backends/cpu/constant_allocation.h"
@@ -565,15 +566,12 @@ PjRtCpuExecutable::GetOutputMemoryKinds() const {
   return out;
 }
 
-absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
-PjRtCpuClient::LoadSerializedExecutableInternal(
-    google::protobuf::io::ZeroCopyInputStream* stream,
-    std::optional<CompileOptions> options, const LoadOptions& load_options) {
+/*static*/ absl::StatusOr<std::unique_ptr<PjRtCpuExecutable>>
+PjRtCpuExecutable::Deserialize(riegeli::Any<riegeli::Reader*> reader,
+                               const xla::CpuTopologyDescription& topology,
+                               std::optional<CompileOptions>&& options) {
   ExecutableAndOptionsProto proto;
-  if (!proto.ParseFromZeroCopyStream(stream)) {
-    return Internal(
-        "PjRtCpuClient::DeserializeExecutable proto deserialization failed");
-  }
+  ABSL_RETURN_IF_ERROR(riegeli::ParseMessage(reader.get(), proto));
   CompileOptions compile_options;
   if (options.has_value()) {
     compile_options = *std::move(options);
@@ -599,10 +597,9 @@ PjRtCpuClient::LoadSerializedExecutableInternal(
   ABSL_RETURN_IF_ERROR(ParseDeviceAssignmentCompileOptions(
       compile_options.compile_portable_executable,
       &compile_options.executable_build_options,
-      [this](int num_replicas, int num_partitions) {
-        return topology().GetDefaultDeviceAssignment(process_index(),
-                                                     num_replicas, std::nullopt,
-                                                     num_partitions, nullptr);
+      [&topology](int num_replicas, int num_partitions) {
+        return topology.GetDefaultDeviceAssignment(
+            0, num_replicas, std::nullopt, num_partitions, nullptr);
       },
       &num_replicas, &num_partitions, &device_assignment));
 
@@ -630,37 +627,11 @@ PjRtCpuClient::LoadSerializedExecutableInternal(
                                : nullptr);
   }
 
-  auto cpu_executable = std::make_shared<PjRtCpuExecutable>(
+  auto cpu_executable = std::make_unique<PjRtCpuExecutable>(
       num_replicas, num_partitions, std::move(input_options),
       std::move(executable), std::move(result_buffer_indices), nullptr,
-      topology());
-  return LoadInternal(std::move(cpu_executable), std::move(device_assignment));
-}
-
-absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
-PjRtCpuClient::LoadSerializedExecutable(absl::string_view serialized,
-                                        std::optional<CompileOptions> options,
-                                        const LoadOptions& load_options) {
-  if (serialized.size() > std::numeric_limits<int>::max()) {
-    return Internal(
-        "PjRtCpuClient::DeserializeExecutable proto too large (>2GB)");
-  }
-  google::protobuf::io::ArrayInputStream stream(serialized.data(), serialized.size());
-  return LoadSerializedExecutableInternal(&stream, std::move(options),
-                                          load_options);
-}
-
-absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
-PjRtCpuClient::LoadSerializedExecutable(const absl::Cord& serialized,
-                                        std::optional<CompileOptions> options,
-                                        const LoadOptions& load_options) {
-  if (serialized.size() > std::numeric_limits<int>::max()) {
-    return Internal(
-        "PjRtCpuClient::DeserializeExecutable proto too large (>2GB)");
-  }
-  google::protobuf::io::CordInputStream stream(&serialized);
-  return LoadSerializedExecutableInternal(&stream, std::move(options),
-                                          load_options);
+      topology);
+  return cpu_executable;
 }
 
 absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>

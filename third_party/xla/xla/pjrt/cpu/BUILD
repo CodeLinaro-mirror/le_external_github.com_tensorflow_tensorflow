@@ -299,6 +299,7 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "@eigen_archive//:eigen3",
+        "@riegeli//riegeli/messages:parse_message",
         "@tsl//tsl/platform:denormal",
         "@tsl//tsl/platform:fingerprint",
         "@tsl//tsl/platform:protobuf",

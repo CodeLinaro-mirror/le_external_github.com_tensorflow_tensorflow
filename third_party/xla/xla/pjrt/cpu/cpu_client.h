@@ -275,19 +275,6 @@ class PjRtCpuClient final : public CommonPjRtClientImpl {
                             CompileOptions options,
                             const AotCompilationOptions& aot_options);
 
-  // For PjRtCpuClient, `options` is mandatory.
-  // This function returns an InvalidArgument error if `std::nullopt` is passed.
-  // TODO(b/237720161): make it actually optional
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
-  LoadSerializedExecutable(absl::string_view serialized,
-                           std::optional<CompileOptions> options,
-                           const LoadOptions& load_options) override;
-
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
-  LoadSerializedExecutable(const absl::Cord& serialized,
-                           std::optional<CompileOptions> options,
-                           const LoadOptions& load_options) override;
-
   bool IsOnCpu(PjRtMemorySpace* memory_space) override { return true; }
 
   const xla::CpuTopologyDescription& topology() const {
@@ -331,11 +318,6 @@ class PjRtCpuClient final : public CommonPjRtClientImpl {
   absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> LoadInternal(
       std::shared_ptr<PjRtCpuExecutable> cpu_executable,
       std::shared_ptr<DeviceAssignment> device_assignment);
-
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
-  LoadSerializedExecutableInternal(google::protobuf::io::ZeroCopyInputStream* stream,
-                                   std::optional<CompileOptions> options,
-                                   const LoadOptions& load_options);
 };
 
 class PjRtCpuLoadedExecutable;
@@ -442,6 +424,11 @@ class PjRtCpuExecutable final : public PjRtExecutable {
   }
 
   const CompileOptions& compile_options() const { return compile_options_; }
+
+  static absl::StatusOr<std::unique_ptr<PjRtCpuExecutable>> Deserialize(
+      riegeli::Any<riegeli::Reader*> reader,
+      const xla::CpuTopologyDescription& topology,
+      std::optional<CompileOptions>&& options);
 
  private:
   friend class PjRtCpuClient;

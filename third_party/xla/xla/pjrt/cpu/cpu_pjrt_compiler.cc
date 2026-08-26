@@ -99,6 +99,16 @@ CpuPjRtCompiler::DeserializePjRtTopologyDescription(
   return CpuTopologyDescription::FromProto(proto);
 }
 
+absl::StatusOr<std::unique_ptr<PjRtExecutable>>
+CpuPjRtCompiler::DeserializeExecutable(
+    const PjRtTopologyDescription& topology,
+    riegeli::Any<riegeli::Reader*> reader,
+    std::optional<CompileOptions>&& options) {
+  ABSL_ASSIGN_OR_RETURN(auto* cpu_topology, GetCpuTopology(topology));
+  return PjRtCpuExecutable::Deserialize(std::move(reader), *cpu_topology,
+                                        std::move(options));
+}
+
 }  // namespace xla::cpu
 
 // Doesn't use STREAM_EXECUTOR_REGISTER_MODULE_INITIALIZER to ensure it is
