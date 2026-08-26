@@ -21,13 +21,14 @@ limitations under the License.
 #include <ostream>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "absl/base/nullability.h"
 #include "absl/hash/hash.h"
 #include "absl/log/check.h"
+#include "absl/status/status.h"
 #include "absl/status/status_macros.h"
+#include "absl/status/statusor.h"
 #include "xla/python/ifrt/device.h"
 #include "xla/python/ifrt/device_list.h"
 #include "xla/python/ifrt/index_domain.h"
@@ -148,6 +149,11 @@ class Sharding : public RTTIExtends<Sharding, Serializable> {
   virtual absl::StatusOr<std::vector<IndexDomain>> IndexDomains(
       const Shape& shape,
       SingleDeviceShardSemantics single_device_shard_semantics) const = 0;
+
+  // Breaks a shape up into unique `IndexDomain`s and a mapping between them and
+  // their corresponding shard indices. The result is calculated for all shards.
+  absl::StatusOr<struct UniqueIndexDomains> UniqueIndexDomains(
+      const Shape& shape) const;
 
   template <typename H>
   friend H AbslHashValue(H h, const Sharding& value) {

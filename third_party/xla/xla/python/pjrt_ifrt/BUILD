@@ -47,6 +47,7 @@ cc_library(
         "//xla/python/ifrt:serdes",
         "//xla/python/ifrt:serdes_version",
         "//xla/service:device_assignment",
+        "@com_google_absl//absl/base",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/hash",
         "@com_google_absl//absl/log",

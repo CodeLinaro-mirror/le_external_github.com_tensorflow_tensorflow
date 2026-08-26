@@ -24,7 +24,9 @@ limitations under the License.
 #include <variant>
 #include <vector>
 
+#include "absl/base/call_once.h"
 #include "absl/base/nullability.h"
+#include "absl/container/inlined_vector.h"
 #include "absl/hash/hash.h"
 #include "absl/log/check.h"
 #include "absl/status/status_macros.h"
@@ -48,6 +50,28 @@ class ShardingSpec;
 
 using ShardingRef = absl_nonnull std::shared_ptr<const Sharding>;
 using ShardingSpecRef = absl_nonnull std::shared_ptr<const ShardingSpec>;
+
+// Unique `IndexDomain`s and their mapping to/from shard indices.
+struct UniqueIndexDomains {
+  // Mapping between unique `IndexDomain`s and shard indices.
+  struct UniqueShardIndices {
+    using ShardIndices = absl::InlinedVector<int, 1>;
+
+    // For each unique `IndexDomain`, the list of shard indices that maps to
+    // that `IndexDomain`.
+    std::vector<ShardIndices> shard_indices;
+
+    // For each shard index in [0, num_shards - 1], the index within unique
+    // `IndexDomain`s that maps to that shard.
+    std::vector<int> shard_to_index_domain_index;
+  };
+
+  // Unique `IndexDomain`s in deterministic, sharding-native order.
+  std::vector<IndexDomain> index_domains;
+
+  // Mapping between unique `IndexDomain`s and shard indices.
+  std::shared_ptr<const UniqueShardIndices> unique_shard_indices;
+};
 
 // `ShardingSpec` represents partitioning of a logical array into a certain
 // ordered list of shards.
@@ -114,6 +138,11 @@ class ShardingSpec : public RTTIExtends<ShardingSpec, Serializable>,
   // fully replicated sharding spec would return a vector of
   // `[IndexDomain(shape)] * num_shards()`.
   virtual absl::StatusOr<std::vector<IndexDomain>> IndexDomains(
+      const Shape& shape) const = 0;
+
+  // Breaks a shape up into unique `IndexDomain`s and a mapping between them and
+  // their corresponding shard indices.
+  virtual absl::StatusOr<struct UniqueIndexDomains> UniqueIndexDomains(
       const Shape& shape) const = 0;
 
   template <typename H>
@@ -212,6 +241,9 @@ class SingleDeviceShardingSpec final
   absl::StatusOr<std::vector<IndexDomain>> IndexDomains(
       const Shape& shape) const override;
 
+  absl::StatusOr<struct UniqueIndexDomains> UniqueIndexDomains(
+      const Shape& shape) const override;
+
   static char ID;  // NOLINT
 
  private:
@@ -248,6 +280,9 @@ class OpaqueShardingSpec
   Disassemble(const DynamicShape& dynamic_shape) const override;
 
   absl::StatusOr<std::vector<IndexDomain>> IndexDomains(
+      const Shape& shape) const override;
+
+  absl::StatusOr<struct UniqueIndexDomains> UniqueIndexDomains(
       const Shape& shape) const override;
 
   static char ID;  // NOLINT
@@ -340,7 +375,12 @@ class ConcreteShardingSpec
   absl::StatusOr<std::vector<IndexDomain>> IndexDomains(
       const Shape& shape) const override;
 
+  absl::StatusOr<struct UniqueIndexDomains> UniqueIndexDomains(
+      const Shape& shape) const override;
+
   static char ID;  // NOLINT
+
+  ConcreteShardingSpec(const ConcreteShardingSpec& other);
 
  private:
   ConcreteShardingSpec(
@@ -358,6 +398,10 @@ class ConcreteShardingSpec
   std::variant<std::vector<Shape>, std::vector<DynamicShape>> shard_shapes_;
   std::optional<Shape> shard_shape_;
   std::optional<std::vector<xla::ifrt::IndexDomain>> index_domains_;
+
+  mutable absl::once_flag unique_shard_indices_once_;
+  mutable std::shared_ptr<const UniqueIndexDomains::UniqueShardIndices>
+      cached_unique_shard_indices_;
 };
 
 // Opaque sharding spec that does not define a fixed semantics for conversion
@@ -402,6 +446,9 @@ class ConcreteEvenShardingSpec
   absl::StatusOr<std::vector<IndexDomain>> IndexDomains(
       const Shape& shape) const override;
 
+  absl::StatusOr<struct UniqueIndexDomains> UniqueIndexDomains(
+      const Shape& shape) const override;
+
   static char ID;  // NOLINT
 
  private:
@@ -441,7 +488,12 @@ class ShardingParamShardingSpec
   absl::StatusOr<std::vector<IndexDomain>> IndexDomains(
       const Shape& shape) const override;
 
+  absl::StatusOr<struct UniqueIndexDomains> UniqueIndexDomains(
+      const Shape& shape) const override;
+
   static char ID;  // NOLINT
+
+  ShardingParamShardingSpec(const ShardingParamShardingSpec& other);
 
  private:
   ShardingParamShardingSpec(int num_shards, ShardingParam sharding_param);
@@ -451,6 +503,10 @@ class ShardingParamShardingSpec
   void Hash(absl::HashState state) const override;
 
   ShardingParam sharding_param_;
+
+  mutable absl::once_flag unique_shard_indices_once_;
+  mutable std::shared_ptr<const UniqueIndexDomains::UniqueShardIndices>
+      cached_unique_shard_indices_;
 };
 
 }  // namespace ifrt

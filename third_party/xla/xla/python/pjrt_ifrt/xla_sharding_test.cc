@@ -277,6 +277,26 @@ TEST_P(HloShardingTest, IndexDomainsWithReplication) {
   }
 }
 
+TEST_P(HloShardingTest, UniqueIndexDomainsWithReplication) {
+  auto device_list = GetDevices({0, 1, 2, 3, 4, 5});
+  // Fully replicated.
+  auto xla_hlo_sharding = xla::HloSharding::Replicate();
+  std::shared_ptr<const HloSharding> sharding =
+      HloSharding::Create(device_list, MemoryKind(), xla_hlo_sharding);
+
+  Shape shape({10, 20});
+  ASSERT_OK_AND_ASSIGN(UniqueIndexDomains unique_index_domains,
+                       sharding->UniqueIndexDomains(shape));
+  EXPECT_THAT(unique_index_domains.index_domains,
+              ElementsAre(IndexDomain(shape)));
+  ASSERT_NE(unique_index_domains.unique_shard_indices, nullptr);
+  EXPECT_THAT(unique_index_domains.unique_shard_indices->shard_indices,
+              ElementsAre(ElementsAre(0, 1, 2, 3, 4, 5)));
+  EXPECT_THAT(
+      unique_index_domains.unique_shard_indices->shard_to_index_domain_index,
+      ElementsAre(0, 0, 0, 0, 0, 0));
+}
+
 TEST_P(HloShardingTest, DisassembleWithReplication) {
   auto device_list = GetDevices({0, 1, 2, 3, 4, 5});
   // Fully replicated.
@@ -352,6 +372,32 @@ TEST_P(HloShardingTest, IndexDomainsWithTile) {
         ElementsAreArray(TEST_HloShardingIndexDomainsSlowPath(
             *sharding, shape, SingleDeviceShardSemantics::kAddressableShards)));
   }
+}
+
+TEST_P(HloShardingTest, UniqueIndexDomainsWithTile) {
+  auto device_list = GetDevices({0, 1, 2, 3, 4, 5});
+  // 6-way sharded along axis 0, 1-way sharded along axis 1.
+  auto xla_hlo_sharding = xla::HloSharding::Tile(xla::TileAssignment({6, 1}));
+  std::shared_ptr<const HloSharding> sharding =
+      HloSharding::Create(device_list, MemoryKind(), xla_hlo_sharding);
+
+  Shape shape({12, 20});
+  ASSERT_OK_AND_ASSIGN(UniqueIndexDomains unique_index_domains,
+                       sharding->UniqueIndexDomains(shape));
+  EXPECT_THAT(unique_index_domains.index_domains,
+              ElementsAre(IndexDomain(Index({0, 0}), Shape({2, 20})),
+                          IndexDomain(Index({2, 0}), Shape({2, 20})),
+                          IndexDomain(Index({4, 0}), Shape({2, 20})),
+                          IndexDomain(Index({6, 0}), Shape({2, 20})),
+                          IndexDomain(Index({8, 0}), Shape({2, 20})),
+                          IndexDomain(Index({10, 0}), Shape({2, 20}))));
+  ASSERT_NE(unique_index_domains.unique_shard_indices, nullptr);
+  EXPECT_THAT(unique_index_domains.unique_shard_indices->shard_indices,
+              ElementsAre(ElementsAre(0), ElementsAre(1), ElementsAre(2),
+                          ElementsAre(3), ElementsAre(4), ElementsAre(5)));
+  EXPECT_THAT(
+      unique_index_domains.unique_shard_indices->shard_to_index_domain_index,
+      ElementsAre(0, 1, 2, 3, 4, 5));
 }
 
 TEST_P(HloShardingTest, DisassembleWithTile) {
@@ -512,6 +558,29 @@ TEST_P(HloShardingTest, IndexDomainsWithPartialTile) {
         ElementsAreArray(TEST_HloShardingIndexDomainsSlowPath(
             *sharding, shape, SingleDeviceShardSemantics::kAddressableShards)));
   }
+}
+
+TEST_P(HloShardingTest, UniqueIndexDomainsWithPartialTile) {
+  auto device_list = GetDevices({0, 1, 2, 3, 4, 5});
+  // 2-way sharded along axis 0, 1-way sharded along axis 1, each shard
+  // replicated by 3 times.
+  auto xla_hlo_sharding =
+      xla::HloSharding::PartialTile(xla::TileAssignment({2, 1, 3}));
+  std::shared_ptr<const HloSharding> sharding =
+      HloSharding::Create(device_list, MemoryKind(), xla_hlo_sharding);
+
+  Shape shape({10, 20});
+  ASSERT_OK_AND_ASSIGN(UniqueIndexDomains unique_index_domains,
+                       sharding->UniqueIndexDomains(shape));
+  EXPECT_THAT(unique_index_domains.index_domains,
+              ElementsAre(IndexDomain(Index({0, 0}), Shape({5, 20})),
+                          IndexDomain(Index({5, 0}), Shape({5, 20}))));
+  ASSERT_NE(unique_index_domains.unique_shard_indices, nullptr);
+  EXPECT_THAT(unique_index_domains.unique_shard_indices->shard_indices,
+              ElementsAre(ElementsAre(0, 1, 2), ElementsAre(3, 4, 5)));
+  EXPECT_THAT(
+      unique_index_domains.unique_shard_indices->shard_to_index_domain_index,
+      ElementsAre(0, 0, 0, 1, 1, 1));
 }
 
 TEST_P(HloShardingTest, DisassembleWithPartialTile) {

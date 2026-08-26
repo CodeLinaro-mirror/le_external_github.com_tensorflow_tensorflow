@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef XLA_PYTHON_PJRT_IFRT_XLA_SHARDING_H_
 #define XLA_PYTHON_PJRT_IFRT_XLA_SHARDING_H_
 
-#include <atomic>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
