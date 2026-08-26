@@ -41,6 +41,7 @@ limitations under the License.
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "xla/frontend_attributes.h"
 #include "xla/hlo/analysis/alias_info.h"
 #include "xla/hlo/analysis/hlo_alias_analysis.h"
 #include "xla/hlo/analysis/hlo_dataflow_analysis.h"
@@ -1510,6 +1511,18 @@ absl::Status MemorySpaceAssignment::VerifyAndExportHeapSimulatorTrace(
       for (const HloUse& use : uses) {
         int64_t use_time =
             hlo_live_range->instruction_schedule().at(use.instruction);
+        // For asynchronous done operations, the source operand buffer was
+        // consumed by the corresponding asynchronous start instruction.
+        if (HloDataflowAnalysis::IsAsynchronousOperationDone(
+                use.instruction->opcode()) &&
+            use.operand_number == 0 && use.instruction->operand_count() > 0 &&
+            use.instruction->operand(0) != nullptr) {
+          const HloInstruction* async_start = use.instruction->operand(0);
+          auto it = hlo_live_range->instruction_schedule().find(async_start);
+          if (it != hlo_live_range->instruction_schedule().end()) {
+            use_time = it->second;
+          }
+        }
         if (use_time > last_use_time) {
           last_use_time = use_time;
           last_use_instruction = use.instruction;

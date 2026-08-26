@@ -672,14 +672,6 @@ MsaAlgorithm::MsaAlgorithm(HloModule* module, AllocationSequence* allocations,
 
 namespace {
 
-bool IsAsyncDynamicSliceOrDynamicUpdateSlice(
-    const HloInstruction* instruction) {
-  return instruction->IsAsynchronous() &&
-         (instruction->async_wrapped_opcode() == HloOpcode::kDynamicSlice ||
-          instruction->async_wrapped_opcode() ==
-              HloOpcode::kDynamicUpdateSlice);
-}
-
 // Finds the allocation value for operand 0 of async updates and dones. We make
 // sure these uses are associated with the AllocationValue whose position
 // is the direct source of the use.
@@ -687,10 +679,10 @@ AllocationValue* FindAllocationValueForAsyncOperationStateUse(
     const HloUse& use,
     absl::Span<AllocationValue> candidate_allocation_values) {
   CHECK_EQ(use.operand_number, 0);
+  HloPosition source_position = GetNonTrivialSourcePosition(
+      HloPosition{use.instruction->mutable_operand(0), use.operand_index});
   for (AllocationValue& allocation_value : candidate_allocation_values) {
-    if (allocation_value.defining_instruction() ==
-            use.instruction->operand(0) &&
-        allocation_value.defining_position().index == use.operand_index) {
+    if (allocation_value.defining_position() == source_position) {
       return &allocation_value;
     }
   }
@@ -755,14 +747,7 @@ AllocationValue* FindLatestAllocationValueForUse(
 AllocationValue* MsaAlgorithm::FindAllocationValueForUse(
     const HloUse& use, absl::Span<AllocationValue> candidate_allocation_values,
     int64_t use_time) const {
-  // Asynchronous DynamicSlice and DynamicUpdateSlice instructions have
-  // specialized liveness and buffer aliasing semantics that differ from
-  // communication async operations (such as AllReduce or AllGather). Do not
-  // restrict their uses to strict start/done pairs.
-  bool is_async_dus_done =
-      IsAsyncDynamicSliceOrDynamicUpdateSlice(use.instruction);
-
-  if (IsAsyncOperationStateUse(use) && !is_async_dus_done) {
+  if (IsAsyncOperationStateUse(use)) {
     // Case A: Async operation state uses. Note, this case covers uses of
     // bundled async state in traditional serial async chains and in pipelined
     // while loops.
@@ -775,19 +760,21 @@ AllocationValue* MsaAlgorithm::FindAllocationValueForUse(
   const absl::flat_hash_map<const HloInstruction*, int64_t>&
       instruction_schedule = hlo_live_range_.instruction_schedule();
 
-  bool is_pipelined_while_async_start_use =
-      has_async_pipelined_while_loops_ &&
-      (use.instruction->opcode() == HloOpcode::kWhile ||
-       (use.instruction->opcode() == HloOpcode::kTuple &&
-        GetWhileForBodyRoot(use.instruction) != nullptr));
+  HloInstruction* while_for_body_root =
+      (use.instruction->opcode() == HloOpcode::kTuple)
+          ? GetWhileForBodyRoot(use.instruction)
+          : nullptr;
 
-  bool allow_async_state_definitions =
-      is_async_dus_done || is_pipelined_while_async_start_use;
+  bool is_pipelined_while_async_start_use =
+      (use.instruction->opcode() == HloOpcode::kWhile &&
+       IsAsyncPipelinedWhileLoop(use.instruction)) ||
+      (while_for_body_root != nullptr &&
+       IsAsyncPipelinedWhileLoop(while_for_body_root));
 
   return FindLatestAllocationValueForUse(
       candidate_allocation_values, use_time, use.instruction->parent(),
       instruction_schedule,
-      /*skip_async_state_definitions=*/!allow_async_state_definitions);
+      /*skip_async_state_definitions=*/!is_pipelined_while_async_start_use);
 }
 
 void MsaAlgorithm::CreateAllocationValues(
@@ -877,10 +864,12 @@ void MsaAlgorithm::CreateAllocationValues(
     bool is_async_operation_state =
         IsAsyncOperationStateDefinition(
             allocation_value.defining_instruction()) ||
-        absl::c_any_of(allocation_value.uses(),
-                       [](const AllocationValue::Use& use) {
-                         return IsAsyncOperationStateUse(use.hlo_use);
-                       });
+        (has_async_pipelined_while_loops_ &&
+         IsBufferAliasedToAsyncPipelinedWhileLoop(allocation_value.value()) &&
+         absl::c_any_of(allocation_value.uses(),
+                        [](const AllocationValue::Use& use) {
+                          return IsAsyncOperationStateUse(use.hlo_use);
+                        }));
     // Requiring contiguous allocation ensures that buffers representing inputs
     // and outputs to the async computation maintain temporal contiguity
     // (preventing MSA from evicting them to default memory).
@@ -1031,6 +1020,7 @@ void MsaAlgorithm::FindAliases(
         HloInstruction* while_instruction =
             GetWhileForBodyRoot(use.hlo_use.instruction);
         if (while_instruction != nullptr &&
+            IsAsyncPipelinedWhileLoop(while_instruction) &&
             use.hlo_use.instruction->opcode() == HloOpcode::kTuple &&
             while_instruction->while_body()->num_parameters() > 0) {
           ShapeIndex index = use.hlo_use.operand_index;
@@ -2418,18 +2408,26 @@ MsaAlgorithm::GetContiguousLiveRangesForBuffer(const HloBuffer* buffer) const {
       ShapeIndex operand_index = use.operand_index;
       HloPosition source_position =
           GetNonTrivialSourcePosition(HloPosition{operand, operand_index});
+      bool is_async_contiguous =
+          (has_async_pipelined_while_loops_ &&
+           IsBufferAliasedToAsyncPipelinedWhileLoop(value) &&
+           (IsAsyncOperationStateDefinition(source_position.instruction) ||
+            IsAsyncOperationStateUse(use)));
       if (options_.position_requires_contiguous_allocation_fn(
               source_position) ||
-          IsAsyncOperationStateDefinition(source_position.instruction) ||
-          IsAsyncOperationStateUse(use)) {
+          is_async_contiguous) {
         VLOG(3) << "Adding use " << use.ToString() << " to contiguous position "
                 << source_position.ToString();
         contiguous_positions_to_uses[source_position].push_back(use);
       }
     }
     for (const HloPosition& position : value->positions()) {
+      bool is_async_def_contiguous =
+          (has_async_pipelined_while_loops_ &&
+           IsBufferAliasedToAsyncPipelinedWhileLoop(value) &&
+           IsAsyncOperationStateDefinition(position.instruction));
       if (options_.position_requires_contiguous_allocation_fn(position) ||
-          IsAsyncOperationStateDefinition(position.instruction)) {
+          is_async_def_contiguous) {
         if (!(contiguous_positions_to_uses.contains(position))) {
           LOG(WARNING) << "Position " << position.ToString()
                        << " is required to be contiguous but has no uses, "
@@ -2450,9 +2448,13 @@ MsaAlgorithm::GetContiguousLiveRangesForBuffer(const HloBuffer* buffer) const {
         position.instruction->parent() != nullptr &&
         position.instruction->parent()->root_instruction() != nullptr &&
         IsWhileBodyOrConditionComputation(position.instruction->parent())) {
-      end_time = std::max(
-          end_time, hlo_live_range_.instruction_schedule().at(
-                        position.instruction->parent()->root_instruction()));
+      HloInstruction* while_caller = GetWhileForBodyRoot(
+          position.instruction->parent()->root_instruction());
+      if (while_caller != nullptr && IsAsyncPipelinedWhileLoop(while_caller)) {
+        end_time = std::max(
+            end_time, hlo_live_range_.instruction_schedule().at(
+                          position.instruction->parent()->root_instruction()));
+      }
     }
     for (const HloUse& use : uses) {
       end_time = std::max(end_time, GetCorrectedUseTime(use));
@@ -5684,14 +5686,19 @@ absl::StatusOr<AllocationResult> MsaAlgorithm::AllocateAllocationValues(
         // tuple elements) adopt identical starting offsets in alternate memory.
         AliasedOffset* preferred_offset = nullptr;
         auto is_while_tuple_position = [](const HloPosition& pos) {
-          if (pos.instruction->opcode() == HloOpcode::kParameter ||
-              pos.instruction->opcode() == HloOpcode::kWhile) {
+          if (pos.instruction->opcode() == HloOpcode::kParameter) {
+            return true;
+          }
+          if (pos.instruction->opcode() == HloOpcode::kWhile &&
+              IsAsyncPipelinedWhileLoop(pos.instruction)) {
             return true;
           }
           HloComputation* comp = pos.instruction->parent();
           if (comp != nullptr && pos.instruction == comp->root_instruction() &&
               pos.instruction->opcode() == HloOpcode::kTuple) {
-            return true;
+            HloInstruction* while_caller = GetWhileForBodyRoot(pos.instruction);
+            return while_caller != nullptr &&
+                   IsAsyncPipelinedWhileLoop(while_caller);
           }
           return false;
         };
@@ -5723,13 +5730,12 @@ absl::StatusOr<AllocationResult> MsaAlgorithm::AllocateAllocationValues(
           }
         }
         if (preferred_offset == nullptr) {
-          if (!has_async_pipelined_while_loops_) {
-            auto comp_it = preferred_offset_for_computation.find(
-                allocation_value_to_update.computation());
-            if (comp_it != preferred_offset_for_computation.end()) {
-              preferred_offset = comp_it->second;
-            }
-          } else if (is_while_tuple_position(
+          auto comp_it = preferred_offset_for_computation.find(
+              allocation_value_to_update.computation());
+          if (comp_it != preferred_offset_for_computation.end()) {
+            preferred_offset = comp_it->second;
+          } else if (has_async_pipelined_while_loops_ &&
+                     is_while_tuple_position(
                          allocation_value_to_update.defining_position())) {
             auto comp_it =
                 pipelined_while_preferred_offset_for_computation_.find(
@@ -6434,7 +6440,7 @@ void MsaAlgorithm::MaybeCreateMirroredParentAllocationForWhileUse(
   // Special case for while loops since the root offset must agree with
   // other offsets: remember the preferred offset for the while loop body.
   AliasedOffset* offset = GetAliasedOffset(*aliased_allocation);
-  if (has_async_pipelined_while_loops_) {
+  if (IsAsyncPipelinedWhileLoop(hlo_use.instruction)) {
     SynchronizeAliasedWhileLoopOffsets(hlo_use, *aliased_allocation, offset);
   } else {
     preferred_offset_for_computation[hlo_use.instruction->while_body()] =

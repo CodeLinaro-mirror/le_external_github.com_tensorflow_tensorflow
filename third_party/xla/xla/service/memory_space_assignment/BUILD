@@ -49,6 +49,7 @@ cc_library(
         ":options",
         ":simulator",
         ":slice",
+        "//xla:frontend_attributes",
         "//xla:shape_util",
         "//xla:status_macros",
         "//xla:util",
