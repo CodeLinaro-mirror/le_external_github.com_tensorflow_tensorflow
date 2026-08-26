@@ -2587,6 +2587,26 @@ void GpuCollectiveBufferAnalysis(
     // Special Copy Insertion Case A: Entry input
     if (is_hlo_buffer_s1 && !entry_input_values.empty()) {
       for (const HloValue* input_value : entry_input_values) {
+        if (input_value->defining_instruction()->opcode() ==
+            HloOpcode::kParameter) {
+          const Shape& shape = input_value->shape();
+          if (shape.has_layout() &&
+              shape.layout().memory_space() ==
+                  static_cast<int64_t>(MemorySpaceColor::kCollective)) {
+            VLOG(2) << "Skipping Case A copy insertion for S1 entry parameter: "
+                    << input_value->ToShortString();
+            continue;
+          }
+          int64_t param_no =
+              input_value->defining_instruction()->parameter_number();
+          if (module->input_output_alias_config().ParameterHasAlias(
+                  param_no, input_value->defining_index())) {
+            VLOG(2) << "Skipping Case A copy insertion for aliased persistent "
+                       "parameter: "
+                    << input_value->ToShortString();
+            continue;
+          }
+        }
         VLOG(2) << "Special Copy Insertion Case A: Entry input "
                 << input_value->ToShortString()
                 << " is associated with S1 HloBuffer. Inserting copy.";
@@ -2598,6 +2618,15 @@ void GpuCollectiveBufferAnalysis(
     // Special Copy Insertion Case B: Entry output
     if (is_hlo_buffer_s1 && !live_out_values.empty()) {
       for (const HloValue* live_out_value : live_out_values) {
+        const HloPosition& defining_pos = live_out_value->defining_position();
+        if (defining_pos.shape().has_layout() &&
+            defining_pos.shape().layout().memory_space() ==
+                static_cast<int64_t>(MemorySpaceColor::kCollective)) {
+          VLOG(2) << "Skipping Case B copy insertion for S1 live-out value: "
+                  << live_out_value->ToShortString();
+          continue;
+        }
+
         VLOG(2) << "Special Copy Insertion Case B: Live-out value is "
                 << "associated with S1 HloBuffer. Searching for entry-level "
                    "ROOT position for "
@@ -2613,6 +2642,15 @@ void GpuCollectiveBufferAnalysis(
               VLOG(2) << "Skipping ENTRY ROOT copy insertion because it is "
                          "already a copy instruction: "
                       << pos.instruction->name();
+              marked_for_copy = true;
+              continue;
+            }
+
+            if (module->input_output_alias_config().OutputHasAlias(pos.index)) {
+              VLOG(2)
+                  << "Skipping Case B copy insertion for aliased persistent "
+                     "output at index "
+                  << pos.index.ToString();
               marked_for_copy = true;
               continue;
             }
