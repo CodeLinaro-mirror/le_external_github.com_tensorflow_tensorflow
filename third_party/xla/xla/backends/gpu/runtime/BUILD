@@ -1960,8 +1960,9 @@ cc_library(
     hdrs = ["collective_kernel_thunk.h"],
     deps = [
         ":all_reduce",
-        ":collective_kernel_api",
+        ":collective_cliques",
         ":collective_kernel_thunk_proto_cc",
+        ":collective_memory",
         ":collective_params",
         ":collective_thunk",
         ":collective_thunk_proto_cc",
@@ -1973,7 +1974,9 @@ cc_library(
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/backends/gpu/collectives:gpu_clique_key",
+        "//xla/backends/gpu/collectives:gpu_communicator",
         "//xla/core/collectives:rank_id",
+        "//xla/core/collectives:symmetric_memory",
         "//xla/runtime:buffer_use",
         "//xla/runtime:device_id",
         "//xla/service:buffer_assignment",
@@ -1991,6 +1994,7 @@ cc_library(
         "//xla/stream_executor/gpu:all_reduce_kernel",
         "//xla/stream_executor/gpu:collective_kernel_metadata",
         "//xla/tsl/util:safe_reinterpret_cast",
+        "//xla/tsl/util:tied_ref",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -2352,12 +2356,12 @@ cc_library(
     deps = [
         ":collective_clique_requests",
         ":collective_cliques",
-        ":collective_kernel_api",
         ":collective_memory",
         ":collective_memory_requests",
         ":collective_thunk",
         ":collective_thunk_proto_cc",
         ":command_state",
+        ":multi_gpu_barrier",
         ":ragged_all_to_all",
         ":thunk",
         ":thunk_proto_cc",
@@ -2938,8 +2942,8 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         ":collective_clique_requests",
-        ":collective_kernel_api",
         ":collective_params",
+        ":multi_gpu_barrier",
         "//xla:status_macros",
         "//xla:util",
         "//xla/backends/gpu/collectives:gpu_clique",
@@ -3423,9 +3427,9 @@ cc_library(
 )
 
 cc_library(
-    name = "collective_kernel_api",
-    srcs = ["collective_kernel_api.cc"],
-    hdrs = ["collective_kernel_api.h"],
+    name = "multi_gpu_barrier",
+    srcs = ["multi_gpu_barrier.cc"],
+    hdrs = ["multi_gpu_barrier.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
         "//xla:status_macros",
