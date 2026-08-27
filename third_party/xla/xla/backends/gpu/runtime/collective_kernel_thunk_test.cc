@@ -372,6 +372,7 @@ absl::StatusOr<se::DeviceAddressBase> RunCollectiveKernelThunk(
   initialize_params.stream = stream.get();
   initialize_params.buffer_allocations = &buffer_allocations;
   initialize_params.collective_params = &collective_params;
+  initialize_params.collective_cliques = &collective_cliques;
   initialize_params.src = {kKernelSource};
   initialize_params.collective_memory = &collective_memory;
 
