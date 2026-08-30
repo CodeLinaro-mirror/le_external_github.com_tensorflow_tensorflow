@@ -15,17 +15,32 @@ limitations under the License.
 
 #include "xla/tsl/platform/cloud/curl_http_request.h"
 
+#include <stdlib.h>
+
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
+#include "third_party/curl/src/include/curl/curl.h"
+#include "third_party/curl/src/include/curl/system.h"
 #include "xla/tsl/lib/core/status_test_util.h"
+#include "xla/tsl/platform/cloud/http_request.h"
+#include "xla/tsl/platform/env.h"
+#include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/test.h"
 #include "tsl/platform/mem.h"
 #include "tsl/platform/path.h"
-#include "tsl/platform/platform.h"
 
 namespace tsl {
 namespace {
@@ -333,8 +348,23 @@ TEST(CurlHttpRequestTest, GetRequest_Direct) {
 }
 
 TEST(CurlHttpRequestTest, GetRequest_CustomCaInfoFlag) {
-  static char set_var[] = "CURL_CA_BUNDLE=test";
-  putenv(set_var);
+  // RAII guard to save the preexisting CURL_CA_BUNDLE environment variable
+  // and restore it on scope exit, preventing state pollution across test runs.
+  const char* old_ca_bundle = getenv("CURL_CA_BUNDLE");
+  std::string old_val = old_ca_bundle != nullptr ? old_ca_bundle : "";
+  bool had_ca_bundle = old_ca_bundle != nullptr;
+  setenv("CURL_CA_BUNDLE", "test", 1);
+  struct EnvCleanup {
+    bool had_var;
+    std::string prev_val;
+    ~EnvCleanup() {
+      if (had_var) {
+        setenv("CURL_CA_BUNDLE", prev_val.c_str(), 1);
+      } else {
+        unsetenv("CURL_CA_BUNDLE");
+      }
+    }
+  } cleanup{had_ca_bundle, old_val};
   FakeLibCurl libcurl("get response", 200);
   CurlHttpRequest http_request(&libcurl);
 
