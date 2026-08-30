@@ -22,7 +22,6 @@ limitations under the License.
 #include <cstdint>
 #include <ios>
 #include <limits>
-#include <list>
 #include <memory>
 #include <string>
 #include <string_view>
