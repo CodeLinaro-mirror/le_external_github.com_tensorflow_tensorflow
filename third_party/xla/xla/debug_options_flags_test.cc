@@ -65,6 +65,27 @@ TEST(DebugOptions, GetDebugOptionsFromProtoAndFlags_WithExistingProto) {
   EXPECT_EQ(options.xla_backend_optimization_level(), 1);
 }
 
+TEST(DebugOptions, GetDebugOptionsFromProtoAndFlags_ForceConfig) {
+  int* pargc;
+  std::vector<char*>* pargv;
+  ResetFlagsFromEnvForTesting("XLA_FLAGS", &pargc, &pargv);
+  const char* forced_config =
+      "backend: TRITON\n"
+      "backend_config {\n"
+      "  triton {\n"
+      "    block_m: 64\n"
+      "    block_n: 64\n"
+      "  }\n"
+      "}";
+  tsl::setenv("XLA_FLAGS",
+              absl::StrFormat("--xla_force_config='%s'", forced_config).c_str(),
+              1);
+
+  DebugOptions empty_options;
+  DebugOptions options = GetDebugOptionsFromProtoAndFlags(&empty_options);
+  EXPECT_EQ(options.xla_force_config(), forced_config);
+}
+
 TEST(DebugOptions, GetDebugOptionsFromProtoAndFlags_PtxCompilerExtraFlags) {
   int* pargc;
   std::vector<char*>* pargv;

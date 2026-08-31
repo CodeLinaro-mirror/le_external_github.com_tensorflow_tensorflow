@@ -999,6 +999,67 @@ TEST_F(ConfigAssignerPassTest, CudnnFusionForbidsSpills) {
   EXPECT_FALSE(options.allow_reg_spills_fn(*instr, autotuner::Backend::CUDNN));
 }
 
+TEST_F(ConfigAssignerPassTest, ForceConfigPropagatesToConfigAssignerOptions) {
+  DebugOptions debug_options = GetDebugOptionsForTest();
+  const std::string forced_config =
+      "backend: TRITON\n"
+      "backend_config {\n"
+      "  triton {\n"
+      "    block_m: 64\n"
+      "    block_n: 64\n"
+      "  }\n"
+      "}";
+  debug_options.set_xla_force_config(forced_config);
+  auto options =
+      GetConfigAssignerOptions(debug_options, /*is_deviceless=*/false);
+  EXPECT_EQ(options.force_config, forced_config);
+}
+
+TEST_F(ConfigAssignerPassTest, ForceConfigOverridesAutotuning) {
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                       ParseAndReturnVerifiedModule(kCublasCustomCallHlo));
+
+  const std::string forced_config =
+      "backend: CUBLASLT\n"
+      "backend_config {\n"
+      "  gemm {\n"
+      "    algorithm: 9999\n"
+      "  }\n"
+      "}";
+  module->mutable_config().mutable_debug_options().set_xla_force_config(
+      forced_config);
+
+  tsl::thread::ThreadPool thread_pool(tsl::Env::Default(), "autotuning",
+                                      /*num_threads=*/4);
+  std::vector<std::unique_ptr<CodegenBackend>> backends;
+  GpuCompiler::GpuTargetConfig target_config(stream_executor_);
+  backends.push_back(std::make_unique<CublasLtBackend>(
+      stream_executor_, &module->config().debug_options(), &compiler_,
+      &target_config));
+
+  auto get_backends_fn =
+      [backends =
+           std::make_shared<std::vector<std::unique_ptr<CodegenBackend>>>(
+               std::move(backends))]() mutable { return std::move(*backends); };
+  ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<ConfigAssignerPass> pass,
+      ConfigAssignerPass::Create(
+          std::move(get_backends_fn), module->config().debug_options(),
+          target_config.device_description.gpu_compute_capability(),
+          stream_executor_, &thread_pool, &target_config,
+          /*alias_info=*/nullptr, /*mlir_context=*/nullptr,
+          /*shape_size_fn=*/[](const Shape& shape) { return 0; },
+          allocator_.get()));
+  EXPECT_THAT(pass->Run(module.get(), /*execution_threads=*/{}),
+              absl_testing::IsOkAndHolds(true));
+  auto gemm =
+      module->entry_computation()->GetInstructionWithName("custom-call.1");
+  ASSERT_OK_AND_ASSIGN(auto gpu_backend_config,
+                       gemm->backend_config<GpuBackendConfig>());
+  EXPECT_EQ(gpu_backend_config.gemm_backend_config().selected_algorithm(),
+            9999);
+}
+
 TEST_F(ConfigAssignerPassTest, CustomFusionForbidsSpills) {
   auto options = GetCodegenOrchestratorOptions(GetDebugOptionsForTest());
 
