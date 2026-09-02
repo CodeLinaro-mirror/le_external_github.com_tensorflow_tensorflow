@@ -315,10 +315,13 @@ Attribute TiledLayoutAttr::parse(AsmParser& parser, Type type) {
         }
       }
       first = false;
-      if (failed(parser.parseInteger(size))) {
+      if (succeeded(parser.parseOptionalStar())) {
+        tile.add_dimensions(xla::Tile::kCombineDimension);
+      } else if (failed(parser.parseInteger(size))) {
         return {};
+      } else {
+        tile.add_dimensions(size);
       }
-      tile.add_dimensions(size);
     }
   }
   SmallVector<int64_t, 2> tile_strides;
@@ -365,10 +368,18 @@ AffineMap TiledLayoutAttr::getAffineMap() const {
       new_exprs.push_back(exprs[i]);
     }
     for (int64_t i = 0; i < dimensions.size(); ++i) {
-      new_exprs.push_back(exprs[untiled_rank + i].floorDiv(dimensions[i]));
+      if (dimensions[i] == xla::Tile::kCombineDimension) {
+        new_exprs.push_back(getAffineConstantExpr(0, getContext()));
+      } else {
+        new_exprs.push_back(exprs[untiled_rank + i].floorDiv(dimensions[i]));
+      }
     }
     for (int64_t i = 0; i < dimensions.size(); ++i) {
-      new_exprs.push_back(exprs[untiled_rank + i] % dimensions[i]);
+      if (dimensions[i] == xla::Tile::kCombineDimension) {
+        new_exprs.push_back(exprs[untiled_rank + i]);
+      } else {
+        new_exprs.push_back(exprs[untiled_rank + i] % dimensions[i]);
+      }
     }
     exprs = std::move(new_exprs);
   }
@@ -377,6 +388,9 @@ AffineMap TiledLayoutAttr::getAffineMap() const {
   SmallVector<int64_t> strides = getExpandedStrides();
   CHECK_EQ(strides.size(), exprs.size());
   for (int64_t i = 0; i < exprs.size(); ++i) {
+    if (exprs[i] == getAffineConstantExpr(0, getContext())) {
+      continue;
+    }
     AffineExpr stride_expr =
         ShapedType::isDynamic(strides[i])
             ? getAffineSymbolExpr(num_symbols++, getContext())
@@ -415,6 +429,16 @@ FailureOr<SmallVector<int64_t>> getExpandedShape(
         llvm::ArrayRef(shape).take_back(tile_ndims);
     llvm::SmallVector<int64_t> new_tiled_shape(2 * tile_ndims);
     for (int64_t i = 0; i < tile_ndims; ++i) {
+      if (tile.dimension(i) == xla::Tile::kCombineDimension) {
+        new_tiled_shape[i] = 1;
+        new_tiled_shape[tile_ndims + i] = tiled_shape[i];
+        continue;
+      }
+      if (tiled_shape[i] == xla::Tile::kCombineDimension) {
+        new_tiled_shape[i] = xla::Tile::kCombineDimension;
+        new_tiled_shape[tile_ndims + i] = tile.dimension(i);
+        continue;
+      }
       if (require_alignment && (ShapedType::isDynamic(tiled_shape[i]) ||
                                 tiled_shape[i] % tile.dimension(i) != 0)) {
         return failure();
@@ -449,7 +473,11 @@ SmallVector<int64_t> TiledLayoutAttr::getContiguousTileStrides(
     if (d >= shape.size() - first_tile_rank) {
       assert(first_tile != nullptr);
       const int64_t tile_d = d - (shape.size() - first_tile_rank);
-      stride *= llvm::divideCeil(shape[d], first_tile->dimension(tile_d));
+      if (first_tile->dimension(tile_d) == xla::Tile::kCombineDimension) {
+        stride *= shape[d] == 0 ? 0 : 1;
+      } else {
+        stride *= llvm::divideCeil(shape[d], first_tile->dimension(tile_d));
+      }
     } else {
       stride *= shape[d];
     }
@@ -479,7 +507,11 @@ int64_t TiledLayoutAttr::getNumTrailingDimsWithContiguousTiles(
         shape[d] != ShapedType::kDynamic) {
       assert(first_tile != nullptr);
       const int64_t tile_d = d - (shape.size() - first_tile_rank);
-      size_tiles = llvm::divideCeil(shape[d], first_tile->dimension(tile_d));
+      if (first_tile->dimension(tile_d) == xla::Tile::kCombineDimension) {
+        size_tiles = shape[d] == 0 ? 0 : 1;
+      } else {
+        size_tiles = llvm::divideCeil(shape[d], first_tile->dimension(tile_d));
+      }
     } else {
       size_tiles = shape[d];
     }
@@ -522,16 +554,34 @@ FailureOr<SmallVector<int64_t>> getExpandedStrides(
                                   /*require_alignment=*/true));
   const int64_t rank = tile_strides.size();
   strides.resize_for_overwrite(rank + expanded_tile.size());
-  int64_t first_tile_size = llvm::product_of(first_tile.dimensions());
+  int64_t first_tile_size = 1;
+  for (int64_t dim : first_tile.dimensions()) {
+    if (dim == xla::Tile::kCombineDimension ||
+        first_tile_size == ShapedType::kDynamic) {
+      first_tile_size = ShapedType::kDynamic;
+    } else {
+      first_tile_size *= dim;
+    }
+  }
   int64_t tile_size = 1;
   for (int64_t d = strides.size() - 1; d >= 0; --d) {
     if (d >= rank) {
       const int64_t new_stride = tile_size;
-      tile_size *= expanded_tile[d - rank];
+      int64_t dim = expanded_tile[d - rank];
+      if (dim == xla::Tile::kCombineDimension ||
+          tile_size == ShapedType::kDynamic) {
+        tile_size = ShapedType::kDynamic;
+      } else {
+        tile_size *= dim;
+      }
       strides[d] = new_stride;
     } else {
       if (ShapedType::isStatic(strides[d])) {
-        strides[d] *= first_tile_size;
+        if (first_tile_size == ShapedType::kDynamic) {
+          strides[d] = ShapedType::kDynamic;
+        } else {
+          strides[d] *= first_tile_size;
+        }
       }
     }
   }
