@@ -98,7 +98,12 @@ class ModelAnalyzer():
     if kwargs.get("experimental_use_mlir", False):
       print(
           wrap_converter.wrapped_flat_buffer_file_to_mlir(
-              tflite_model, input_is_filepath
+              tflite_model,
+              input_is_filepath,
+              cl_options=[
+                  "-mlir-print-local-scope",
+                  "-mlir-elide-elementsattrs-if-larger=16",
+              ],
           )
       )
     else:
