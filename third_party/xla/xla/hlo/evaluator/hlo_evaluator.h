@@ -21,7 +21,9 @@ limitations under the License.
 #define _USE_MATH_DEFINES
 
 #include <complex>
+#include <cstddef>  // NOLINT(build/include_order)
 #include <cstdint>
+#include <deque>  // NOLINT(build/include_order)
 #include <functional>
 #include <memory>
 #include <optional>
@@ -73,10 +75,134 @@ class HloEvaluator : public ConstDfsHloVisitorWithDefault,
 
   // Only evaluate up to max_loop_iterations per while-loop execution if
   // specified.
-  explicit HloEvaluator(int64_t max_loop_iterations = -1);
+  explicit HloEvaluator(int64_t max_loop_iterations = -1,
+                        bool cache_call_computation_evals = false);
 
   // Returns true if the opcode is implemented by HloEvaluator. False otherwise.
   static bool IsOpcodeImplemented(HloOpcode opcode);
+
+  struct SpecializationKey {
+    const HloComputation* computation = nullptr;
+    std::vector<LiteralSlice> arguments;
+
+    SpecializationKey() = default;
+    SpecializationKey(const HloComputation* computation,
+                      absl::Span<const Literal* const> args)
+        : computation(computation) {
+      arguments.reserve(args.size());
+      for (const Literal* arg : args) {
+        arguments.push_back(LiteralSlice(*arg));
+      }
+    }
+    SpecializationKey(const HloComputation* computation,
+                      std::vector<LiteralSlice> args)
+        : computation(computation), arguments(std::move(args)) {}
+
+    bool operator==(const SpecializationKey& other) const {
+      if (computation != other.computation ||
+          arguments.size() != other.arguments.size()) {
+        return false;
+      }
+      for (size_t i = 0; i < arguments.size(); ++i) {
+        if (!arguments[i].Equal(other.arguments[i],
+                                /*layout_sensitive=*/true)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    template <typename H>
+    friend H AbslHashValue(H h, const SpecializationKey& key) {
+      h = H::combine(std::move(h), key.computation, key.arguments.size());
+      for (const auto& arg : key.arguments) {
+        h = H::combine(std::move(h), Literal::AbslHashable<true>(arg));
+      }
+      return h;
+    }
+  };
+
+  struct SpecializationCache {
+    using EntryMap = absl::flat_hash_map<SpecializationKey, Literal>;
+    using iterator = EntryMap::iterator;
+    using const_iterator = EntryMap::const_iterator;
+
+    std::deque<Literal> arg_storage;
+    EntryMap entries;
+
+    SpecializationCache() = default;
+    SpecializationCache(const SpecializationCache&) = delete;
+    SpecializationCache& operator=(const SpecializationCache&) = delete;
+    SpecializationCache(SpecializationCache&&) = delete;
+    SpecializationCache& operator=(SpecializationCache&&) = delete;
+
+    void Clear() {
+      entries.clear();
+      arg_storage.clear();
+    }
+    size_t size() const { return entries.size(); }
+    bool empty() const { return entries.empty(); }
+    iterator begin() { return entries.begin(); }
+    iterator end() { return entries.end(); }
+    const_iterator begin() const { return entries.begin(); }
+    const_iterator end() const { return entries.end(); }
+
+    const Literal* Find(const SpecializationKey& key) const {
+      auto it = entries.find(key);
+      if (it != entries.end()) {
+        return &it->second;
+      }
+      return nullptr;
+    }
+
+    const Literal* Find(const HloComputation* computation,
+                        absl::Span<const Literal* const> args) const {
+      return Find(SpecializationKey(computation, args));
+    }
+
+    void Insert(const HloComputation* computation,
+                absl::Span<const Literal* const> args, Literal result) {
+      std::vector<LiteralSlice> slices;
+      slices.reserve(args.size());
+      for (const Literal* arg : args) {
+        arg_storage.push_back(arg->Clone());
+        slices.push_back(LiteralSlice(arg_storage.back()));
+      }
+      entries.emplace(SpecializationKey(computation, std::move(slices)),
+                      std::move(result));
+    }
+  };
+
+  bool cache_call_computation_evals() const {
+    return cache_call_computation_evals_;
+  }
+  void set_cache_call_computation_evals(bool enable) {
+    cache_call_computation_evals_ = enable;
+    if (cache_call_computation_evals_ && specialization_cache_ == nullptr) {
+      owned_specialization_cache_ = std::make_unique<SpecializationCache>();
+      specialization_cache_ = owned_specialization_cache_.get();
+    }
+  }
+
+  const SpecializationCache& specialization_cache() const;
+
+  void ClearSpecializationCache() {
+    if (specialization_cache_ != nullptr) {
+      specialization_cache_->Clear();
+    }
+  }
+
+  void set_specialization_cache(SpecializationCache* cache) {
+    if (cache != nullptr && cache != owned_specialization_cache_.get()) {
+      owned_specialization_cache_.reset();
+    }
+    specialization_cache_ = cache;
+  }
+
+  bool has_borrowed_specialization_cache() const {
+    return specialization_cache_ != nullptr &&
+           owned_specialization_cache_ == nullptr;
+  }
 
   // Called by the evaluator to create an embedded evaluator to execute a
   // sub-region of control flow. Subclasses should override this to return an
@@ -650,6 +776,13 @@ class HloEvaluator : public ConstDfsHloVisitorWithDefault,
 
   // Mutable evaluation state that holds the state of an in-progress evaluation.
   EvaluationState state_;
+
+  // Guard for call computation evaluation caching.
+  bool cache_call_computation_evals_ = false;
+  // Owns the cache storage if this is the top-level evaluator.
+  std::unique_ptr<SpecializationCache> owned_specialization_cache_;
+  // Non-owning pointer to the active cache (owned or borrowed from parent).
+  SpecializationCache* specialization_cache_ = nullptr;
 
   HloEvaluator(const HloEvaluator&) = delete;
   HloEvaluator& operator=(const HloEvaluator&) = delete;

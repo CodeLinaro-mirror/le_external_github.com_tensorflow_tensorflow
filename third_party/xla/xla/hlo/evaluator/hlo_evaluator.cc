@@ -35,6 +35,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/base/no_destructor.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/inlined_vector.h"
@@ -893,8 +894,14 @@ std::optional<ParsedWhileLoop> PatternMatchParseWhileLoop(
 // in the type-agnostic handler. For e.g., HandleGetTupleElement in the parent
 // type-agnostic evaluator will be able to accept Tuple primitive type, whereas
 // HloEvaluatorTypedVisitor cannot.
-HloEvaluator::HloEvaluator(int64_t max_loop_iterations)
-    : max_loop_iterations_(max_loop_iterations) {
+HloEvaluator::HloEvaluator(int64_t max_loop_iterations,
+                           bool cache_call_computation_evals)
+    : max_loop_iterations_(max_loop_iterations),
+      cache_call_computation_evals_(cache_call_computation_evals) {
+  if (cache_call_computation_evals_) {
+    owned_specialization_cache_ = std::make_unique<SpecializationCache>();
+    specialization_cache_ = owned_specialization_cache_.get();
+  }
   for (int i = PrimitiveType_MIN; i < PrimitiveType_ARRAYSIZE; ++i) {
     if (!primitive_util::IsArrayType(PrimitiveType{i})) {
       continue;
@@ -950,12 +957,25 @@ HloEvaluator::HloEvaluator(int64_t max_loop_iterations)
       });
 }
 
+const HloEvaluator::SpecializationCache& HloEvaluator::specialization_cache()
+    const {
+  if (specialization_cache_ != nullptr) {
+    return *specialization_cache_;
+  }
+  static const absl::NoDestructor<SpecializationCache> empty_cache;
+  return *empty_cache;
+}
+
 absl::StatusOr<Literal> HloEvaluator::Evaluate(
     const HloComputation& computation, absl::Span<const Literal* const> args) {
   CHECK(computation.parent() != nullptr);
   XLA_VLOG_LINES(
       2, "HloEvaluator::Evaluate computation:\n" + computation.ToString());
   OnEvaluateComputation(computation);
+
+  if (!has_borrowed_specialization_cache()) {
+    ClearSpecializationCache();
+  }
 
   if (args.size() != computation.num_parameters()) {
     return InvalidArgument(
@@ -1014,6 +1034,9 @@ absl::StatusOr<Literal> HloEvaluator::Evaluate(
     bool recursively_evaluate_nonconstant_operands,
     const absl::flat_hash_map<const HloInstruction*, const LiteralBase*>&
         substitutions) {
+  if (!has_borrowed_specialization_cache()) {
+    ClearSpecializationCache();
+  }
   ScopedEvaluateState evaluate_state(&state_);
 
   // Use the substitutions to manually set instructions results to a specific
@@ -3581,17 +3604,46 @@ absl::Status HloEvaluator::HandleCall(const HloInstruction* call) {
 
   std::vector<const Literal*> arg_literals;
   arg_literals.reserve(operands.size());
-  for (auto operand : operands) {
+  for (const HloInstruction* operand : operands) {
     const Literal& arg_literal = GetEvaluatedLiteralFor(operand);
     arg_literals.push_back(&arg_literal);
+  }
+
+  if (!cache_call_computation_evals_) {
+    std::unique_ptr<HloEvaluator> embedded_evaluator =
+        CreateEmbedded(max_loop_iterations_);
+    embedded_evaluator->set_dynamic_dimension_inference(
+        dynamic_dimension_inference_);
+    ABSL_ASSIGN_OR_RETURN(Literal result,
+                     embedded_evaluator->Evaluate(*computation, arg_literals));
+    SetEvaluatedLiteralFor(call, std::move(result));
+    return absl::OkStatus();
+  }
+
+  if (specialization_cache_ == nullptr) {
+    owned_specialization_cache_ = std::make_unique<SpecializationCache>();
+    specialization_cache_ = owned_specialization_cache_.get();
+  }
+
+  const Literal* cached_result =
+      specialization_cache_->Find(computation, arg_literals);
+  if (cached_result != nullptr) {
+    SetEvaluatedLiteralFor(call, cached_result->Clone());
+    return absl::OkStatus();
   }
 
   std::unique_ptr<HloEvaluator> embedded_evaluator =
       CreateEmbedded(max_loop_iterations_);
   embedded_evaluator->set_dynamic_dimension_inference(
       dynamic_dimension_inference_);
+  embedded_evaluator->set_specialization_cache(specialization_cache_);
+  embedded_evaluator->set_cache_call_computation_evals(true);
   ABSL_ASSIGN_OR_RETURN(Literal result,
                    embedded_evaluator->Evaluate(*computation, arg_literals));
+
+  if (specialization_cache_->Find(computation, arg_literals) == nullptr) {
+    specialization_cache_->Insert(computation, arg_literals, result.Clone());
+  }
 
   SetEvaluatedLiteralFor(call, std::move(result));
   return absl::OkStatus();
