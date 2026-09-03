@@ -407,6 +407,39 @@ TEST_F(BufferComparatorTest, VeryLargeArray) {
   EXPECT_FALSE(equal2);
 }
 
+TEST_F(BufferComparatorTest, ErrorReportGeneratedOnMismatch) {
+  std::vector<float> current = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> expected = {1.0f, 2.5f, 3.0f, 4.0f};
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<se::Stream> stream,
+                       stream_exec_->CreateStream());
+
+  se::DeviceAddressHandle current_buffer(
+      stream_exec_, stream_exec_->AllocateArray<float>(current.size()));
+  se::DeviceAddressHandle expected_buffer(
+      stream_exec_, stream_exec_->AllocateArray<float>(expected.size()));
+
+  ASSERT_OK(stream->Memcpy(current_buffer.address_ptr(), current.data(),
+                           current_buffer.address().size()));
+  ASSERT_OK(stream->Memcpy(expected_buffer.address_ptr(), expected.data(),
+                           expected_buffer.address().size()));
+  ASSERT_OK(stream->BlockHostUntilDone());
+
+  BufferComparator comparator(
+      ShapeUtil::MakeShape(F32, {static_cast<int64_t>(current.size())}),
+      /*tolerance=*/0.01);
+  std::string error_report;
+  ASSERT_OK_AND_ASSIGN(
+      bool equal,
+      comparator.CompareEqual(stream.get(), current_buffer.address(),
+                              expected_buffer.address(), &error_report));
+  EXPECT_FALSE(equal);
+  EXPECT_THAT(error_report, ::testing::HasSubstr("Mismatch count: 1 / 4"));
+  EXPECT_THAT(error_report, ::testing::HasSubstr("Max relative difference:"));
+  EXPECT_THAT(error_report, ::testing::HasSubstr("Max absolute difference:"));
+  EXPECT_THAT(error_report,
+              ::testing::HasSubstr("First 1 mismatch sample(s):"));
+}
+
 }  // namespace
 }  // namespace gpu
 }  // namespace xla
