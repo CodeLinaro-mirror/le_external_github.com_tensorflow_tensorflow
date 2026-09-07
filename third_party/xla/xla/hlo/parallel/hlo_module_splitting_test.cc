@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/hlo/separate_compilation/hlo_module_splitting.h"
+#include "xla/hlo/parallel/hlo_module_splitting.h"
 
 #include <memory>
 
@@ -29,7 +29,7 @@ limitations under the License.
 #include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/platform/statusor.h"
 
-namespace xla::separate_compilation {
+namespace xla::parallel {
 namespace {
 
 using ::testing::UnorderedElementsAreArray;
@@ -373,4 +373,4 @@ ENTRY %main() -> f32[] {
 }
 
 }  // namespace
-}  // namespace xla::separate_compilation
+}  // namespace xla::parallel

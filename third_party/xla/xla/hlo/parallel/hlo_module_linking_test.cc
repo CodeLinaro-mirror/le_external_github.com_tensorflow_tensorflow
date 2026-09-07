@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/hlo/separate_compilation/hlo_module_linking.h"
+#include "xla/hlo/parallel/hlo_module_linking.h"
 
 #include <memory>
 #include <utility>
@@ -27,8 +27,8 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_print_options.h"
-#include "xla/hlo/separate_compilation/hlo_linking_manifest.h"
-#include "xla/hlo/separate_compilation/hlo_module_splitting.h"
+#include "xla/hlo/parallel/hlo_linking_manifest.h"
+#include "xla/hlo/parallel/hlo_module_splitting.h"
 #include "xla/hlo/testlib/hlo_hardware_independent_test_base.h"
 #include "xla/service/compiler.h"
 #include "xla/service/hlo_verifier.h"
@@ -37,7 +37,7 @@ limitations under the License.
 #include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/platform/statusor.h"
 
-namespace xla::separate_compilation {
+namespace xla::parallel {
 namespace {
 
 // Function to normalize an HloModule by removing/replacing names.
@@ -307,4 +307,4 @@ TEST_F(LinkingTest, DiamondGraphLinking) {
 }
 
 }  // namespace
-}  // namespace xla::separate_compilation
+}  // namespace xla::parallel
