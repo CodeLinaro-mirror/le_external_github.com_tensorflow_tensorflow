@@ -349,6 +349,52 @@ bool AllWhileParamConsumersGte(const HloInstruction* while_op) {
   return true;
 }
 
+// A lightweight bit set that stores up to 64 bits inline without heap
+// allocations, dynamically spilling to heap only if more bits are needed.
+// (AKA bitmap, bit vector.)
+// This is useful for tuple indices where the range is dense and usually small.
+class InlinedBitSet {
+ public:
+  InlinedBitSet() = default;
+  explicit InlinedBitSet(uint64_t num_bits) : words_((num_bits + 63) / 64, 0) {}
+
+  void Set(uint64_t index) {
+    const uint64_t word_idx = index / 64;
+    if (word_idx >= words_.size()) {
+      words_.resize(word_idx + 1, 0);
+    }
+    words_[word_idx] |= (uint64_t{1} << (index % 64));
+  }
+
+  void Clear(uint64_t index) {
+    const uint64_t word_idx = index / 64;
+    if (word_idx < words_.size()) {
+      words_[word_idx] &= ~(uint64_t{1} << (index % 64));
+    }
+  }
+
+  bool Test(uint64_t index) const {
+    const uint64_t word_idx = index / 64;
+    if (word_idx >= words_.size()) {
+      return false;
+    }
+    return (words_[word_idx] & (uint64_t{1} << (index % 64))) != 0;
+  }
+
+  InlinedBitSet& operator|=(const InlinedBitSet& other) {
+    if (other.words_.size() > words_.size()) {
+      words_.resize(other.words_.size(), 0);
+    }
+    for (uint64_t i = 0; i < other.words_.size(); ++i) {
+      words_[i] |= other.words_[i];
+    }
+    return *this;
+  }
+
+ private:
+  absl::InlinedVector<uint64_t, 1> words_;
+};
+
 }  // namespace
 
 absl::StatusOr<bool> TryRemoveDeadWhileParams(HloInstruction* while_op) {
@@ -401,20 +447,20 @@ absl::StatusOr<bool> TryRemoveDeadWhileParams(HloInstruction* while_op) {
                "empty.";
     return false;
   }
-  absl::flat_hash_set<int64_t> used_indices_after_loop;
+  InlinedBitSet used_indices_after_loop(tuple_size);
   if (while_op == while_op->parent()->root_instruction()) {
-    for (int64_t i = 0; i < while_body_root->operand_count(); ++i) {
-      used_indices_after_loop.insert(i);
+    for (int64_t i = 0; i < tuple_size; ++i) {
+      used_indices_after_loop.Set(i);
     }
   }
   for (auto user : while_op->users()) {
     if (user->opcode() != HloOpcode::kGetTupleElement) {
-      for (int64_t i = 0; i < while_body_root->operand_count(); ++i) {
-        used_indices_after_loop.insert(i);
+      for (int64_t i = 0; i < tuple_size; ++i) {
+        used_indices_after_loop.Set(i);
       }
       break;
     }
-    used_indices_after_loop.insert(user->tuple_index());
+    used_indices_after_loop.Set(user->tuple_index());
   }
 
   // We identify unused inputs in two cases:
@@ -427,48 +473,7 @@ absl::StatusOr<bool> TryRemoveDeadWhileParams(HloInstruction* while_op) {
 
   // Tracks the set of inputs that each instruction depends on (in one
   // iteration). For case 1).
-  struct InputIndicesSet {
-    void Merge(const InputIndicesSet& other) {
-      // Delay the creation of the owned hash set until sufficient amount of
-      // merge requests have come. This in practice saves a lot of heap
-      // allocations for unary/binary/ternay ops.
-      if (all.size() + other.all.size() <= all.capacity() && owned == nullptr) {
-        absl::c_copy(other.all, std::back_inserter(all));
-        return;
-      }
-      // Create owned storage to merge stacked sets.
-      if (owned == nullptr) {
-        owned = std::make_unique<absl::flat_hash_set<int64_t>>();
-        // Rough estimation of new set size, to reduce resize.
-        owned->reserve(other.all.front()->size() * 2);
-      }
-      for (auto* deps : all) {
-        if (deps == owned.get()) {
-          continue;
-        }
-        owned->insert(deps->begin(), deps->end());
-      }
-      for (auto* deps : other.all) {
-        owned->insert(deps->begin(), deps->end());
-      }
-      all.clear();
-      all.push_back(owned.get());
-    }
-    void Add(int64_t index) {
-      if (owned == nullptr) {
-        CHECK(all.empty());
-        owned = std::make_unique<absl::flat_hash_set<int64_t>>();
-        all.push_back(owned.get());
-      }
-      owned->insert(index);
-    }
-    // Owned storage.
-    std::unique_ptr<absl::flat_hash_set<int64_t>> owned;
-    // Collection of pointers to all sets of dependencies, the union of which is
-    // the set of input dependencies.
-    absl::InlinedVector<const absl::flat_hash_set<int64_t>*, 4> all;
-  };
-  absl::flat_hash_map<HloInstruction*, InputIndicesSet> inst_input_deps;
+  absl::flat_hash_map<HloInstruction*, InlinedBitSet> inst_input_deps;
   // Find disjoint sets of connected instruction groups. This helps finding a
   // group of inter-dependent indices that can be removed together. For case 2).
   absl::flat_hash_map<HloInstruction*, UnionFind<HloInstruction*>>
@@ -484,7 +489,7 @@ absl::StatusOr<bool> TryRemoveDeadWhileParams(HloInstruction* while_op) {
     }
   }
   // Track the dependencies and merge the disjoint sets.
-  absl::flat_hash_set<int64_t> side_effecting_indices;
+  InlinedBitSet side_effecting_indices(tuple_size);
   for (HloComputation* comp : {while_body, while_cond}) {
     HloInstruction* while_input = comp->parameter_instruction(0);
     for (HloInstruction* inst : comp->MakeInstructionPostOrder()) {
@@ -495,7 +500,7 @@ absl::StatusOr<bool> TryRemoveDeadWhileParams(HloInstruction* while_op) {
       auto& my_set = disjoint_sets[inst];
       if (inst->opcode() == HloOpcode::kGetTupleElement &&
           inst->operand(0) == while_input) {
-        deps.Add(inst->tuple_index());
+        deps.Set(inst->tuple_index());
         HloInstruction* output =
             while_body_root->mutable_operand(inst->tuple_index());
         if (output != inst) {
@@ -504,32 +509,31 @@ absl::StatusOr<bool> TryRemoveDeadWhileParams(HloInstruction* while_op) {
       } else {
         for (HloInstruction* operand : inst->operands()) {
           disjoint_sets[operand].Merge(&my_set);
-          deps.Merge(inst_input_deps[operand]);
+          auto it = inst_input_deps.find(operand);
+          if (it != inst_input_deps.end()) {
+            deps |= it->second;
+          }
         }
       }
       if (inst->HasSideEffect() || inst == while_cond->root_instruction()) {
-        for (auto* dep : deps.all) {
-          side_effecting_indices.insert(dep->begin(), dep->end());
-        }
+        side_effecting_indices |= deps;
       }
     }
   }
   // Find inputs that can be removed because they don't affect others.
-  absl::flat_hash_set<int64_t> indices_affecting_others;
+  InlinedBitSet indices_affecting_others(tuple_size);
   for (int64_t i = 0; i < tuple_size; ++i) {
     HloInstruction* output = while_body_root->mutable_operand(i);
-    for (auto* deps : inst_input_deps[output].all) {
-      for (int64_t index : *deps) {
-        if (index != i) {
-          indices_affecting_others.insert(index);
-        }
-      }
+    auto it = inst_input_deps.find(output);
+    if (it != inst_input_deps.end()) {
+      InlinedBitSet deps = it->second;
+      deps.Clear(i);
+      indices_affecting_others |= deps;
     }
   }
   for (int64_t i = 0; i < tuple_size; ++i) {
-    if (!indices_affecting_others.contains(i) &&
-        !used_indices_after_loop.contains(i) &&
-        !side_effecting_indices.contains(i)) {
+    if (!indices_affecting_others.Test(i) && !used_indices_after_loop.Test(i) &&
+        !side_effecting_indices.Test(i)) {
       VLOG(2) << "Remove with dependencies " << i;
       used_tuple_indices.erase(i);
     }
@@ -551,8 +555,8 @@ absl::StatusOr<bool> TryRemoveDeadWhileParams(HloInstruction* while_op) {
           // We cannot remove this index causes side effects, or if its output
           // is not passed through from input and it is used after the while op.
           const HloInstruction* output = while_body_root->operand(index);
-          return side_effecting_indices.contains(index) ||
-                 (used_indices_after_loop.contains(index) &&
+          return side_effecting_indices.Test(index) ||
+                 (used_indices_after_loop.Test(index) &&
                   !(output->opcode() == HloOpcode::kGetTupleElement &&
                     output->operand(0) ==
                         while_body->parameter_instruction(0) &&
