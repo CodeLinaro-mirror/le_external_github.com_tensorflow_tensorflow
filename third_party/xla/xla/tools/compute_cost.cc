@@ -49,6 +49,9 @@ Usage:
 )";
 }  // namespace
 
+// Test change: verify bazel-diff impacted target filtering on a localized XLA
+// tool.
+
 namespace xla {
 void print_costs_of_all_instructions(const HloModule& module,
                                      const HloCostAnalysis& analysis) {
