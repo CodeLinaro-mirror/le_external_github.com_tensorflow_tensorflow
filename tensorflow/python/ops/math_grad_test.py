@@ -833,6 +833,24 @@ class PowGradTest(test.TestCase):
     g = self.evaluate(g)
     self.assertAllClose([-2., 0., 2.], g)
 
+  def test_pow_grad_y_finite_when_forward_overflows(self):
+    # Regression test for GitHub issue #126627 (b/555972764).
+    cases = [
+        (dtypes.float64, 2.0, 1024.0, 1.2460659279417838e308),
+        (dtypes.float64, 0.5, -1024.0, -1.2460659279417838e308),
+        (dtypes.float32, 2.0, 128.0, 2.3586576e38),
+    ]
+    for dtype, x_val, y_val, expected in cases:
+      with self.subTest(dtype=dtype, x=x_val, y=y_val):
+        x = constant_op.constant(x_val, dtype=dtype)
+        y = constant_op.constant(y_val, dtype=dtype)
+        with backprop.GradientTape() as tape:
+          tape.watch(y)
+          z = math_ops.pow(x, y)
+        gy = self.evaluate(tape.gradient(z, y))
+        self.assertTrue(np.isfinite(gy))
+        self.assertAllClose(expected, gy, rtol=1e-6)
+
 
 @test_util.run_all_in_graph_and_eager_modes
 class NextAfterTest(test.TestCase):
