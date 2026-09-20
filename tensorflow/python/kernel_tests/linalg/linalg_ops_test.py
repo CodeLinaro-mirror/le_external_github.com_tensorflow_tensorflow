@@ -47,6 +47,7 @@ class CholeskySolveTest(test.TestCase):
     self.rng = np.random.RandomState(0)
 
   @test_util.run_deprecated_v1
+  @test_util.run_without_tensor_float_32("Avoid TF32 in cholesky_solve")
   def test_works_with_five_different_random_pos_def_matrices(self):
     for n in range(1, 6):
       for np_type, atol in [(np.float32, 0.05), (np.float64, 1e-5)]:
@@ -460,6 +461,7 @@ class _PinvTest(object):
 
 
 @test_util.run_all_in_graph_and_eager_modes
+@test_util.run_all_without_tensor_float_32("Avoid TF32 in pinv")
 class PinvTestDynamic32DefaultRcond(test.TestCase, _PinvTest):
   dtype = np.float32
   use_static_shape = False
@@ -474,6 +476,7 @@ class PinvTestStatic64DefaultRcond(test.TestCase, _PinvTest):
 
 
 @test_util.run_all_in_graph_and_eager_modes
+@test_util.run_all_without_tensor_float_32("Avoid TF32 in pinv")
 class PinvTestDynamic32CustomtRcond(test.TestCase, _PinvTest):
   dtype = np.float32
   use_static_shape = False

@@ -306,6 +306,10 @@ class MathTest(PForTestCase, parameterized.TestCase):
 
             self._test_loop_fn(loop_fn, 2)
 
+  @test_util.run_without_tensor_float_32(
+      "Calls matmul in parallel for-loop and compares result to calling matmul "
+      "in sequential for-loop"
+  )
   def test_batch_matmul(self):
     for tr_a in (True, False):
       for tr_b in (True, False):
@@ -331,6 +335,10 @@ class MathTest(PForTestCase, parameterized.TestCase):
 
             self._test_loop_fn(loop_fn, 2)
 
+  @test_util.run_without_tensor_float_32(
+      "Calls matmul in parallel for-loop and compares result to calling matmul "
+      "in sequential for-loop"
+  )
   def test_batch_matmul_broadcast(self):
     for broadcast_a in (True, False):
       for broadcast_b in (True, False):

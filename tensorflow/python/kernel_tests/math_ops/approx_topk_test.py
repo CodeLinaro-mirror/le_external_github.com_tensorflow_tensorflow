@@ -144,6 +144,7 @@ class ApproxTopkTest(test_util.TensorFlowTestCase, parameterized.TestCase):
           [1, 10, 128],  # qy_size
           [2, 32],  # feature dim
       ))
+  @test_util.run_without_tensor_float_32('Avoid TF32 matmul in L2ANN')
   # L2ANN = Approximate Nearest Neighbor search in the L2 metric space
   def test_l2ann(self, dtype, k, db_size, qy_size, feature_dim):
     qy = self._rng.random([qy_size, feature_dim])

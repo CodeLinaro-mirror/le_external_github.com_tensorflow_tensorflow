@@ -3771,6 +3771,7 @@ class Conv2DBenchmark(test.Benchmark):
 def GetInceptionFwdTest(input_size, filter_size, stride, padding,
                         gpu_only=False):
 
+  @test_util.run_without_tensor_float_32("Avoid TF32 conv on GPU")
   def Test(self):
     if gpu_only and not test.is_gpu_available():
       tf_logging.info("Skipping InceptionFwd %s", (input_size, filter_size,
@@ -3785,6 +3786,7 @@ def GetInceptionFwdTest(input_size, filter_size, stride, padding,
 
 def GetInceptionFwdDilatedConvTest(input_size, filter_size, stride, padding):
 
+  @test_util.run_without_tensor_float_32("Avoid TF32 conv on GPU")
   def Test(self):
     if stride == 1:
       tf_logging.info("Testing InceptionFwd with dilations %s",
@@ -3804,6 +3806,7 @@ def GetInceptionBackInputTest(input_size, filter_size, output_size, stride,
                               padding,
                               gpu_only=False):
 
+  @test_util.run_without_tensor_float_32("Avoid TF32 conv on GPU")
   def Test(self):
     if gpu_only and not test.is_gpu_available():
       tf_logging.info("Skipping InceptionBackInput %s",
@@ -3820,6 +3823,7 @@ def GetInceptionBackInputTest(input_size, filter_size, output_size, stride,
 def GetInceptionBackFilterTest(input_size, filter_size, output_size, strides,
                                padding, gpu_only=False):
 
+  @test_util.run_without_tensor_float_32("Avoid TF32 conv on GPU")
   def Test(self):
     if gpu_only and not test.is_gpu_available():
       tf_logging.info("Skipping InceptionBackFilter %s",

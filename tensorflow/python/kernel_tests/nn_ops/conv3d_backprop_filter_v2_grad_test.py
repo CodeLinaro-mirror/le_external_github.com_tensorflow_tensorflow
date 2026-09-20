@@ -30,6 +30,7 @@ from tensorflow.python.platform import test
 class Conv3DBackpropFilterV2GradTest(test.TestCase):
 
   @test_util.run_deprecated_v1
+  @test_util.run_without_tensor_float_32("Avoid TF32 conv on GPU")
   def testGradient(self):
     with self.cached_session():
       for padding in ["SAME", "VALID"]:

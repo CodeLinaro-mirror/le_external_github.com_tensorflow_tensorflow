@@ -84,6 +84,7 @@ class Conv2dOpTest(test.TestCase):
       self.assertLess(error, 2e-3)
 
   @test_util.run_deprecated_v1
+  @test_util.run_without_tensor_float_32('Avoid TF32 conv on GPU')
   def testConv2dGradWRTInput(self):
     x = array_ops.placeholder(
         dtype=dtypes.float32, shape=[1, 4, 4, 3], name='input')
@@ -95,6 +96,7 @@ class Conv2dOpTest(test.TestCase):
     self.run_test(x, y)
 
   @test_util.run_deprecated_v1
+  @test_util.run_without_tensor_float_32('Avoid TF32 conv on GPU')
   def testConv2dGradWRTFilter(self):
     x = constant_op.constant([0.5],
                              dtype=dtypes.float32,

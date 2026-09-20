@@ -154,6 +154,7 @@ def _GetBatchMatmulOpBroadcastingTest(dtype, adjoint_a, adjoint_b,
   return Test
 
 
+@test_util.run_all_without_tensor_float_32("Tests batch matmul")
 class BatchMatmulBroadcastRankMismatchTest(test.TestCase):
   """Regression test for rank-4 x rank-2 matmul broadcasting.
 
