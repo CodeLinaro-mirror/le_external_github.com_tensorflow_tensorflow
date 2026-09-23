@@ -763,6 +763,7 @@ cc_library(
     deps = [
         "//xla/codegen:ir_emission_utils",
         "//xla/hlo/ir:hlo",
+        "//xla/hlo/ir:hlo_instruction_utils",
         "//xla/hlo/pass:hlo_pass",
         "//xla/hlo/utils:hlo_traversal",
         "//xla/service:call_graph",
@@ -3258,7 +3259,6 @@ xla_cc_test(
     srcs = ["softmax_rewriter_triton_test.cc"],
     deps = [
         ":softmax_rewriter_triton",
-        "//xla:xla_data_proto_cc",
         "//xla:xla_proto_cc",
         "//xla/backends/gpu/codegen/triton:support",
         "//xla/hlo/analysis:symbolic_map",
