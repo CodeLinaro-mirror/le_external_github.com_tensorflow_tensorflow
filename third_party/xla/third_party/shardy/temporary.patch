@@ -1,56 +1,104 @@
+diff --git a/shardy/dialect/mpmd/transforms/import/test/infer_mesh_pipeline.mlir b/shardy/dialect/mpmd/transforms/import/test/infer_mesh_pipeline.mlir
+index 5697a287..6ef5c695 100644
+--- a/shardy/dialect/mpmd/transforms/import/test/infer_mesh_pipeline.mlir
++++ b/shardy/dialect/mpmd/transforms/import/test/infer_mesh_pipeline.mlir
+@@ -1,4 +1,4 @@
+-// RUN: mpmd_opt %s -mpmd-infer-mesh-pipeline='infer-transfers=true infer-cross-mesh-reductions=True' 2>&1 | FileCheck %s
++// RUN: mpmd_opt %s -mpmd-infer-mesh-pipeline='infer-transfers=true infer-cross-mesh-reductions=true' 2>&1 | FileCheck %s
+ 
+ !mesh_1_tensor_ui32 = !mpmd.mesh_tensor<"m1", tensor<ui32>>
+ !mesh_1_tensor_1_ui32 = !mpmd.mesh_tensor<"m1", tensor<1xui32>>
+diff --git a/shardy/dialect/mpmd/transforms/import/test/infer_mesh_pipeline_send_recv.mlir b/shardy/dialect/mpmd/transforms/import/test/infer_mesh_pipeline_send_recv.mlir
+index d914bd27..54d0ca3a 100644
+--- a/shardy/dialect/mpmd/transforms/import/test/infer_mesh_pipeline_send_recv.mlir
++++ b/shardy/dialect/mpmd/transforms/import/test/infer_mesh_pipeline_send_recv.mlir
+@@ -1,4 +1,4 @@
+-// RUN: mpmd_opt %s -mpmd-infer-mesh-pipeline='infer-transfers=true infer-cross-mesh-reductions=True' 2>&1 | FileCheck %s
++// RUN: mpmd_opt %s -mpmd-infer-mesh-pipeline='infer-transfers=true infer-cross-mesh-reductions=true' 2>&1 | FileCheck %s
+ 
+ // Test that stablehlo.send and stablehlo.create_token ops (which produce
+ // !stablehlo.token types) are correctly partitioned into fragments by the
 diff --git a/third_party/llvm/generated.patch b/third_party/llvm/generated.patch
-index 509398da..a9462de1 100644
+index a9462de1..4749fd7b 100644
 --- a/third_party/llvm/generated.patch
 +++ b/third_party/llvm/generated.patch
-@@ -1 +1,189 @@
+@@ -1,189 +1,444 @@
  Auto generated patch. Do not edit or delete it, even if empty.
-+diff -ruN --strip-trailing-cr a/clang/lib/CodeGen/CGCall.cpp b/clang/lib/CodeGen/CGCall.cpp
-+--- a/clang/lib/CodeGen/CGCall.cpp
-++++ b/clang/lib/CodeGen/CGCall.cpp
-+@@ -2804,17 +2804,10 @@
-+       AddAttributesFromFunctionProtoType(
-+           getContext(), FuncAttrs, Fn->getType()->getAs<FunctionProtoType>());
-+       if (AttrOnCallSite && Fn->isReplaceableGlobalAllocationFunction()) {
-+-        // A sane operator new returns a non-aliasing pointer and does not
-+-        // read or write accessible memory.
-++        // A sane operator new returns a non-aliasing pointer.
-+         if (getCodeGenOpts().AssumeSaneOperatorNew &&
-+-            Fn->getDeclName().isAnyOperatorNew()) {
-++            Fn->getDeclName().isAnyOperatorNew())
-+           RetAttrs.addAttribute(llvm::Attribute::NoAlias);
-+-          // FIXME: inaccessiblemem could cause issues if LTO makes the
-+-          // previously inaccessible memory accessible after linking.
-+-          FuncAttrs.addMemoryAttr(
-+-              llvm::MemoryEffects::inaccessibleOrErrnoMemOnly(
-+-                  llvm::ModRefInfo::ModRef, llvm::ModRefInfo::Mod));
-+-        }
-+       }
-+       const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(Fn);
-+       const bool IsVirtualCall = MD && MD->isVirtual();
-+diff -ruN --strip-trailing-cr a/clang/lib/CodeGen/CGExprCXX.cpp b/clang/lib/CodeGen/CGExprCXX.cpp
-+--- a/clang/lib/CodeGen/CGExprCXX.cpp
-++++ b/clang/lib/CodeGen/CGExprCXX.cpp
-+@@ -1391,9 +1391,19 @@
-+   ///
-+   /// We model such elidable calls with the 'builtin' attribute.
-+   llvm::Function *Fn = dyn_cast<llvm::Function>(CalleePtr);
-+-  if (CalleeDecl->isReplaceableGlobalAllocationFunction() && Fn &&
-+-      Fn->hasFnAttribute(llvm::Attribute::NoBuiltin)) {
-+-    CallOrInvoke->addFnAttr(llvm::Attribute::Builtin);
-++  if (CalleeDecl->isReplaceableGlobalAllocationFunction() && Fn) {
-++    if (Fn->hasFnAttribute(llvm::Attribute::NoBuiltin))
-++      CallOrInvoke->addFnAttr(llvm::Attribute::Builtin);
-++
-++    // A sane operator new does not read or write accessible memory.
-++    if (CGF.CGM.getCodeGenOpts().AssumeSaneOperatorNew &&
-++        CalleeDecl->getDeclName().isAnyOperatorNew()) {
-++      // FIXME: inaccessiblemem could cause issues if LTO makes the
-++      // previously inaccessible memory accessible after linking.
-++      CallOrInvoke->setMemoryEffects(
-++          llvm::MemoryEffects::inaccessibleOrErrnoMemOnly(
-++              llvm::ModRefInfo::ModRef, llvm::ModRefInfo::Mod));
-++    }
-+   }
+-diff -ruN --strip-trailing-cr a/clang/lib/CodeGen/CGCall.cpp b/clang/lib/CodeGen/CGCall.cpp
+---- a/clang/lib/CodeGen/CGCall.cpp
+-+++ b/clang/lib/CodeGen/CGCall.cpp
+-@@ -2804,17 +2804,10 @@
+-       AddAttributesFromFunctionProtoType(
+-           getContext(), FuncAttrs, Fn->getType()->getAs<FunctionProtoType>());
+-       if (AttrOnCallSite && Fn->isReplaceableGlobalAllocationFunction()) {
+--        // A sane operator new returns a non-aliasing pointer and does not
+--        // read or write accessible memory.
+-+        // A sane operator new returns a non-aliasing pointer.
+-         if (getCodeGenOpts().AssumeSaneOperatorNew &&
+--            Fn->getDeclName().isAnyOperatorNew()) {
+-+            Fn->getDeclName().isAnyOperatorNew())
+-           RetAttrs.addAttribute(llvm::Attribute::NoAlias);
+--          // FIXME: inaccessiblemem could cause issues if LTO makes the
+--          // previously inaccessible memory accessible after linking.
+--          FuncAttrs.addMemoryAttr(
+--              llvm::MemoryEffects::inaccessibleOrErrnoMemOnly(
+--                  llvm::ModRefInfo::ModRef, llvm::ModRefInfo::Mod));
+--        }
+-       }
+-       const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(Fn);
+-       const bool IsVirtualCall = MD && MD->isVirtual();
+-diff -ruN --strip-trailing-cr a/clang/lib/CodeGen/CGExprCXX.cpp b/clang/lib/CodeGen/CGExprCXX.cpp
+---- a/clang/lib/CodeGen/CGExprCXX.cpp
+-+++ b/clang/lib/CodeGen/CGExprCXX.cpp
+-@@ -1391,9 +1391,19 @@
+-   ///
+-   /// We model such elidable calls with the 'builtin' attribute.
+-   llvm::Function *Fn = dyn_cast<llvm::Function>(CalleePtr);
+--  if (CalleeDecl->isReplaceableGlobalAllocationFunction() && Fn &&
+--      Fn->hasFnAttribute(llvm::Attribute::NoBuiltin)) {
+--    CallOrInvoke->addFnAttr(llvm::Attribute::Builtin);
+-+  if (CalleeDecl->isReplaceableGlobalAllocationFunction() && Fn) {
+-+    if (Fn->hasFnAttribute(llvm::Attribute::NoBuiltin))
+-+      CallOrInvoke->addFnAttr(llvm::Attribute::Builtin);
++diff -ruN --strip-trailing-cr a/clang/include/clang/AST/TypeBase.h b/clang/include/clang/AST/TypeBase.h
++--- a/clang/include/clang/AST/TypeBase.h
+++++ b/clang/include/clang/AST/TypeBase.h
++@@ -2270,7 +2270,7 @@
++     /// increments towards the beginning.
++     /// Positive non-zero number represents the index + 1.
++     /// Zero means this is not substituted from an expansion.
++-    unsigned PackIndex : 15;
+++    unsigned PackIndex : 16;
++   };
++ 
++   class SubstPackTypeBitfields {
++diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/make_integer_seq.cpp b/clang/test/SemaCXX/make_integer_seq.cpp
++--- a/clang/test/SemaCXX/make_integer_seq.cpp
+++++ b/clang/test/SemaCXX/make_integer_seq.cpp
++@@ -50,3 +50,8 @@
++ 
++ __make_integer_seq<__make_integer_seq, int, 10> PR28494; // expected-note{{different template parameters}}
++ // expected-error@make_integer_seq.cpp:* {{template argument for template template parameter must be a class template or type alias template}}
+ +
+-+    // A sane operator new does not read or write accessible memory.
+-+    if (CGF.CGM.getCodeGenOpts().AssumeSaneOperatorNew &&
+-+        CalleeDecl->getDeclName().isAnyOperatorNew()) {
+-+      // FIXME: inaccessiblemem could cause issues if LTO makes the
+-+      // previously inaccessible memory accessible after linking.
+-+      CallOrInvoke->setMemoryEffects(
+-+          llvm::MemoryEffects::inaccessibleOrErrnoMemOnly(
+-+              llvm::ModRefInfo::ModRef, llvm::ModRefInfo::Mod));
+-+    }
+++// The largest type pack whose pack indices fit in SubstTemplateTypeParmType.
+++template <class... Ts> using Expand = void(Ts...);
+++template <class T, T... I> struct ExpandSeq { using type = Expand<decltype(I)...>; };
+++using LargePack = __make_integer_seq<ExpandSeq, int, 65535>::type;
++diff -ruN --strip-trailing-cr a/llvm/lib/CodeGen/SelectionDAG/DAGCombiner.cpp b/llvm/lib/CodeGen/SelectionDAG/DAGCombiner.cpp
++--- a/llvm/lib/CodeGen/SelectionDAG/DAGCombiner.cpp
+++++ b/llvm/lib/CodeGen/SelectionDAG/DAGCombiner.cpp
++@@ -13901,47 +13901,12 @@
++   return SDValue();
++ }
 + 
 +   return RV;
 +diff -ruN --strip-trailing-cr a/clang/test/CodeGenCXX/new_hot_cold.cpp b/clang/test/CodeGenCXX/new_hot_cold.cpp
