@@ -452,7 +452,7 @@ absl::StatusOr<std::unique_ptr<GpuExecutable>> GpuExecutable::Create(
 // Implementation note: HLO profiling is always enabled for GPU executables,
 // since we can use timers around thunks.
 GpuExecutable::GpuExecutable(
-    std::unique_ptr<HloModule> debug_module, std::vector<uint8_t> binary,
+    std::shared_ptr<HloModule> debug_module, std::vector<uint8_t> binary,
     BinaryMap dnn_compiled_graphs, se::DeviceDescription device_description,
     std::unique_ptr<ThunkExecutor> executable, std::string module_name,
     ProgramShape program_shape, std::vector<BufferAllocation> allocations,
@@ -615,7 +615,7 @@ absl::Status GpuExecutable::ExecuteThunksImpl(
   if (execution_watchdog != nullptr) {
     HangWatchdog::CancelCallback pre_abort;
     if (tracker.has_value()) {
-      pre_abort = [&tracker, progress_tracking_n,
+      pre_abort = [tracker = tracker->tracker(), progress_tracking_n,
                    device_ordinal = executor->device_ordinal()] {
         auto log_progress = [&](auto label, auto thunks) {
           LOG(ERROR) << absl::StreamFormat("[%d] %s: size=%d", device_ordinal,
@@ -1416,17 +1416,21 @@ absl::StatusOr<std::unique_ptr<GpuExecutable>> GpuExecutable::FromProto(
     const GpuExecutableProto& proto,
     const se::DeviceDescription& device_description,
     absl::string_view platform_name, DebugOptions debug_options,
-    const std::optional<se::KernelLoaderSpec::SymbolResolver>&
-        symbol_resolver) {
+    const std::optional<se::KernelLoaderSpec::SymbolResolver>& symbol_resolver,
+    std::shared_ptr<HloModule> debug_module) {
   Params params;
   params.debug_options = std::move(debug_options);
   params.enable_debug_info_manager =
       params.debug_options.xla_gpu_executable_embed_debug_info();
   const std::string& binary = proto.binary();
   params.binary.assign(binary.begin(), binary.end());
-  if (proto.has_hlo_module_with_config()) {
+  if (debug_module != nullptr) {
+    params.debug_module = std::move(debug_module);
+  } else if (proto.has_hlo_module_with_config()) {
     ABSL_ASSIGN_OR_RETURN(params.debug_module, HloModule::CreateFromProtoWithConfig(
                                               proto.hlo_module_with_config()));
+  }
+  if (params.debug_module != nullptr) {
     // The HLO module deserialized from the proto carries xla_dump_to from the
     // process that originally compiled it. Override with the current process's
     // dump path so that runtime dumps (checksum logs, etc.) land in the correct
