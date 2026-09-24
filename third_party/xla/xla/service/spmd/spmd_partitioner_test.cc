@@ -3749,9 +3749,13 @@ ENTRY %cluster_2013453984438090939__.47
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/2));
   VLOG(1) << module->ToString();
-  auto custom_call = FindInstruction(module.get(), "custom-call.1");
+  const HloInstruction* custom_call =
+      FindInstruction(module.get(), "custom-call.1");
+  ASSERT_NE(custom_call, nullptr);
   EXPECT_EQ(custom_call->operand(0)->shape().dimensions(1), 104832);
-  auto sort = FindInstruction(module.get(), "sort");
+  const HloInstruction* sort = FindInstruction(module.get(), "sort");
+  ASSERT_NE(sort, nullptr);
+  EXPECT_FALSE(Cast<HloSortInstruction>(sort)->is_stable());
   EXPECT_EQ(sort->operand(0)->shape().dimensions(1), 4000);
   EXPECT_EQ(sort->operand(1)->shape().dimensions(1), 4000);
 }
@@ -3779,9 +3783,13 @@ ENTRY entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/8));
 
-  auto custom_call = FindInstruction(module.get(), "custom-call.1");
+  const HloInstruction* custom_call =
+      FindInstruction(module.get(), "custom-call.1");
+  ASSERT_NE(custom_call, nullptr);
   EXPECT_EQ(custom_call->operand(0)->shape().dimensions(1), 32128);
-  auto sort = FindInstruction(module.get(), "sort");
+  const HloInstruction* sort = FindInstruction(module.get(), "sort");
+  ASSERT_NE(sort, nullptr);
+  EXPECT_FALSE(Cast<HloSortInstruction>(sort)->is_stable());
   EXPECT_EQ(sort->operand(0)->shape().dimensions(0), 1);
   EXPECT_EQ(sort->operand(0)->shape().dimensions(1), 2);
   EXPECT_EQ(sort->operand(1)->shape().dimensions(0), 1);
@@ -3811,9 +3819,13 @@ ENTRY entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/8));
   VLOG(1) << module->ToString();
-  auto custom_call = FindInstruction(module.get(), "custom-call.1");
+  const HloInstruction* custom_call =
+      FindInstruction(module.get(), "custom-call.1");
+  ASSERT_NE(custom_call, nullptr);
   EXPECT_EQ(custom_call->operand(0)->shape().dimensions(1), 16064);
-  auto sort = FindInstruction(module.get(), "sort");
+  const HloInstruction* sort = FindInstruction(module.get(), "sort");
+  ASSERT_NE(sort, nullptr);
+  EXPECT_FALSE(Cast<HloSortInstruction>(sort)->is_stable());
   EXPECT_EQ(sort->operand(0)->shape().dimensions(0), 2);
   EXPECT_EQ(sort->operand(0)->shape().dimensions(1), 4);
   EXPECT_EQ(sort->operand(1)->shape().dimensions(0), 2);
@@ -11022,10 +11034,12 @@ ENTRY entry {
 
   EXPECT_THAT(module->entry_computation()->root_instruction(),
               op::Tuple(sum_full, sum_manual));
-  EXPECT_THAT(module->entry_computation()->parameter_instruction(0),
-              op::Sharding("{{devices=[2,1]<=[2]},{manual},{manual}}"));
-  EXPECT_THAT(module->entry_computation()->parameter_instruction(1),
-              op::Sharding("{{manual},{devices=[2,1]<=[2]},{manual}}"));
+  EXPECT_THAT(module->entry_computation()->parameter_instructions(),
+              Each(op::NoSharding()));
+  EXPECT_THAT(
+      module->spmd_parameters_shardings(),
+      ElementsAre(*ParseSharding("{{devices=[2,1]<=[2]},{manual},{manual}}"),
+                  *ParseSharding("{{manual},{devices=[2,1]<=[2]},{manual}}")));
 }
 
 TEST_P(SpmdPartitioningTest, NestedManual) {
@@ -17470,10 +17484,19 @@ ENTRY %entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/2));
   VLOG(1) << module->ToString();
-  auto sort_instruction = FindInstruction(module.get(), HloOpcode::kSort);
+  const HloInstruction* sort_instruction =
+      FindInstruction(module.get(), HloOpcode::kSort);
+  ASSERT_NE(sort_instruction, nullptr);
   EXPECT_THAT(sort_instruction, op::Shape("bf16[64,80]{1,0}"));
-  auto topk_instruction = FindInstruction(module.get(), HloOpcode::kCustomCall);
-  auto topk_operand = topk_instruction->operand(0);
+  EXPECT_FALSE(Cast<HloSortInstruction>(sort_instruction)->is_stable());
+  EXPECT_EQ(Cast<HloCompareInstruction>(
+                sort_instruction->to_apply()->root_instruction())
+                ->order(),
+            Comparison::Order::kTotal);
+  const HloInstruction* topk_instruction =
+      FindInstruction(module.get(), HloOpcode::kCustomCall);
+  ASSERT_NE(topk_instruction, nullptr);
+  const HloInstruction* topk_operand = topk_instruction->operand(0);
   EXPECT_EQ(topk_instruction->custom_call_target(), "TopK");
   EXPECT_THAT(topk_instruction,
               op::Shape("(bf16[64,40]{1,0}, s32[64,40]{1,0})"));
@@ -17503,10 +17526,21 @@ ENTRY %entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/2));
   VLOG(1) << module->ToString();
-  auto sort_instruction = FindInstruction(module.get(), HloOpcode::kSort);
-  CHECK_NE(sort_instruction, nullptr);
-  auto topk_instruction = FindInstruction(module.get(), HloOpcode::kCustomCall);
-  auto topk_operand = topk_instruction->operand(0);
+  const HloInstruction* sort_instruction =
+      FindInstruction(module.get(), HloOpcode::kSort);
+  ASSERT_NE(sort_instruction, nullptr);
+  EXPECT_FALSE(Cast<HloSortInstruction>(sort_instruction)->is_stable());
+  for (const HloInstruction* inst :
+       sort_instruction->to_apply()->instructions()) {
+    if (inst->opcode() == HloOpcode::kCompare) {
+      EXPECT_EQ(Cast<HloCompareInstruction>(inst)->order(),
+                Comparison::Order::kTotal);
+    }
+  }
+  const HloInstruction* topk_instruction =
+      FindInstruction(module.get(), HloOpcode::kCustomCall);
+  ASSERT_NE(topk_instruction, nullptr);
+  const HloInstruction* topk_operand = topk_instruction->operand(0);
   EXPECT_EQ(topk_instruction->custom_call_target(), "TopK");
   EXPECT_THAT(topk_instruction,
               op::Shape("(bf16[32,40]{1,0}, s32[32,40]{1,0})"));
@@ -17584,10 +17618,19 @@ ENTRY %entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/2));
   VLOG(1) << module->ToString();
-  auto sort_instruction = FindInstruction(module.get(), HloOpcode::kSort);
+  const HloInstruction* sort_instruction =
+      FindInstruction(module.get(), HloOpcode::kSort);
+  ASSERT_NE(sort_instruction, nullptr);
   EXPECT_THAT(sort_instruction, op::Shape("bf16[32,40]{1,0}"));
-  auto topk_instruction = FindInstruction(module.get(), HloOpcode::kCustomCall);
-  auto topk_operand = topk_instruction->operand(0);
+  EXPECT_FALSE(Cast<HloSortInstruction>(sort_instruction)->is_stable());
+  EXPECT_EQ(Cast<HloCompareInstruction>(
+                sort_instruction->to_apply()->root_instruction())
+                ->order(),
+            Comparison::Order::kTotal);
+  const HloInstruction* topk_instruction =
+      FindInstruction(module.get(), HloOpcode::kCustomCall);
+  ASSERT_NE(topk_instruction, nullptr);
+  const HloInstruction* topk_operand = topk_instruction->operand(0);
   EXPECT_EQ(topk_instruction->custom_call_target(), "TopK");
   EXPECT_THAT(topk_instruction,
               op::Shape("(bf16[32,40]{1,0}, s32[32,40]{1,0})"));
@@ -17616,14 +17659,87 @@ ENTRY %entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/2));
   VLOG(1) << module->ToString();
-  auto sort_instruction = FindInstruction(module.get(), HloOpcode::kSort);
+  const HloInstruction* sort_instruction =
+      FindInstruction(module.get(), HloOpcode::kSort);
+  ASSERT_NE(sort_instruction, nullptr);
   EXPECT_THAT(sort_instruction, op::Shape("bf16[64,80]{1,0}"));
-  auto topk_instruction = FindInstruction(module.get(), HloOpcode::kCustomCall);
-  auto topk_operand = topk_instruction->operand(0);
+  EXPECT_FALSE(Cast<HloSortInstruction>(sort_instruction)->is_stable());
+  EXPECT_EQ(Cast<HloCompareInstruction>(
+                sort_instruction->to_apply()->root_instruction())
+                ->order(),
+            Comparison::Order::kTotal);
+  const HloInstruction* topk_instruction =
+      FindInstruction(module.get(), HloOpcode::kCustomCall);
+  ASSERT_NE(topk_instruction, nullptr);
+  const HloInstruction* topk_operand = topk_instruction->operand(0);
   EXPECT_EQ(topk_instruction->custom_call_target(), "TopK");
   EXPECT_THAT(topk_instruction,
               op::Shape("(bf16[64,40]{1,0}, s32[64,40]{1,0})"));
   EXPECT_THAT(topk_operand, op::Shape("bf16[64,128000]{1,0}"));
+}
+
+TEST_P(SpmdPartitioningTest, TopKCustomCallTwoDimsShardedValuesOnly) {
+  constexpr absl::string_view kHloString = R"(
+HloModule module
+
+region_695.22546 {
+  Arg_2.22549 = s32[] parameter(2)
+  Arg_3.22550 = s32[] parameter(3)
+  Arg_0.22547 = bf16[] parameter(0)
+  Arg_1.22548 = bf16[] parameter(1)
+  ROOT compare.22551 = pred[] compare(Arg_0.22547, Arg_1.22548), direction=GT, order=TOTAL
+}
+
+ENTRY %entry {
+  %multiply.43401 = bf16[64,256000]{1,0} parameter(0), sharding={devices=[2,2]<=[4]}
+  %custom-call = (bf16[64,40]{1,0}, s32[64,40]{1,0}) custom-call(bf16[64,256000]{1,0} %multiply.43401), custom_call_target="TopK", called_computations={%region_695.22546}, sharding={{devices=[2,2]<=[4]}, {devices=[2,2]<=[4]}}
+  ROOT %get-tuple-element.336 = bf16[64,40]{1,0} get-tuple-element((bf16[64,40]{1,0}, s32[64,40]{1,0}) %custom-call), index=0
+})";
+
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                       PartitionComputation(kHloString, /*num_devices=*/4));
+  const HloInstruction* sort_instruction =
+      FindInstruction(module.get(), HloOpcode::kSort);
+  ASSERT_NE(sort_instruction, nullptr);
+  EXPECT_THAT(sort_instruction, op::Shape("bf16[32,80]{1,0}"));
+  EXPECT_FALSE(Cast<HloSortInstruction>(sort_instruction)->is_stable());
+  EXPECT_EQ(Cast<HloCompareInstruction>(
+                sort_instruction->to_apply()->root_instruction())
+                ->order(),
+            Comparison::Order::kTotal);
+  const HloInstruction* topk_instruction =
+      FindInstruction(module.get(), HloOpcode::kCustomCall);
+  ASSERT_NE(topk_instruction, nullptr);
+  EXPECT_THAT(topk_instruction,
+              op::Shape("(bf16[32,40]{1,0}, s32[32,40]{1,0})"));
+  EXPECT_THAT(topk_instruction->operand(0), op::Shape("bf16[32,128000]{1,0}"));
+}
+
+TEST_P(SpmdPartitioningTest, TopKCustomCallRank1) {
+  constexpr absl::string_view kHloString = R"(
+HloModule module
+
+region_695.22546 {
+  Arg_2.22549 = s32[] parameter(2)
+  Arg_3.22550 = s32[] parameter(3)
+  Arg_0.22547 = bf16[] parameter(0)
+  Arg_1.22548 = bf16[] parameter(1)
+  ROOT compare.22551 = pred[] compare(Arg_0.22547, Arg_1.22548), direction=GT, order=TOTAL
+}
+
+ENTRY %entry {
+  %p0 = bf16[256000]{0} parameter(0), sharding={devices=[2]<=[2]}
+  %custom-call = (bf16[40]{0}, s32[40]{0}) custom-call(bf16[256000]{0} %p0), custom_call_target="TopK", called_computations={%region_695.22546}, sharding={{replicated}, {replicated}}
+  ROOT %get-tuple-element.336 = bf16[40]{0} get-tuple-element((bf16[40]{0}, s32[40]{0}) %custom-call), index=0
+})";
+
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                       PartitionComputation(kHloString, /*num_devices=*/2));
+  const HloInstruction* topk_instruction =
+      FindInstruction(module.get(), HloOpcode::kCustomCall);
+  ASSERT_NE(topk_instruction, nullptr);
+  EXPECT_THAT(topk_instruction, op::Shape("(bf16[40]{0}, s32[40]{0})"));
+  EXPECT_THAT(topk_instruction->operand(0), op::Shape("bf16[256000]{0}"));
 }
 
 TEST_P(SpmdPartitioningTest, TopKCustomCallManualSharding) {
@@ -18357,9 +18473,12 @@ ENTRY entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/2));
   VLOG(1) << module->ToString();
-  // Check that unreduced HloSharding is preserved after the pass.
+  // Check that unreduced HloSharding is preserved on the module and cleared on
+  // the parameter instructions after the pass.
   EXPECT_THAT(module->entry_computation()->parameter_instructions(),
-              Each(op::Sharding("{unreduced}")));
+              Each(op::NoSharding()));
+  EXPECT_THAT(module->spmd_parameters_shardings(),
+              Each(*ParseSharding("{unreduced}")));
 }
 
 TEST_P(SpmdPartitioningTest, SubgroupUnreducedParam) {
@@ -18374,10 +18493,13 @@ ENTRY entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/4));
   VLOG(1) << module->ToString();
-  // Check that unreduced HloSharding is preserved after the pass.
-  EXPECT_THAT(
-      module->entry_computation()->parameter_instructions(),
-      Each(op::Sharding("{devices=[1,2,2]<=[4] last_tile_dims={unreduced}}")));
+  // Check that unreduced HloSharding is preserved on the module and cleared on
+  // the parameter instructions after the pass.
+  EXPECT_THAT(module->entry_computation()->parameter_instructions(),
+              Each(op::NoSharding()));
+  EXPECT_THAT(module->spmd_parameters_shardings(),
+              Each(*ParseSharding(
+                  "{devices=[1,2,2]<=[4] last_tile_dims={unreduced}}")));
 }
 
 TEST_P(SpmdPartitioningTest, SubgroupUnreducedDot) {
@@ -19074,9 +19196,12 @@ ENTRY entry {
 })";
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/2));
-  // Check that unreduced HloSharding is preserved after the pass.
-  for (auto* param : module->entry_computation()->parameter_instructions()) {
-    EXPECT_THAT(param->sharding().ToString(), HasSubstr("unreduced"));
+  // Check that unreduced HloSharding is preserved on the module and cleared on
+  // the parameter instructions after the pass.
+  EXPECT_THAT(module->entry_computation()->parameter_instructions(),
+              Each(op::NoSharding()));
+  for (const auto& sharding : module->spmd_parameters_shardings()) {
+    EXPECT_THAT(sharding.ToString(), HasSubstr("unreduced"));
   }
 }
 
@@ -19090,10 +19215,13 @@ ENTRY entry {
 })";
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/4));
-  // Check that unreduced HloSharding is preserved after the pass.
+  // Check that unreduced HloSharding is preserved on the module and cleared on
+  // the parameter instructions after the pass.
+  EXPECT_THAT(module->entry_computation()->parameter_instructions(),
+              Each(op::NoSharding()));
   EXPECT_THAT(
-      module->entry_computation()->parameter_instructions(),
-      Each(op::Sharding("{mesh['x'=2,'y'=2] [{?},{'x'}], unreduced={'y'}}")));
+      module->spmd_parameters_shardings(),
+      Each(*ParseSharding("{mesh['x'=2,'y'=2] [{?},{'x'}], unreduced={'y'}}")));
 }
 
 TEST_F(SpmdPartitioningV3Test, TupleSubgroupUnreducedParamV3) {
@@ -19111,8 +19239,10 @@ ENTRY entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/2));
   EXPECT_THAT(module->entry_computation()->parameter_instructions(),
-              Each(op::Sharding("{{mesh['x'=2] [], unreduced={'x'}}, "
-                                "{mesh['x'=2] [], unreduced={'x'}}}")));
+              Each(op::NoSharding()));
+  EXPECT_THAT(module->spmd_parameters_shardings(),
+              Each(*ParseSharding("{{mesh['x'=2] [], unreduced={'x'}}, "
+                                  "{mesh['x'=2] [], unreduced={'x'}}}")));
 }
 
 TEST_F(SpmdPartitioningV3Test, PatternMatchMergeNamedSharding) {
@@ -19376,10 +19506,13 @@ ENTRY entry {
   ASSERT_OK_AND_ASSIGN(auto module,
                        PartitionComputation(hlo_string, /*num_devices=*/4));
   VLOG(1) << module->ToString();
-  // Check that unreduced HloSharding is preserved after the pass.
+  // Check that unreduced HloSharding is preserved on the module and cleared on
+  // the parameter instructions after the pass.
+  EXPECT_THAT(module->entry_computation()->parameter_instructions(),
+              Each(op::NoSharding()));
   EXPECT_THAT(
-      module->entry_computation()->parameter_instructions(),
-      Each(op::Sharding("{mesh['a'=2,'b'=2], [], unreduced=max{'a','b'}}")));
+      module->spmd_parameters_shardings(),
+      Each(*ParseSharding("{mesh['a'=2,'b'=2], [], unreduced=max{'a','b'}}")));
 }
 
 // Verifies that a true 1D scatter-conflict on a reduction dimension (e.g.,
