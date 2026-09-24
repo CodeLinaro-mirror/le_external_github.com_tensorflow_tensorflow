@@ -529,11 +529,10 @@ absl::StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
         auto comparison_type_str = proto.comparison_type();
         if (!comparison_type_str.empty()) {
           // If a comparison type is specified, it *must* be valid.
-          ABSL_ASSIGN_OR_RETURN(auto comparison_type,
-                           StringToComparisonType(comparison_type_str));
-          instruction = CreateCompare(
-              shape, operands(0), operands(1), *comparison_direction,
-              Comparison::DefaultOrdering(comparison_type));
+          ABSL_ASSIGN_OR_RETURN(auto comparison_order,
+                           ComparisonTypeToOrder(comparison_type_str));
+          instruction = CreateCompare(shape, operands(0), operands(1),
+                                      *comparison_direction, comparison_order);
         } else {
           // Allow the specification of comparison type to be optional.
           // The comparison type will be determined by the types of the

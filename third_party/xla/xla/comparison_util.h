@@ -84,16 +84,6 @@ class Comparison {
     kLt,
   };
 
-  // (DEPRECATED) Represents the type of comparison. Prefer xla::PrimitiveType
-  // and Comparison::Order, since there are multiple floating point
-  // representations that support total ordering.
-  enum class [[deprecated("Use PrimitiveType and Order")]] Type : uint8_t {
-    kFloat,
-    kFloatTotalOrder,
-    kSigned,
-    kUnsigned,
-  };
-
   Comparison() = delete;
 
   // This will default to the expected behavior for Comparison::Order: integers
@@ -104,21 +94,9 @@ class Comparison {
   // targets may support total order floating point type comparisons.
   explicit Comparison(Direction dir, PrimitiveType type, Order order);
 
-  // Returns a comparison with a primitive type matching the Comparison::Type
-  // and using a default bit width of 32. For example,
-  // Comparison(Direction::kLt, Type::kFloat).PrimitiveType()  /* F32 */
-  [[deprecated(
-      "Use Comparison(Comparison::Direction, "
-      "PrimitiveType)")]] explicit Comparison(Direction dir, Type type);
-
   inline Direction GetDirection() const { return dir_; }
   inline PrimitiveType GetPrimitiveType() const { return primitive_type_; }
   inline Order GetOrder() const { return order_; }
-
-  [[deprecated("Use GetPrimitiveType() and GetOrder()")]] inline Type GetType()
-      const {
-    return type_;
-  }
 
   inline bool IsEq() const { return dir_ == Direction::kEq; }
   inline bool IsNe() const { return dir_ == Direction::kNe; }
@@ -213,18 +191,8 @@ class Comparison {
     return GetComparator<T>()(a, b);
   }
 
-  // Returns the Comparison::Order corresponding to the deprecated
-  // Comparison::Type.
-  static Comparison::Order DefaultOrdering(Type type);
-
   // Returns the expected Comparison::Order for each primitive type.
   static Comparison::Order DefaultOrdering(PrimitiveType type);
-
-  // Returns the Comparison::Type for the given primitive type. This assumes
-  // that each numerical representation follows the standard behavior, e.g.,
-  // integers are total order and floats are partial order.
-  [[deprecated("Use PrimitiveType and Order")]] static Comparison::Type
-  DefaultComparisonType(PrimitiveType type);
 
  private:
   // The direction of the Comparison, e.g., GT.
@@ -233,9 +201,6 @@ class Comparison {
   const PrimitiveType primitive_type_;
   // The ordering of the Comparison, e.g., kPartial.
   const Order order_;
-  // The Type of the Comparison. This tries to mesh together the ordering and
-  // the numerical data classification.
-  [[deprecated]] const Type type_;
 };
 
 using ComparisonDirection = Comparison::Direction;
@@ -246,7 +211,6 @@ inline std::ostream& operator<<(std::ostream& os, const Comparison& cmp) {
 }
 
 std::string ComparisonDirectionToString(Comparison::Direction direction);
-std::string ComparisonTypeToString(Comparison::Type type);
 absl::string_view ComparisonPrimitiveTypeToString(PrimitiveType type);
 absl::string_view ComparisonOrderToString(Comparison::Order order);
 absl::string_view ComparisonOrderToShortString(Comparison::Order order);
@@ -260,8 +224,8 @@ absl::StatusOr<Comparison::Direction> StringToComparisonDirection(
     absl::string_view direction);
 absl::StatusOr<Comparison::Order> ShortStringToComparisonOrder(
     absl::string_view order);
-absl::StatusOr<Comparison::Type> StringToComparisonType(
-    absl::string_view comparison);
+absl::StatusOr<Comparison::Order> ComparisonTypeToOrder(
+    absl::string_view comparison_type);
 
 // Returns a comparison function using the provided key function on each value,
 // i.e. `key_fn(a) < key_fn(b)`.

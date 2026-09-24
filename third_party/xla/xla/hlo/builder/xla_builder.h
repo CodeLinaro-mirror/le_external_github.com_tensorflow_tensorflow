@@ -1254,7 +1254,7 @@ class XlaBuilder {
   XlaOp BinaryOp(HloOpcode binop, XlaOp lhs, XlaOp rhs,
                  absl::Span<const int64_t> broadcast_dimensions,
                  std::optional<ComparisonDirection> direction = std::nullopt,
-                 std::optional<Comparison::Type> type = std::nullopt);
+                 std::optional<ComparisonOrder> order = std::nullopt);
 
   absl::StatusOr<XlaOp> Compare(const Shape& shape, XlaOp lhs, XlaOp rhs,
                                 ComparisonDirection direction);
@@ -1263,7 +1263,7 @@ class XlaBuilder {
   virtual absl::StatusOr<XlaOp> Compare(const Shape& shape, XlaOp lhs,
                                         XlaOp rhs,
                                         ComparisonDirection direction,
-                                        Comparison::Type type);
+                                        ComparisonOrder order);
 
   // Internal helper method that does the building for an arbitrary binary op
   // with same ranked operands that doesn't broadcast.
@@ -1521,8 +1521,7 @@ class XlaBuilder {
                        ComparisonDirection direction);
   friend XlaOp Compare(XlaOp lhs, XlaOp rhs,
                        absl::Span<const int64_t> broadcast_dimensions,
-                       ComparisonDirection direction,
-                       Comparison::Type compare_type);
+                       ComparisonDirection direction, ComparisonOrder order);
   friend XlaOp Dot(XlaOp lhs, XlaOp rhs,
                    const PrecisionConfig* precision_config,
                    std::optional<PrimitiveType> preferred_element_type);
@@ -2576,7 +2575,7 @@ XlaOp LeTotalOrder(XlaOp lhs, XlaOp rhs,
 // broadcast_dimensions for consistency with others).
 XlaOp Compare(XlaOp lhs, XlaOp rhs,
               absl::Span<const int64_t> broadcast_dimensions,
-              ComparisonDirection direction, Comparison::Type compare_type);
+              ComparisonDirection direction, ComparisonOrder order);
 XlaOp Compare(XlaOp lhs, XlaOp rhs,
               absl::Span<const int64_t> broadcast_dimensions,
               ComparisonDirection direction);
