@@ -1,5 +1,13 @@
 # copybara:uncomment package(default_applicable_licenses = ["//third_party/tensorflow:license"])
 
+exports_files(
+    glob([
+        "common/**",
+        "oss_only/**",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
 filegroup(
     name = "patch_files",
     srcs = glob([

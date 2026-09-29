@@ -42,7 +42,7 @@ new file mode 100644
 +        # #
 +        # # By adding your project here, you agree to the Triton SLA:  go/triton-sla
 +        # "//third_party/py/jax:__subpackages__",  # cjfj@
-+        # "//third_party/tensorflow/compiler/xla:__subpackages__",  # bchetioui@
++        # "//tensorflow/compiler/xla:__subpackages__",  # bchetioui@
 +        # "@xla-experimental//gpu:__subpackages__",  # csigg@
 +        # "@xla-experimental//tools/triton:__subpackages__",  # vwbaker@
 +        # "//third_party/py/enzyme_ad:__subpackages__",  # wmoses@
@@ -2331,8 +2331,8 @@ new file mode 100644
 +    # default_compatible_with = [# "@build-target"],
 +    # default_visibility = [
 +        # "//third_party/py/enzyme_ad:__subpackages__",
-+        # "//third_party/tensorflow/compiler/xla/backends/gpu/codegen/triton:__subpackages__",
-+        # "//third_party/tensorflow/compiler/xla/backends/gpu/tests:__subpackages__",
++        # "//tensorflow/compiler/xla/backends/gpu/codegen/triton:__subpackages__",
++        # "//tensorflow/compiler/xla/backends/gpu/tests:__subpackages__",
 +        # "@triton//:__subpackages__",
 +    # ],
 +    # copybara:uncomment_end_and_comment_begin
@@ -2818,8 +2818,8 @@ new file mode 100644
 +    # default_compatible_with = [# "@build-target"],
 +    # default_visibility = [
 +        # "//third_party/py/enzyme_ad:__subpackages__",
-+        # "//third_party/tensorflow/compiler/xla/backends/gpu:__subpackages__",
-+        # "//third_party/tensorflow/compiler/xla/pjrt:__subpackages__",
++        # "//tensorflow/compiler/xla/backends/gpu:__subpackages__",
++        # "//tensorflow/compiler/xla/pjrt:__subpackages__",
 +        # "@triton//:__subpackages__",
 +    # ],
 +    # copybara:uncomment_end_and_comment_begin
