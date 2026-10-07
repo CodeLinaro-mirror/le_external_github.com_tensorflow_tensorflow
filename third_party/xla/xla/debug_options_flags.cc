@@ -529,7 +529,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_experimental_matmul_perf_table_path("");
   // TODO(b/366475196): Create XLA GPU without cuDNN, cuBLAS.
   opts.set_xla_gpu_experimental_disable_binary_libraries(false);
-  opts.set_xla_gpu_experimental_enable_conv_fusion(true);
+  opts.set_xla_gpu_experimental_enable_conv_fusion(false);
   opts.set_xla_gpu_dot_merger_threshold_mb(64);
   opts.set_xla_enable_fast_math(false);
   opts.set_xla_gpu_experimental_parallel_collective_overlap_limit(1);
@@ -609,6 +609,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_gxl_scratch_size_bytes(64 * 1024 * 1024);
   opts.set_xla_gpu_enable_persistent_symmetric_memory(false);
   opts.set_xla_gpu_experimental_enable_raft_for_stable_topk(false);
+  opts.set_xla_gpu_experimental_enable_tensor_ir(false);
   opts.set_xla_gpu_async_copy_min_bytes(-1);
 
   // Disable float checks.
@@ -3735,6 +3736,13 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
           &DebugOptions::set_xla_gpu_experimental_enable_raft_for_stable_topk),
       debug_options->xla_gpu_experimental_enable_raft_for_stable_topk(),
       "If true, enables RAFT for stable TopK."));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_experimental_enable_tensor_ir",
+      bool_setter_for(&DebugOptions::set_xla_gpu_experimental_enable_tensor_ir),
+      debug_options->xla_gpu_experimental_enable_tensor_ir(),
+      "If true, the GPU autotuner may assign fusions to the experimental "
+      "TensorIR (CUDA Tile) emitter. Requires sm_90+ and CUDA 13.3+ "
+      "(tileiras)."));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_experimental_ragged_all_to_all_use_device_kernel",
       bool_setter_for(
