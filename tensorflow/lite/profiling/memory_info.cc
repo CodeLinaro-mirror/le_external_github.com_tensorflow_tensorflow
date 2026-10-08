@@ -22,11 +22,14 @@ limitations under the License.
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <unordered_set>
 
 #ifdef __linux__
+#include <dirent.h>
 #include <malloc.h>
 #include <sys/resource.h>
 #include <sys/time.h>
+#include <unistd.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include <malloc/malloc.h>
@@ -45,32 +48,149 @@ const size_t MemoryUsage::kValueNotSet = 0;
 namespace {
 
 #if defined(__linux__)
-// Returns the current VM swap in kilobytes on Linux.
-int64_t GetCurrentVmSwapKb() {
-  FILE* status_file = fopen("/proc/self/status", "r");
-  if (!status_file) {
+bool ConsumePrefix(const char** str, const char* prefix) {
+  const size_t len = strlen(prefix);
+  if (strncmp(*str, prefix, len) != 0) return false;
+  *str += len;
+  return true;
+}
+
+int64_t ReadProcValueKb(const char* path, const char* key,
+                        int64_t default_if_missing = -1) {
+  FILE* file = fopen(path, "r");
+  if (!file) {
     return -1;
   }
+  int64_t result = default_if_missing;
   char line[256];
-  while (fgets(line, sizeof(line), status_file)) {
-    if (strncmp(line, "VmSwap:", 7) == 0) {
-      int64_t value_kb = 0;
-      if (sscanf(line + 7, "%" SCNd64, &value_kb) == 1) {
-        fclose(status_file);
-        return value_kb;
-      } else {
-        fclose(status_file);
-        return -1;  // Indicate parsing error
-      }
+  while (fgets(line, sizeof(line), file)) {
+    const char* p = line;
+    if (ConsumePrefix(&p, key)) {
+      int64_t value_kb = -1;
+      result = (sscanf(p, "%" SCNd64, &value_kb) == 1) ? value_kb : -1;
+      break;
     }
   }
-  fclose(status_file);
-  // If the VmSwap line is not found, it means 0 swap is being used.
-  return 0;
+  fclose(file);
+  return result;
 }
-#endif
+
+// Returns the current VM swap in kilobytes on Linux.
+int64_t GetCurrentVmSwapKb() {
+  return ReadProcValueKb("/proc/self/status", "VmSwap:",
+                         /*default_if_missing=*/0);
+}
+
+#if !defined(__ANDROID__)
+int64_t ParseDrmMemoryValueKb(const char* line) {
+  const char* colon = strchr(line, ':');
+  if (colon == nullptr) {
+    return 0;
+  }
+  int64_t value = 0;
+  char unit[16] = {0};
+  int matched = sscanf(colon + 1, "%" SCNd64 " %15s", &value, unit);
+  if (matched < 1 || value <= 0) {
+    return 0;
+  }
+  if (strcmp(unit, "KiB") == 0 || strcmp(unit, "kB") == 0) {
+    return value;
+  }
+  if (strcmp(unit, "MiB") == 0 || strcmp(unit, "MB") == 0) {
+    return value * 1024;
+  }
+  return value / 1024;
+}
+#endif  // !defined(__ANDROID__)
+#endif  // defined(__linux__)
 
 }  // namespace
+
+int64_t GetCurrentCpuRssKb() {
+#if defined(__linux__)
+  return ReadProcValueKb("/proc/self/smaps_rollup", "Rss:");
+#else
+  return -1;
+#endif  // defined(__linux__)
+}
+
+int64_t GetCurrentGpuMemoryKb() {
+#if defined(__linux__)
+#if defined(__ANDROID__)
+  if (access("/system/bin/dumpsys", X_OK) == 0) {
+    FILE* pipe = popen("/system/bin/dumpsys gpu --gpumem 2>/dev/null", "r");
+    if (pipe != nullptr) {
+      const std::string proc_prefix =
+          "Proc " + std::to_string(getpid()) + " total:";
+      char buf[256];
+      int64_t gpu_kb = 0;
+      while (fgets(buf, sizeof(buf), pipe) != nullptr) {
+        const char* pos = strstr(buf, proc_prefix.c_str());
+        if (pos != nullptr) {
+          int64_t bytes = 0;
+          if (sscanf(pos + proc_prefix.size(), "%" SCNd64, &bytes) == 1 &&
+              bytes >= 0) {
+            gpu_kb = bytes / 1024;
+          }
+          break;
+        }
+      }
+      pclose(pipe);
+      return gpu_kb;
+    }
+  }
+#else
+  DIR* fdinfo_dir = opendir("/proc/self/fdinfo");
+  if (fdinfo_dir != nullptr) {
+    std::unordered_set<std::string> seen_drm_clients;
+    int64_t drm_total_kb = 0;
+    struct dirent* entry = nullptr;
+    while ((entry = readdir(fdinfo_dir)) != nullptr) {
+      if (entry->d_name[0] == '.') {
+        continue;
+      }
+      std::string path =
+          std::string("/proc/self/fdinfo/") + std::string(entry->d_name);
+      FILE* fdinfo_file = fopen(path.c_str(), "r");
+      if (!fdinfo_file) {
+        continue;
+      }
+      std::string client_id;
+      std::string pdev;
+      int64_t resident_kb = 0;
+      int64_t memory_kb = 0;
+      bool has_resident_tag = false;
+      char line[256];
+      while (fgets(line, sizeof(line), fdinfo_file)) {
+        const char* p = line;
+        if (ConsumePrefix(&p, "drm-client-id:")) {
+          client_id = p;
+        } else if (ConsumePrefix(&p, "drm-pdev:")) {
+          pdev = p;
+        } else if (ConsumePrefix(&p, "drm-resident-")) {
+          has_resident_tag = true;
+          resident_kb += ParseDrmMemoryValueKb(p);
+        } else if (ConsumePrefix(&p, "drm-memory-")) {
+          memory_kb += ParseDrmMemoryValueKb(p);
+        }
+      }
+      fclose(fdinfo_file);
+      if (!client_id.empty()) {
+        std::string client_key = pdev + ":" + client_id;
+        if (seen_drm_clients.insert(client_key).second) {
+          drm_total_kb += has_resident_tag ? resident_kb : memory_kb;
+        }
+      }
+    }
+    closedir(fdinfo_dir);
+    return drm_total_kb;
+  }
+#endif  // defined(__ANDROID__)
+  return 0;
+#else
+  return -1;
+#endif  // defined(__linux__)
+}
 
 bool MemoryUsage::IsSupported() {
 #if defined(__linux__) || defined(__APPLE__) || defined(_WIN32)
