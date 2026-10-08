@@ -695,12 +695,14 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitConvolution(
                                   instr->window(),
                                   instr->convolution_dimension_numbers(),
                                   instr->feature_group_count()};
-  ABSL_ASSIGN_OR_RETURN(auto thunk,
-                   ConvolutionThunk::Create(
-                       Thunk::ThunkInfo::WithProfileAnnotation(
-                           instr, ir_emitter_context_->GetNextThunkId()),
-                       std::move(descriptor), std::move(operand_slices),
-                       std::move(result_slices), scratch_slice));
+  ABSL_ASSIGN_OR_RETURN(
+      auto thunk,
+      ConvolutionThunk::Create(
+          Thunk::ThunkInfo::WithProfileAnnotation(
+              instr, ir_emitter_context_->GetNextThunkId()),
+          std::move(descriptor), std::move(operand_slices),
+          std::move(result_slices), scratch_slice,
+          ir_emitter_context_->gpu_topology().num_devices_per_host()));
   return ThunkSequence::Of(std::move(thunk));
 }
 
@@ -1105,12 +1107,13 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitNorm(
 
   ABSL_ASSIGN_OR_RETURN(
       std::unique_ptr<NormThunk> thunk,
-      NormThunk::Create(Thunk::ThunkInfo::WithProfileAnnotation(
-                            instr, ir_emitter_context_->GetNextThunkId()),
-                        std::move(descriptor), x_slice, scale_slice,
-                        y_or_dx_slice, bias_slice, expectation_slice,
-                        norm_factor_slice, dy_slice, dscale_slice, dbias_slice,
-                        scratch_slice.slice));
+      NormThunk::Create(
+          Thunk::ThunkInfo::WithProfileAnnotation(
+              instr, ir_emitter_context_->GetNextThunkId()),
+          std::move(descriptor), x_slice, scale_slice, y_or_dx_slice,
+          bias_slice, expectation_slice, norm_factor_slice, dy_slice,
+          dscale_slice, dbias_slice, scratch_slice.slice,
+          ir_emitter_context_->gpu_topology().num_devices_per_host()));
   return ThunkSequence::Of(std::move(thunk));
 }
 
