@@ -30,6 +30,15 @@ tf_http_archive(
     ),
 )
 
+tf_http_archive(
+    name = "rules_ml_toolchain",
+    sha256 = "5f0e9d4918724d751790565ddfb40c781fd0c78a9cb36b9494c7551a63799223",
+    strip_prefix = "rules_ml_toolchain-37c4dabbe0d074cc2413ceb1decd926f95f8cd02",
+    urls = tf_mirror_urls(
+        "https://github.com/google-ml-infra/rules_ml_toolchain/archive/37c4dabbe0d074cc2413ceb1decd926f95f8cd02.tar.gz",
+    ),
+)
+
 # Initialize the TensorFlow repository and all dependencies.
 #
 # The cascade of load() statements and tf_workspace?() calls works around the
@@ -65,6 +74,8 @@ cc_toolchain_deps()
 register_toolchains("@rules_ml_toolchain//cc:linux_x86_64_linux_x86_64")
 
 register_toolchains("@rules_ml_toolchain//cc:linux_x86_64_linux_x86_64_cuda")
+
+register_toolchains("@rules_ml_toolchain//cc:linux_x86_64_linux_aarch64")
 
 register_toolchains("@rules_ml_toolchain//cc:linux_aarch64_linux_aarch64")
 
