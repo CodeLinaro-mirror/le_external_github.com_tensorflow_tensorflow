@@ -188,6 +188,7 @@ cc_library(
     hdrs = ["fusion_emitter.h"],
     visibility = [
         "//xla/backends/gpu/codegen:__subpackages__",
+        "//xla/backends/gpu/cost_model:__subpackages__",
         "//xla/backends/gpu/transforms:__subpackages__",
         "//xla/service/gpu:__subpackages__",
     ],
@@ -224,6 +225,7 @@ cc_library(
     hdrs = ["fusions.h"],
     visibility = [
         "//xla/backends/gpu/codegen:__subpackages__",
+        "//xla/backends/gpu/cost_model:__subpackages__",
         "//xla/backends/gpu/transforms:__subpackages__",
         "//xla/service/gpu:__subpackages__",
     ],
@@ -278,6 +280,9 @@ cc_library(
         "//xla/backends/gpu/codegen/emitters/transforms:passes",
         "//xla/backends/gpu/codegen/kernels:custom_kernel",
         "//xla/backends/gpu/codegen/kernels:ptx_custom_kernel",
+        "//xla/backends/gpu/codegen/triton:fusion",
+        "//xla/backends/gpu/codegen/triton:triton_kernel_source",
+        "//xla/backends/gpu/codegen/triton:xtile_compiler",
         "//xla/backends/gpu/runtime:custom_kernel_thunk",
         "//xla/backends/gpu/runtime:thunk",
         "//xla/codegen:llvm_kernel_source",
