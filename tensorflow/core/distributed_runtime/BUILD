@@ -206,7 +206,10 @@ tf_cc_test(
     deps = [
         ":error_payloads",
         ":session_mgr",
+        ":test_utils",
+        ":worker_cache_partial",
         ":worker_env",
+        ":worker_interface",
         "//tensorflow/core:framework",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:test",
@@ -214,6 +217,7 @@ tf_cc_test(
         "//tensorflow/core:testlib",
         "//tensorflow/core/distributed_runtime/rpc:rpc_rendezvous_mgr",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/synchronization",
     ],
 )
 
