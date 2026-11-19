@@ -297,7 +297,12 @@ class DeserializeSparseOp : public OpKernel {
                        ", 2] to be a shape vector but its shape is ",
                        (*output_shape)->shape().DebugString()));
     }
-    *output_num_non_zeros = serialized_values.get<Tensor>()->NumElements();
+    const Tensor* values = serialized_values.get<Tensor>();
+    if (values == nullptr) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Could not get a tensor from serialized_sparse[", index, ", 1]"));
+    }
+    *output_num_non_zeros = values->NumElements();
     return absl::OkStatus();
   }
 
