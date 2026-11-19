@@ -92,6 +92,35 @@ class SetOpsTest(test_util.TensorFlowTestCase, parameterized.TestCase):
           constant_op.constant([812, 390], dtypes.int64))
       self.evaluate(sets.set_size(sparse_data, validate_indices=False))
 
+  @parameterized.named_parameters(
+      ("NegativeGroupIndex2D", [[-1, 0]], [2, 2]),
+      ("NegativeSetIndex2D", [[0, -1]], [2, 2]),
+      ("NegativeGroupIndex3D", [[1, -1, 0]], [2, 3, 4]),
+  )
+  def test_set_size_negative_indices(self, indices, shape):
+    sparse_data = sparse_tensor_lib.SparseTensor(
+        constant_op.constant(indices, dtypes.int64),
+        constant_op.constant([1], dtypes.int64),
+        constant_op.constant(shape, dtypes.int64),
+    )
+    with self.assertRaisesRegex(
+        (ValueError, errors_impl.InvalidArgumentError), "and >= 0"
+    ):
+      self.evaluate(sets.set_size(sparse_data, validate_indices=False))
+
+  def test_set_union_negative_indices(self):
+    sparse_data = sparse_tensor_lib.SparseTensor(
+        constant_op.constant([[-1, 0]], dtypes.int64),
+        constant_op.constant([1], dtypes.int64),
+        constant_op.constant([2, 2], dtypes.int64),
+    )
+    with self.assertRaisesRegex(
+        (ValueError, errors_impl.InvalidArgumentError), "and >= 0"
+    ):
+      self.evaluate(
+          sets.set_union(sparse_data, sparse_data, validate_indices=False)
+      )
+
   @test_util.run_deprecated_v1
   def test_set_size_duplicates_2d(self):
     for dtype in _DTYPES:
